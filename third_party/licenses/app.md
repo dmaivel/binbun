@@ -303,8 +303,8 @@ Used by:
 
 Used by:
 
-- [binbun-x86 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-x86-lift 0.0.0](https://github.com/dmaivel/binbun)
+- [binbun-x86 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-x86-lift 0.1.0](https://github.com/dmaivel/binbun)
 
 ```
 
@@ -3039,8 +3039,8 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Used by:
 
-- [binbun-aarch64 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-aarch64-lift 0.0.0](https://github.com/dmaivel/binbun)
+- [binbun-aarch64 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-aarch64-lift 0.1.0](https://github.com/dmaivel/binbun)
 - [exr 1.74.3](https://github.com/johannesvollmer/exrs)
 - [sha1_smol 1.0.1](https://github.com/mitsuhiko/sha1-smol)
 
@@ -13231,33 +13231,33 @@ SOFTWARE.
 
 Used by:
 
-- [binbun 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-aarch64 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-aarch64-lift 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-ast 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-bounded 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-cli 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-collab 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-debuginfo 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-decompile 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-demangle 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-isa 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-loader 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-macros 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-paths 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-print 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-semantics 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-session 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-sigpack 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-ssa 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-sync 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-typedb 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-typeinfer 0.0.0](https://github.com/dmaivel/binbun)
+- [binbun 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-aarch64 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-aarch64-lift 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-ast 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-bounded 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-cli 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-collab 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-debuginfo 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-decompile 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-demangle 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-isa 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-loader 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-macros 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-paths 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-print 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-semantics 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-session 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-sigpack 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-ssa 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-sync 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-typedb 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-typeinfer 0.1.0](https://github.com/dmaivel/binbun)
 
 ```
 MIT License
 
-Copyright (c) 2026 dmaivel and the binbun contributors
+Copyright (c) 2026 dmaivel
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -13283,9 +13283,9 @@ SOFTWARE.
 
 Used by:
 
-- [binbun-protocol 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-gui 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-gui-view 0.0.0](https://github.com/dmaivel/binbun)
+- [binbun-protocol 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-gui 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-gui-view 0.1.0](https://github.com/dmaivel/binbun)
 - [accesskit 0.24.1](https://github.com/AccessKit/accesskit)
 - [accesskit_atspi_common 0.19.1](https://github.com/AccessKit/accesskit)
 - [accesskit_consumer 0.38.0](https://github.com/AccessKit/accesskit)

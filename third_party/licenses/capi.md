@@ -2,16 +2,16 @@
 
 The crates this download is built from, binbun's own among them, by licence: where a crate offers a choice of licences, the one it is used under here.
 
+- MIT License (3)
 - Apache License 2.0 (2)
 - BSD 3-Clause "New" or "Revised" License (2)
-- MIT License (2)
 
 ## Apache License 2.0
 
 Used by:
 
-- [binbun-capi 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-x86 0.0.0](https://github.com/dmaivel/binbun)
+- [binbun-capi 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-x86 0.1.0](https://github.com/dmaivel/binbun)
 
 ```
 
@@ -223,8 +223,8 @@ Used by:
 
 Used by:
 
-- [binbun-aarch64 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-capi 0.0.0](https://github.com/dmaivel/binbun)
+- [binbun-aarch64 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-capi 0.1.0](https://github.com/dmaivel/binbun)
 
 ```
 Copyright (c) <year> <owner>. 
@@ -245,13 +245,14 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 Used by:
 
-- [binbun-aarch64 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-isa 0.0.0](https://github.com/dmaivel/binbun)
+- [binbun-aarch64 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-disasm 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-isa 0.1.0](https://github.com/dmaivel/binbun)
 
 ```
 MIT License
 
-Copyright (c) 2026 dmaivel and the binbun contributors
+Copyright (c) 2026 dmaivel
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

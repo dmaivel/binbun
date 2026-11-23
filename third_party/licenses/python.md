@@ -61,9 +61,9 @@ PERFORMANCE OF THIS SOFTWARE.
 
 Used by:
 
-- [binbun-capi 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-x86 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-x86-lift 0.0.0](https://github.com/dmaivel/binbun)
+- [binbun-capi 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-x86 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-x86-lift 0.1.0](https://github.com/dmaivel/binbun)
 
 ```
 
@@ -1451,9 +1451,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Used by:
 
-- [binbun-aarch64 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-aarch64-lift 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-capi 0.0.0](https://github.com/dmaivel/binbun)
+- [binbun-aarch64 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-aarch64-lift 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-capi 0.1.0](https://github.com/dmaivel/binbun)
 
 ```
 Copyright (c) <year> <owner>. 
@@ -4001,31 +4001,31 @@ SOFTWARE.
 
 Used by:
 
-- [binbun 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-aarch64 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-aarch64-lift 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-ast 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-bounded 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-debuginfo 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-decompile 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-demangle 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-disasm 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-isa 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-loader 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-macros 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-paths 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-print 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-semantics 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-session 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-sigpack 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-ssa 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-typedb 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-typeinfer 0.0.0](https://github.com/dmaivel/binbun)
+- [binbun 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-aarch64 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-aarch64-lift 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-ast 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-bounded 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-debuginfo 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-decompile 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-demangle 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-disasm 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-isa 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-loader 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-macros 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-paths 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-print 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-semantics 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-session 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-sigpack 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-ssa 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-typedb 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-typeinfer 0.1.0](https://github.com/dmaivel/binbun)
 
 ```
 MIT License
 
-Copyright (c) 2026 dmaivel and the binbun contributors
+Copyright (c) 2026 dmaivel
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -4051,8 +4051,8 @@ SOFTWARE.
 
 Used by:
 
-- [binbun-protocol 0.0.0](https://github.com/dmaivel/binbun)
-- [binbun-py 0.0.0](https://github.com/dmaivel/binbun)
+- [binbun-protocol 0.1.0](https://github.com/dmaivel/binbun)
+- [binbun-py 0.1.0](https://github.com/dmaivel/binbun)
 - [r-efi 6.0.0](https://github.com/r-efi/r-efi)
 - [windows-link 0.2.1](https://github.com/microsoft/windows-rs)
 - [windows-sys 0.52.0](https://github.com/microsoft/windows-rs)
