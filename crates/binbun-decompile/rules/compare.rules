@@ -1,0 +1,70 @@
+# Conditions as the flags compute them, back to comparisons.
+#
+# Rules apply bottom-up: an operand is rewritten before its user, so a
+# rule over a compound condition is written over its parts' rewritten
+# forms (the sign bit is `slt(x, 0)` by the time `or` sees it).
+
+# A 1-bit value compared with a constant.
+rule bit-ne-0: ne(b:1, 0) => b
+rule bit-eq-1: eq(b:1, 1) => b
+rule bit-eq-0: eq(b:1, 0) => not(b)
+rule bit-ne-1: ne(b:1, 1) => not(b)
+
+# The sign bit, taken out or shifted down.
+rule sign-bit: extract(x:W, W - 1, 1) => slt(x, 0)
+rule sign-lshr-ne: ne(lshr(x:W, #c), 0) => slt(x, 0) if eq(#c, {W-1})
+rule sign-lshr-eq: eq(lshr(x:W, #c), 0) => sle(0, x) if eq(#c, {W-1})
+rule sign-ashr-ne: ne(ashr(x:W, #c), 0) => slt(x, 0) if eq(#c, {W-1})
+rule sign-ashr-eq: eq(ashr(x:W, #c), 0) => sle(0, x) if eq(#c, {W-1})
+
+# Less than, or equal (sign or carry flag, or zero flag).
+rule sle-of-or: or(slt(x:W, y), eq(x, y)) => sle(x, y)
+rule sle-of-or-swapped: or(eq(x:W, y), slt(x, y)) => sle(x, y)
+rule ule-of-or: or(ult(x:W, y), eq(x, y)) => ule(x, y)
+rule ule-of-or-swapped: or(eq(x:W, y), ult(x, y)) => ule(x, y)
+# The sign flag against the overflow flag of a subtraction.
+rule slt-of-flags: ne(slt(sub(x:W, y), 0), sub-overflow(x, y, 0)) => slt(x, y)
+rule sle-of-flags: eq(slt(sub(x:W, y), 0), sub-overflow(x, y, 0)) => sle(y, x)
+# The borrow and carry flags.
+rule ult-of-borrow: sub-borrow(x:W, y, 0) => ult(x, y)
+rule ult-of-carry: add-carry(x:W, y, 0) => ult(add(x, y), x)
+
+# Negated comparisons.
+rule not-slt: not(slt(x:W, y)) => sle(y, x)
+rule not-sle: not(sle(x:W, y)) => slt(y, x)
+rule not-ult: not(ult(x:W, y)) => ule(y, x)
+rule not-ule: not(ule(x:W, y)) => ult(y, x)
+rule not-eq: not(eq(x:W, y)) => ne(x, y)
+rule not-ne: not(ne(x:W, y)) => eq(x, y)
+
+# A value against itself.
+rule eq-self: eq(x:W, x) => 1
+  widths W in 1 8 16 32 64 128
+rule ne-self: ne(x:W, x) => 0
+  widths W in 1 8 16 32 64 128
+rule ult-self: ult(x:W, x) => 0
+rule ule-self: ule(x:W, x) => 1
+rule slt-self: slt(x:W, x) => 0
+rule sle-self: sle(x:W, x) => 1
+
+# Unsigned comparisons with 0 and 1.
+rule ult-1: ult(x:W, 1) => eq(x, 0)
+rule ule-0: ule(x:W, 0) => eq(x, 0)
+rule ult-0-left: ult(0, x:W) => ne(x, 0)
+rule ule-1-left: ule(1, x:W) => ne(x, 0)
+rule ult-0: ult(x:W, 0) => 0
+rule ule-0-left: ule(0, x:W) => 1
+
+# Equality of a difference (or of an exclusive or) with 0.
+rule eq-sub-0: eq(sub(x:W, y), 0) => eq(x, y)
+rule ne-sub-0: ne(sub(x:W, y), 0) => ne(x, y)
+rule eq-xor-0: eq(xor(x:W, y), 0) => eq(x, y)
+rule ne-xor-0: ne(xor(x:W, y), 0) => ne(x, y)
+
+# Booleans widened, compared with 0.
+rule ne-zext-bit: ne(zext(b:1, W), 0) => b
+rule eq-zext-bit: eq(zext(b:1, W), 0) => not(b)
+
+# Constants on the right.
+rule eq-const-left: eq(#c:W, x) => eq(x, #c)
+rule ne-const-left: ne(#c:W, x) => ne(x, #c)

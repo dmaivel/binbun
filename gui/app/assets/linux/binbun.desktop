@@ -1,0 +1,21 @@
+# binbun's desktop entry. The window's Wayland app id is `binbun`, so a
+# compositor matches it to this file and shows its icon. To install for
+# one user (nothing does it for you):
+#   install -Dm644 gui/app/assets/linux/binbun.desktop ~/.local/share/applications/binbun.desktop
+#   install -Dm644 gui/app/assets/logo/binbun-icon.svg ~/.local/share/icons/hicolor/scalable/apps/binbun.svg
+#   for s in 16 24 32 48 64 128 256 512; do install -Dm644 gui/app/assets/linux/icons/${s}x${s}/binbun.png ~/.local/share/icons/hicolor/${s}x${s}/apps/binbun.png; done
+# and set Exec to the binary's path if `binbun` (the GUI's build:
+# gui/target/release/binbun) is not on PATH.
+# The scalable icon is the app icon (`logo/binbun-icon.svg`); the fixed
+# sizes are rendered by scripts/icons.sh, 48 px and under from drawings
+# made for them (no stroke, the ears apart, a larger face; no nose at
+# 16 px): `logo/binbun-icon-small.svg`, `logo/binbun-icon-16.svg`.
+[Desktop Entry]
+Type=Application
+Name=binbun
+Comment=Disassembler and decompiler
+Exec=binbun %f
+Icon=binbun
+StartupWMClass=binbun
+Terminal=false
+Categories=Development;Debugger;

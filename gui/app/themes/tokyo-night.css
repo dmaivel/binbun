@@ -1,0 +1,188 @@
+/* Tokyo Night (the Night variant), from enkia's Tokyo Night for VS Code.
+ *
+ * Source: https://github.com/tokyo-night/tokyo-night-vscode-theme
+ *   (formerly enkia/tokyo-night-vscode-theme), version 1.1.2 (package.json
+ *   and Marketplace; the repository has no git tags),
+ *   commit 7c0f11eaef322f293621ca7befe462214b7ea468.
+ *   themes/tokyo-night-color-theme.json
+ *     sha256 e08d77c898ead9ed129dc18ff4f841e2353477e69ccd6fa7d0610561c31da4d8
+ * Licence: MIT, Copyright (c) 2018-present Enkia.
+ *
+ * Mapping: the UI roles are the theme's workbench colours by binbun's role
+ * table; the code roles are its tokenColors resolved for C scopes first
+ * (the most specific selector wins, later rules winning ties, as in VS
+ * Code). The palette variables carry the slot names of folke's
+ * tokyonight.nvim Night palette (enkia's theme does not name its colours);
+ * colours that are none of those slots are literals. Choices worth
+ * knowing:
+ * - --type is support.type (#0db9d7, C's size_t, uint32_t, ...): the theme
+ *   colours C's built-in `int` (storage.type) with the keyword-control
+ *   purple, which would make types and registers read as keywords.
+ * - --error is editorError.foreground: the theme's errorForeground is its
+ *   description grey.
+ * - --punctuation-special is punctuation.definition.tag (#ba3c97); the
+ *   branch arrows take it.
+ * - --label is C's labels in a function body (`meta.block
+ *   entity.name.label`, #73daca).
+ * - --comment-doc is comment.block.documentation, which has the comment
+ *   colour; --embedded is editor.foreground.
+ * - --keyword is the non-control keywords: storage.modifier (#9d7cd8,
+ *   C's static/const/extern; C's struct/union/enum are storage.type, the
+ *   purple below, and typedef/sizeof the operator cyan). --keyword-control
+ *   is keyword.control (#bb9af7), the old --keyword value.
+ * - --type-builtin is storage.type (#bb9af7, C's `int`; the same purple
+ *   as --keyword-control). --type keeps support.type: the named types'
+ *   entity.name.type gets no colour of its own (it falls to entity.name,
+ *   the plain foreground), so the theme's class/support cyan stays.
+ * - --global is variable.other.global (#e0af68). --field is
+ *   variable.other.property (#7dcfff), the scope VS Code gives C/C++'s
+ *   `property` semantic token; C's TextMate variable.other.member would
+ *   be the plain variable colour.
+ * - --macro is var(--function): C's entity.name.function.preprocessor
+ *   resolves to entity.name.function (the theme's meta.preprocessor teal
+ *   loses to it). --operator is keyword.operator (#89ddff, the
+ *   punctuation colour).
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments, link
+ * tints, the lit area, agreed) follow binbun's rule: mnemonics take the
+ * text (embedded) colour, registers the type colour; addresses by what the
+ * line is (functions the comment colour, code the parameter colour, data
+ * the doc-comment colour, unexplored bytes the constant colour); code
+ * xrefs the special punctuation, data xrefs the doc-comment colour; the
+ * link tints are blue, purple (the keyword-control purple, folke's
+ * `magenta`), yellow and green at 19% alpha; the lit area is the panel
+ * colour at half alpha, its edge the focus border; agreed the success
+ * colour.
+ * The listing's branch arrows (--arrow-1..8) take eight distinct palette
+ * accents round the hue wheel so neighbouring lanes differ: blue, orange,
+ * purple (folke's `magenta`), green, red, cyan, yellow, and pink (the tag
+ * punctuation #ba3c97, the theme's only pink), each at least 3:1 against
+ * the editor (lowest 3.40:1) and at least 20 CIE76 delta-E from its
+ * neighbours, 8 wrapping to 1 (lowest 58.9).
+ * Listing mnemonics: jumps take --keyword-control, calls --function,
+ * returns --keyword-control (keyword.control.return has no colour of its
+ * own), nops and padding the dimmest palette foreground reaching 3:1.
+ * --auto-name-alpha (0.7) and --cast-alpha (0.6) are binbun's fixed
+ * alphas for automatic names and casts.
+ * Deviation: the muted text #515670 (2.37:1) and the comment #51597d
+ * (2.50:1) are under 3:1, so --mnemonic-nop takes #646e9c (--hint, 3.46:1).
+ *
+ * Deviation: #51597d is 2.50:1 against the editor, so --address-function,
+ * --address-data, --data-xref take #646e9c (the theme's emphasised
+ * doc-comment and inlay-hint colour, 3.46:1), the nearest palette colour
+ * of that hue reaching 3:1.
+ */
+
+:root {
+  --name: "Tokyo Night";
+  --appearance: dark;
+
+  /* Tokyo Night's colours, under the slot names of folke's
+     tokyonight.nvim Night palette. */
+  --bg: #1a1b26;
+  --bg-dark: #16161e;
+  --blue: #7aa2f7;
+  --blue2: #0db9d7;
+  --blue5: #89ddff;
+  --cyan: #7dcfff;
+  --fg: #c0caf5;
+  --fg-dark: #a9b1d6;
+  --green: #9ece6a;
+  --green1: #73daca;
+  --magenta: #bb9af7;
+  --orange: #ff9e64;
+  --purple: #9d7cd8;
+  --red: #f7768e;
+  --red1: #db4b4b;
+  --yellow: #e0af68;
+  --git-add: #449dab;
+  --git-change: #6183bb;
+}
+
+:root {
+  /* Surfaces. */
+  --background: var(--bg-dark);
+  --gap: var(--bg-dark);
+  --tab-bar: var(--bg-dark);
+  --panel: var(--bg-dark);
+  --editor: var(--bg);
+  --border: #101014;
+  --border-variant: #101014;
+  --border-focused: #545c7e33;
+  --element-hover: #13131a;
+  --element-selected: #202330;
+  --scrollbar-thumb: #868bc415;
+  --scrollbar-track-border: #101014;
+
+  /* Text. */
+  --text: #787c99;
+  --text-muted: #515670;
+  --text-placeholder: #787c998a;
+  --accent: var(--git-change);
+  --editor-foreground: var(--fg-dark);
+  --line-number: #363b54;
+  --active-line-number: #787c99;
+  --error: var(--red1);
+  --success: var(--git-add);
+
+  /* Highlights. */
+  --active-line: #1e202e;
+  --selection: #515c7e4d;
+  --search-match: #3d59a166;
+  --active-match: #3d59a166;
+  --arrow: var(--punctuation-special);
+
+  /* Code. */
+  --keyword: var(--purple);
+  --type: var(--blue2);
+  --function: var(--blue);
+  --parameter: var(--yellow);
+  --string: var(--green);
+  --number: var(--orange);
+  --constant: var(--orange);
+  --comment: #51597d;
+  --comment-doc: #51597d;
+  --hint: #646e9c;
+  --punctuation: var(--blue5);
+  --punctuation-special: #ba3c97;
+  --embedded: var(--fg-dark);
+  --variable: var(--fg);
+  --label: var(--green1);
+  --keyword-control: var(--magenta);
+  --type-builtin: var(--magenta);
+  --global: var(--yellow);
+  --field: var(--cyan);
+  --macro: var(--function);
+  --operator: var(--blue5);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: var(--hint);
+  --register: var(--type);
+  --address-function: var(--hint);
+  --address-code: var(--parameter);
+  --address-data: var(--hint);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--hint);
+  --tint-1: color-mix(in srgb, var(--blue) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--magenta) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--yellow) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--green) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--blue);
+  --arrow-2: var(--orange);
+  --arrow-3: var(--magenta);
+  --arrow-4: var(--green);
+  --arrow-5: var(--red);
+  --arrow-6: var(--cyan);
+  --arrow-7: var(--yellow);
+  --arrow-8: #ba3c97;
+  --auto-name-alpha: 1;   /* automatic names (v17, sub_a9090, field_38) */
+  --cast-alpha: 1;        /* a cast's parentheses and type */
+}

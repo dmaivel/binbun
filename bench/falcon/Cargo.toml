@@ -1,0 +1,17 @@
+# A separate workspace: Falcon builds Capstone 4, which must not be linked
+# next to the Capstone 5 of the decoder benchmark.
+[workspace]
+
+[package]
+name = "falcon-functions"
+description = "Falcon's recursive function recovery, as an adapter for the binbun CFG benchmark."
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+falcon = "0.6"
+
+[profile.release]
+debug = false

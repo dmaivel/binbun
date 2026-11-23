@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page.title }}{% endblock title %}
+
+{% block main %}
+{#- The latest release's (latest.json, scripts/site/release-files.sh), else
+    zola.toml's until one is published. #}
+{%- set latest = load_data(path="static/latest.json", required=false) %}
+{%- if latest %}
+  {%- set version = latest.version %}
+  {%- set released = latest.date | date(format="%B %Y") %}
+{%- else %}
+  {%- set version = config.extra.version %}
+  {%- set released = config.extra.released %}
+{%- endif %}
+{%- set assets = config.extra.repository ~ "/releases/download/v" ~ version ~ "/binbun-" ~ version ~ "-" %}
+  <section class="band"><div class="frame dl">
+    <div>
+      <div class="icon"><img src="{{ get_url(path='assets/binbun-icon.svg') }}" alt=""></div>
+      <h1>binbun {{ version }}</h1>
+      <div class="ver"><span>{{ config.extra.status }} &middot; {{ released }}</span><a href="{{ config.extra.repository }}/releases/tag/v{{ version }}">View changelog &rarr;</a></div>
+
+      <div class="platform" id="macos">
+        <h3><span>macOS</span><span class="arch"><select aria-label="Mac processor" data-for="macos-file">
+          <option value="{{ assets }}aarch64-apple-darwin.dmg" data-arch="arm64">Apple Silicon</option>
+          <option value="{{ assets }}x86_64-apple-darwin.dmg" data-arch="x64">Intel</option>
+        </select></span></h3>
+        <a href="{{ assets }}aarch64-apple-darwin.dmg" class="button" id="macos-file">Download .dmg</a>
+        <div class="note">Not yet signed: open it once from System Settings &rarr; Privacy &amp; Security.</div>
+      </div>
+      <div class="platform" id="windows">
+        <h3><span>Windows</span><span class="arch"><select aria-label="Windows processor" data-for="windows-file">
+          <option value="{{ assets }}x86_64-pc-windows-msvc.zip" data-arch="x64">x64</option>
+          <option value="{{ assets }}aarch64-pc-windows-msvc.zip" data-arch="arm64">Arm64</option>
+        </select></span></h3>
+        <a href="{{ assets }}x86_64-pc-windows-msvc.zip" class="button" id="windows-file">Download .zip</a>
+        <div class="note">Unzip anywhere: <code>binbun.exe</code> is the app, <code>bin\binbun.exe</code> the command (add <code>bin</code> to PATH).</div>
+        <div class="note">Not yet signed: SmartScreen asks once (More info &rarr; Run anyway).</div>
+      </div>
+      <div class="platform" id="linux">
+        <h3><span>Linux and macOS, from a terminal</span></h3>
+        <span class="copy"><span><span class="prompt">$</span> <span id="install">curl -fsSL https://binbun.org/install.sh | sh</span></span><button type="button" class="kbd" data-copy="install">copy</button></span>
+        <div class="note">The script is <a href="{{ get_url(path='install.sh') }}">open to read</a>, and checks every download against the release's checksums.</div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card2">
+        <h3>As libraries</h3>
+        <p>Python, with the whole engine:</p>
+        <span class="copy" style="width:100%"><span><span class="prompt">$</span> pip install binbun</span></span>
+        <p style="margin-top:16px">Rust, the engine: load, analyse and decompile a binary. <code>binbun-session</code> adds what the app and Python use on top: background analysis, projects and undoable edits.</p>
+        <span class="copy" style="width:100%;flex-direction:column;align-items:flex-start;gap:2px"><span><span class="prompt">$</span> cargo add binbun</span><span><span class="prompt">$</span> cargo add binbun-session</span></span>
+        <p style="margin-top:16px">Rust, the decoders on their own: <code>binbun-disasm</code> for both architectures, one API, or one architecture's crate with all its detail:</p>
+        <span class="copy" style="width:100%;flex-direction:column;align-items:flex-start;gap:2px"><span><span class="prompt">$</span> cargo add binbun-disasm</span><span><span class="prompt">$</span> cargo add binbun-x86</span><span><span class="prompt">$</span> cargo add binbun-aarch64</span></span>
+        <p style="margin-top:16px">C and C++: <code>libbinbun</code> with its headers, in every release.</p>
+      </div>
+      <div class="card2">
+        <h3>Support binbun</h3>
+        <p>binbun is open source and sponsor-funded. If it saves you time, consider sponsoring its development.</p>
+        <a href="{{ config.extra.sponsor }}" class="button" style="width:100%">{% include "partials/heart.html" %}Sponsor on GitHub</a>
+      </div>
+    </div>
+  </div></section>
+{% endblock main %}
+
+{% block scripts %}
+{% include "partials/download-scripts.html" %}
+<script>
+// The processor menus pick which file the button below them downloads.
+document.querySelectorAll("select[data-for]").forEach(function (select) {
+  var button = document.getElementById(select.dataset.for);
+  select.addEventListener("change", function () { button.href = select.value; });
+  button.href = select.value;
+});
+// The visitor's platform comes first, its processor chosen.
+binbunPlatform(function (os, arch) {
+  var platform = document.getElementById(os);
+  if (!platform || !platform.classList.contains("platform")) return;
+  var option = platform.querySelector("option[data-arch='" + arch + "']");
+  if (option) {
+    option.selected = true;
+    option.parentNode.dispatchEvent(new Event("change"));
+  }
+  platform.classList.add("yours");
+  platform.parentNode.insertBefore(platform, platform.parentNode.querySelector(".platform"));
+});
+</script>
+{% endblock scripts %}

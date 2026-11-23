@@ -1,0 +1,20 @@
+[package]
+name = "binbun-print"
+description = "Prints binbun's decompiled functions as source code: C, with its binbun_defs.h header."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["decompiler", "c", "pretty-printer"]
+categories = ["development-tools::debugging", "no-std"]
+
+[dependencies]
+binbun-ast.workspace = true
+binbun-semantics.workspace = true
+binbun-ssa.workspace = true
+
+[lints]
+workspace = true

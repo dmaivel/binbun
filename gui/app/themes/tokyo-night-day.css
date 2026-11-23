@@ -1,0 +1,211 @@
+/* Tokyo Night Day, folke's light Tokyo Night, with enkia's VS Code
+ * mapping.
+ *
+ * Sources:
+ *   https://github.com/folke/tokyonight.nvim, tag v4.14.1,
+ *   commit 545d72cde6400835d895160ecb5853874fd5156d.
+ *   lua/tokyonight/colors/storm.lua
+ *     sha256 a96775b3b2bae3da751322806f7daaf2f8c9242cf4b52493732c62dc45c8894c
+ *   lua/tokyonight/colors/night.lua
+ *     sha256 a8d87bf7aeb44617de4168d26fd9c1167bf3e7278acb0e155855caf6267b9c2d
+ *   lua/tokyonight/colors/day.lua
+ *     sha256 dd4314852645c9f0b41d11412b3ae379856e5034aa4c0429ebbfb5fd05007a4d
+ *   lua/tokyonight/colors/init.lua
+ *     sha256 1b47ec0b2ff532c4d1e653bddb3e95c106586522e392c03e05e13bb5c597c619
+ *   lua/tokyonight/util.lua
+ *     sha256 91dfe20eda938f2c278907d1963edbdf19f62063a75ea61d1ab1e8f1a2ad63f2
+ *   lua/tokyonight/hsluv.lua
+ *     sha256 e1e40c2c9750f3fba7188fe850f14b95ae30490bff4d55e2f0a082fa268dd911
+ *   extras/lua/tokyonight_night.lua
+ *     sha256 610a038855daf907ee7d769ee6c5cef9a5d74582e02dd5fe5778204a63a73926
+ *   extras/lua/tokyonight_day.lua
+ *     sha256 6006a5e475a1c6ee32fcc17c5cc693b2b7031c337cca7348fd86d94ce272f910
+ *   https://github.com/tokyo-night/tokyo-night-vscode-theme
+ *   (formerly enkia/tokyo-night-vscode-theme), version 1.1.2 (package.json
+ *   and Marketplace; the repository has no git tags),
+ *   commit 7c0f11eaef322f293621ca7befe462214b7ea468.
+ *   themes/tokyo-night-color-theme.json
+ *     sha256 e08d77c898ead9ed129dc18ff4f841e2353477e69ccd6fa7d0610561c31da4d8
+ * Licence: folke/tokyonight.nvim is Apache-2.0, NOT MIT; its LICENSE
+ *   carries no copyright line (the appendix template is unfilled); the
+ *   author is Folke Lemaitre. enkia's theme: MIT, Copyright (c)
+ *   2018-present Enkia. No MIT-licensed VS Code port of Day was found
+ *   (VS Code Marketplace and Open VSX searched).
+ *
+ * How it is made: there is no VS Code theme JSON for Day. folke makes Day
+ * from his Night palette (colors/day.lua): every colour goes through
+ * Util.invert (HSLuv lightness inverted, darks lifted by day_brightness
+ * 0.3), then the surfaces bg_dark and bg_dark1 are recomputed as blends of
+ * bg toward fg. This file applies the mapping of enkia's Tokyo Night (the
+ * Night variant) to that palette, role by role:
+ * - a role whose enkia Night colour is one of folke's Night slots takes
+ *   that slot's Day value (extras/lua/tokyonight_day.lua), alpha kept;
+ * - a surface enkia sets between two of folke's Night surface slots
+ *   (bg_dark1, bg_dark, bg, bg_highlight) sits at the same position
+ *   (least-squares fit, whole percent) between their Day values, as a
+ *   color-mix: the borders, hover, selected row and active line;
+ * - any other colour (the UI foregrounds, line numbers, scrollbar,
+ *   selection, comment, inlay hint, tag punctuation) is enkia's Night
+ *   colour through folke's own Util.invert, alpha kept.
+ * The palette variables are folke's Day slots under his names. Choices are
+ * otherwise those of tokyo-night.css: --type is support.type (C's size_t,
+ * ...; `int` is the keyword-control purple), --error is
+ * editorError.foreground (errorForeground is a grey), --punctuation-special
+ * is punctuation.definition.tag, --label is C's labels in a function body,
+ * --comment-doc has the comment colour, --embedded is editor.foreground.
+ * The branch arrows take editorWarning.foreground, folke's Day yellow.
+ * The finer code roles follow tokyo-night.css too, each through the slot
+ * rule above: --keyword is storage.modifier (folke's `purple`), and
+ * --keyword-control keyword.control (`magenta`, the old --keyword);
+ * --type-builtin is storage.type (`magenta`) while --type keeps
+ * support.type (entity.name.type falls to the plain foreground);
+ * --global is variable.other.global (`yellow`); --field is
+ * variable.other.property (`cyan`, VS Code's scope for the `property`
+ * semantic token); --macro is var(--function) (C's
+ * entity.name.function.preprocessor resolves to entity.name.function);
+ * --operator is keyword.operator (`blue5`, the punctuation colour).
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments, link
+ * tints, the lit area, agreed) follow binbun's rule: mnemonics take the
+ * text (embedded) colour, registers the type colour; addresses by what the
+ * line is (functions the comment colour, code the parameter colour, data
+ * the doc-comment colour, unexplored bytes the constant colour); code
+ * xrefs the special punctuation, data xrefs the doc-comment colour; the
+ * link tints are blue, purple (the keyword-control purple, folke's
+ * `magenta`), yellow and green at 19% alpha; the lit area is the panel
+ * colour at half alpha, its edge the focus border; agreed the success
+ * colour.
+ * The listing's branch arrows (--arrow-1..8) take eight distinct palette
+ * accents round the hue wheel so neighbouring lanes differ: blue, orange,
+ * purple (folke's `magenta`), green, red, cyan, yellow, and pink (folke's
+ * `magenta2`); each is at least 3:1 against the editor (lowest 3.01:1)
+ * and at least 20 CIE76 delta-E from its neighbours, 8 wrapping to 1
+ * (lowest 61.8).
+ * Listing mnemonics: jumps take --keyword-control, calls --function,
+ * returns --keyword-control (keyword.control.return has no colour of its
+ * own), nops and padding the dimmest palette foreground reaching 3:1.
+ * --auto-name-alpha (0.7) and --cast-alpha (0.6) are binbun's fixed
+ * alphas for automatic names and casts.
+ * Deviation: the muted text #9397b0 (2.23:1) and the comment #8c93b7
+ * (2.33:1) are under 3:1, so --mnemonic-nop takes #727ca8 (--hint, 3.14:1).
+ *
+ * Deviation: #8c93b7 is 2.33:1 against the editor, so --address-function,
+ * --address-data, --data-xref take #727ca8 (the inlay-hint colour, --hint,
+ * 3.14:1), the nearest palette colour of that hue reaching 3:1.
+ */
+
+:root {
+  --name: "Tokyo Night Day";
+  --appearance: light;
+
+  /* folke's Day slots (extras/lua/tokyonight_day.lua). */
+  --bg: #e1e2e7;
+  --bg-dark: #d0d5e3;
+  --bg-dark1: #c1c9df;
+  --bg-highlight: #c4c8da;
+  --blue: #2e7de9;
+  --blue2: #07879d;
+  --blue5: #006a83;
+  --cyan: #007197;
+  --fg: #3760bf;
+  --fg-dark: #6172b0;
+  --green: #587539;
+  --green1: #387068;
+  --magenta: #9854f1;
+  --magenta2: #d20065;
+  --orange: #b15c00;
+  --purple: #7847bd;
+  --red: #f52a65;
+  --red1: #c64343;
+  --yellow: #8c6c3e;
+  --git-add: #4197a4;
+  --git-change: #506d9c;
+}
+
+:root {
+  /* Surfaces. */
+  --background: var(--bg-dark);
+  --gap: var(--bg-dark);
+  --tab-bar: var(--bg-dark);
+  --panel: var(--bg-dark);
+  --editor: var(--bg);
+  --border: color-mix(in srgb, var(--bg-dark) 21%, var(--bg-dark1));
+  --border-variant: color-mix(in srgb, var(--bg-dark) 21%, var(--bg-dark1));
+  --border-focused: #8990b333;
+  --element-hover: color-mix(in srgb, var(--bg-dark) 64%, var(--bg-dark1));
+  --element-selected: color-mix(in srgb, var(--bg-highlight) 38%, var(--bg));
+  --scrollbar-thumb: #5159a315;
+  --scrollbar-track-border: color-mix(in srgb, var(--bg-dark) 21%, var(--bg-dark1));
+
+  /* Text. */
+  --text: #6a6f8e;
+  --text-muted: #9397b0;
+  --text-placeholder: #6a6f8e8a;
+  --accent: var(--git-change);
+  --editor-foreground: var(--fg-dark);
+  --line-number: #b3b6cd;
+  --active-line-number: #6a6f8e;
+  --error: var(--red1);
+  --success: var(--git-add);
+
+  /* Highlights. */
+  --active-line: color-mix(in srgb, var(--bg-highlight) 28%, var(--bg));
+  --selection: #8591b84d;
+  --search-match: #7890dd66;
+  --active-match: #7890dd66;
+  --arrow: var(--yellow);
+
+  /* Code. */
+  --keyword: var(--purple);
+  --type: var(--blue2);
+  --function: var(--blue);
+  --parameter: var(--yellow);
+  --string: var(--green);
+  --number: var(--orange);
+  --constant: var(--orange);
+  --comment: #8c93b7;
+  --comment-doc: #8c93b7;
+  --hint: #727ca8;
+  --punctuation: var(--blue5);
+  --punctuation-special: #d345ac;
+  --embedded: var(--fg-dark);
+  --variable: var(--fg);
+  --label: var(--green1);
+  --keyword-control: var(--magenta);
+  --type-builtin: var(--magenta);
+  --global: var(--yellow);
+  --field: var(--cyan);
+  --macro: var(--function);
+  --operator: var(--blue5);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: var(--hint);
+  --register: var(--type);
+  --address-function: var(--hint);
+  --address-code: var(--parameter);
+  --address-data: var(--hint);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--hint);
+  --tint-1: color-mix(in srgb, var(--blue) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--magenta) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--yellow) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--green) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--blue);
+  --arrow-2: var(--orange);
+  --arrow-3: var(--magenta);
+  --arrow-4: var(--green);
+  --arrow-5: var(--red);
+  --arrow-6: var(--cyan);
+  --arrow-7: var(--yellow);
+  --arrow-8: var(--magenta2);
+  --auto-name-alpha: 1;   /* automatic names (v17, sub_a9090, field_38) */
+  --cast-alpha: 1;        /* a cast's parentheses and type */
+}

@@ -1,0 +1,392 @@
+// Mem[] (every data access but the atomics'): isla's memory at the virtual
+// address, after the alignment check of Arm's Mem[] (a pair is aligned to
+// half its size; AArch64.UnalignedAccessFaults decides, which under
+// SCTLR_EL1.A = 0 and FEAT_LSE2 faults only exclusive, atomic and
+// acquire/release accesses that cross an aligned 16-byte block).
+fn zMem_read__2(zaddress, zsizze, zaccdesc, zispair, zhighestAddressfirst) {
+  zbinbun_bytes : %i;
+  zbinbun_bytes = zz5i64zDzKz5i(zsizze);
+  zbinbun_unit : %i;
+  zbinbun_unit = zbinbun_bytes;
+  jump zispair goto 6;
+  goto 9;
+  zbinbun_two : %i;
+  zbinbun_two = zz5i64zDzKz5i(2);
+  zbinbun_unit = zediv_nat(zbinbun_bytes, zbinbun_two);
+  zbinbun_vaddress : %bv;
+  zbinbun_vaddress = zaddress;
+  zbinbun_aligned : %bool;
+  zbinbun_aligned = zIsAligned__1(zbinbun_vaddress, zbinbun_unit);
+  jump zbinbun_aligned goto 24;
+  zbinbun_faults : %bool;
+  zbinbun_faults = zAArch64_UnalignedAccessFaults(zaccdesc, zaddress, zbinbun_bytes);
+  jump zbinbun_faults goto 18;
+  goto 24;
+  zbinbun_fault : %struct zFaultRecord;
+  zbinbun_fault = zAlignmentFault(zaccdesc);
+  zbinbun_aborted : %unit;
+  zbinbun_aborted = zAArch64_Abort(zaddress, zbinbun_fault);
+  jump have_exception goto 32;
+  goto 24;
+  zbinbun_sixty_four : %i;
+  zbinbun_sixty_four = zz5i64zDzKz5i(64);
+  zbinbun_width : %i64;
+  zbinbun_width = zz5izDzKz5i64(zbinbun_sixty_four);
+  zbinbun_address : %bv;
+  zbinbun_address = zaddress;
+  return = zread_memz3zIRMem_read_requestzIUarm_acc_typezIzKzCbzCOzIRTranslationInfozKzKzK(zaccdesc, zbinbun_width, zbinbun_address, zbinbun_bytes);
+  end;
+  arbitrary;
+}
+
+fn zMem_set__2(zaddress, zsizze, zaccdesc, zispair, zhighestAddressfirst, zvalue_in_name) {
+  zbinbun_unit : %i;
+  zbinbun_unit = zsizze;
+  jump zispair goto 4;
+  goto 7;
+  zbinbun_two : %i;
+  zbinbun_two = zz5i64zDzKz5i(2);
+  zbinbun_unit = zediv_nat(zsizze, zbinbun_two);
+  zbinbun_vaddress : %bv;
+  zbinbun_vaddress = zaddress;
+  zbinbun_aligned : %bool;
+  zbinbun_aligned = zIsAligned__1(zbinbun_vaddress, zbinbun_unit);
+  jump zbinbun_aligned goto 22;
+  zbinbun_faults : %bool;
+  zbinbun_faults = zAArch64_UnalignedAccessFaults(zaccdesc, zaddress, zsizze);
+  jump zbinbun_faults goto 16;
+  goto 22;
+  zbinbun_fault : %struct zFaultRecord;
+  zbinbun_fault = zAlignmentFault(zaccdesc);
+  zbinbun_aborted : %unit;
+  zbinbun_aborted = zAArch64_Abort(zaddress, zbinbun_fault);
+  jump have_exception goto 32;
+  goto 22;
+  zbinbun_sixty_four : %i;
+  zbinbun_sixty_four = zz5i64zDzKz5i(64);
+  zbinbun_width : %i64;
+  zbinbun_width = zz5izDzKz5i64(zbinbun_sixty_four);
+  zbinbun_address : %bv;
+  zbinbun_address = zaddress;
+  zbinbun_written : %bool;
+  zbinbun_written = zwrite_memz3zIRMem_write_requestzIUarm_acc_typezIzKzCbzCOzIRTranslationInfozKzKzK(zaccdesc, zbinbun_width, zbinbun_address, zsizze, zvalue_in_name);
+  return = ();
+  end;
+  arbitrary;
+}
+
+// CONSTRAINED UNPREDICTABLE choices binbun makes (all deterministic; every
+// other case stays the model's unknown choice):
+// - WBOVERLAPST, a store with writeback whose base is a data register
+//   (`str x1, [x1], #8`): Constraint_NONE, the register's original value
+//   is stored (L0 reads operands before writing any).
+// - WBOVERLAPLD, a load with writeback into its base (`ldrsw x1, [x1], #4`,
+//   decoded for the 64-bit sign-extending loads): Constraint_WBSUPPRESS,
+//   the base holds the loaded value (the runtime drops the writeback).
+// - DATAOVERLAP, a store exclusive whose status register is a data
+//   register (`stxr w1, x1, [x2]`): Constraint_NONE, the original value is
+//   stored, as qemu does.
+// - BASEOVERLAP, a store exclusive whose status register is the base
+//   (`stxr w2, x1, [x2]`): Constraint_NONE, the original address is used,
+//   as qemu does.
+fn zConstrainUnpredictable(zwhich) {
+  zbinbun_choice : %enum zConstraint;
+  jump @neq(zUnpredictable_WBOVERLAPST, zwhich) goto 4;
+  zbinbun_choice = zConstraint_NONE;
+  goto 14;
+  jump @neq(zUnpredictable_WBOVERLAPLD, zwhich) goto 7;
+  zbinbun_choice = zConstraint_WBSUPPRESS;
+  goto 14;
+  jump @neq(zUnpredictable_DATAOVERLAP, zwhich) goto 10;
+  zbinbun_choice = zConstraint_NONE;
+  goto 14;
+  jump @neq(zUnpredictable_BASEOVERLAP, zwhich) goto 13;
+  zbinbun_choice = zConstraint_NONE;
+  goto 14;
+  zbinbun_choice = z__UNKNOWN_Constraint(());
+  return = zbinbun_choice;
+  end;
+}
+
+fn zisla_footprint_common(zopcode) {
+  zz49 : %i;
+  zz49 = zz5i64zDzKz5i(-1);
+  zSEE = zz49;
+  zz410 : %unit;
+  zz410 = ();
+  zDBGEN = zSignal_Low;
+  zz48 : %unit;
+  zz48 = ();
+  zz47 : %unit;
+  zz47 = zisla_reset_registers(());
+  z__ThisInstr = zopcode;
+  zz46 : %unit;
+  zz46 = ();
+  z__ThisInstrEnc = z__A64;
+  zz45 : %unit;
+  zz45 = ();
+  zz44 : %unit;
+  zz44 = zcheck_cycle_count(());
+  zz40 : %bool;
+  zz41 : %i;
+  zz43 : %bv;
+  zz43 = z_PC;
+  zz41 = zUInt0(zz43);
+  zz42 : %unit;
+  zz42 = z__DecodeA64(zz41, zopcode);
+  jump have_exception goto 27;
+  goto 28;
+  goto 29;
+  zz40 = true;
+  jump @not(have_exception) goto 48;
+  zbinbun_exception : %union zexception;
+  zbinbun_exception = current_exception;
+  zbinbun_see : %bool;
+  zbinbun_see = zIsSEE(zbinbun_exception);
+  jump @not(zbinbun_see) goto 39;
+  have_exception = false;
+  zz42 = z__DecodeA64(zz41, zopcode);
+  zz40 = true;
+  jump @not(have_exception) goto 48;
+  zbinbun_exception = current_exception;
+  zbinbun_undefined : %bool;
+  zbinbun_undefined = zIsUNDEFINED(zbinbun_exception);
+  jump @not(zbinbun_undefined) goto 46;
+  have_exception = false;
+  zbinbun_fault : %unit;
+  zbinbun_fault = zAArch64_UndefinedFault(());
+  have_exception = false;
+  zz40 = false;
+  return = zz40;
+  end;
+}
+
+abstract zbinbun_compute_pac = "binbun_compute_pac" : (%bv64, %bv64, %bv3) -> %bv64
+
+fn zComputePAC(zdata, zmodifier, zkey0, zkey1, zisgeneric) {
+  zbinbun_key_bits : %bv;
+  zbinbun_key_bits = zkey1;
+  zbinbun_low : %i;
+  zbinbun_low = zz5i64zDzKz5i(0);
+  zbinbun_length : %i;
+  zbinbun_length = zz5i64zDzKz5i(3);
+  zbinbun_slice : %bv;
+  zbinbun_slice = zslice(zbinbun_key_bits, zbinbun_low, zbinbun_length);
+  zbinbun_key : %bv3;
+  zbinbun_key = zbinbun_slice;
+  return = zbinbun_compute_pac(zdata, zmodifier, zbinbun_key);
+  end;
+}
+
+// MemAtomic (LD<op>, SWP, CAS, CASP): the alignment check of Arm's
+// MemAtomic, then the read-modify-write on isla's memory at the virtual
+// address, as Mem[] above (no translation, tag checks or monitor
+// bookkeeping); CAS writes only if the comparison holds. GCS and the
+// floating-point operations are not reached (GCS is off; no FP atomics in
+// this context's encodings).
+fn zMemAtomic(zaddress, zcmpoperand, zoperand, zaccdesc_in) {
+  zbinbun_length : %i;
+  zbinbun_length = zbitvector_length(zoperand);
+  zbinbun_eight : %i;
+  zbinbun_eight = zz5i64zDzKz5i(8);
+  zbinbun_bytes : %i;
+  zbinbun_bytes = zediv_nat(zbinbun_length, zbinbun_eight);
+  zbinbun_vaddress : %bv;
+  zbinbun_vaddress = zaddress;
+  zbinbun_aligned : %bool;
+  zbinbun_aligned = zIsAligned__1(zbinbun_vaddress, zbinbun_bytes);
+  jump zbinbun_aligned goto 21;
+  zbinbun_faults : %bool;
+  zbinbun_faults = zAArch64_UnalignedAccessFaults(zaccdesc_in, zaddress, zbinbun_bytes);
+  jump zbinbun_faults goto 15;
+  goto 21;
+  zbinbun_fault : %struct zFaultRecord;
+  zbinbun_fault = zAlignmentFault(zaccdesc_in);
+  zbinbun_aborted : %unit;
+  zbinbun_aborted = zAArch64_Abort(zaddress, zbinbun_fault);
+  jump have_exception goto 87;
+  goto 21;
+  zbinbun_sixty_four : %i;
+  zbinbun_sixty_four = zz5i64zDzKz5i(64);
+  zbinbun_width : %i64;
+  zbinbun_width = zz5izDzKz5i64(zbinbun_sixty_four);
+  zbinbun_address : %bv;
+  zbinbun_address = zaddress;
+  zbinbun_old : %bv;
+  zbinbun_old = zread_memz3zIRMem_read_requestzIUarm_acc_typezIzKzCbzCOzIRTranslationInfozKzKzK(zaccdesc_in, zbinbun_width, zbinbun_address, zbinbun_bytes);
+  zbinbun_new : %bv;
+  zbinbun_new = zoperand;
+  zbinbun_store : %bool;
+  zbinbun_store = true;
+  zbinbun_modop : %enum zMemAtomicOp;
+  zbinbun_modop = zaccdesc_in.zmodop;
+  jump @neq(zMemAtomicOp_ADD, zbinbun_modop) goto 38;
+  zbinbun_new = zadd_bits(zbinbun_old, zoperand);
+  goto 81;
+  jump @neq(zMemAtomicOp_BIC, zbinbun_modop) goto 43;
+  zbinbun_inverted : %bv;
+  zbinbun_inverted = znot_vec(zoperand);
+  zbinbun_new = zand_vec(zbinbun_old, zbinbun_inverted);
+  goto 81;
+  jump @neq(zMemAtomicOp_EOR, zbinbun_modop) goto 46;
+  zbinbun_new = zxor_vec(zbinbun_old, zoperand);
+  goto 81;
+  jump @neq(zMemAtomicOp_ORR, zbinbun_modop) goto 49;
+  zbinbun_new = zor_vec(zbinbun_old, zoperand);
+  goto 81;
+  jump @neq(zMemAtomicOp_CAS, zbinbun_modop) goto 52;
+  zbinbun_store = zeq_bits(zcmpoperand, zbinbun_old);
+  goto 81;
+  jump @neq(zMemAtomicOp_SWP, zbinbun_modop) goto 54;
+  goto 81;
+  zbinbun_old_signed : %i;
+  zbinbun_old_signed = zSInt0(zbinbun_old);
+  zbinbun_operand_signed : %i;
+  zbinbun_operand_signed = zSInt0(zoperand);
+  zbinbun_old_unsigned : %i;
+  zbinbun_old_unsigned = zUInt0(zbinbun_old);
+  zbinbun_operand_unsigned : %i;
+  zbinbun_operand_unsigned = zUInt0(zoperand);
+  zbinbun_less : %bool;
+  jump @neq(zMemAtomicOp_SMAX, zbinbun_modop) goto 68;
+  zbinbun_less = zlt_int(zbinbun_old_signed, zbinbun_operand_signed);
+  jump zbinbun_less goto 81;
+  zbinbun_new = zbinbun_old;
+  goto 81;
+  jump @neq(zMemAtomicOp_SMIN, zbinbun_modop) goto 73;
+  zbinbun_less = zlt_int(zbinbun_operand_signed, zbinbun_old_signed);
+  jump zbinbun_less goto 81;
+  zbinbun_new = zbinbun_old;
+  goto 81;
+  jump @neq(zMemAtomicOp_UMAX, zbinbun_modop) goto 78;
+  zbinbun_less = zlt_int(zbinbun_old_unsigned, zbinbun_operand_unsigned);
+  jump zbinbun_less goto 81;
+  zbinbun_new = zbinbun_old;
+  goto 81;
+  zbinbun_less = zlt_int(zbinbun_operand_unsigned, zbinbun_old_unsigned);
+  jump zbinbun_less goto 81;
+  zbinbun_new = zbinbun_old;
+  jump zbinbun_store goto 83;
+  goto 85;
+  zbinbun_written : %bool;
+  zbinbun_written = zwrite_memz3zIRMem_write_requestzIUarm_acc_typezIzKzCbzCOzIRTranslationInfozKzKzK(zaccdesc_in, zbinbun_width, zbinbun_address, zbinbun_bytes, zbinbun_new);
+  return = zbinbun_old;
+  end;
+  arbitrary;
+}
+
+// AArch64.SetExclusiveMonitors (LDXR, LDAXR, LDXP, LDAXP): its alignment
+// check, then the monitor marked, without the translation (the load that
+// follows reads isla's memory as Mem[] above).
+fn zAArch64_SetExclusiveMonitors(zaddress, zsizze) {
+  z__ExclusiveMonitorSet = true;
+  zbinbun_acquire : %bool;
+  zbinbun_acquire = false;
+  zbinbun_tagchecked : %bool;
+  zbinbun_tagchecked = false;
+  zbinbun_accdesc : %struct zAccessDescriptor;
+  zbinbun_accdesc = zCreateAccDescExLDST(zMemOp_LOAD, zbinbun_acquire, zbinbun_tagchecked);
+  zbinbun_vaddress : %bv;
+  zbinbun_vaddress = zaddress;
+  zbinbun_aligned : %bool;
+  zbinbun_aligned = zIsAligned__1(zbinbun_vaddress, zsizze);
+  jump zbinbun_aligned goto 22;
+  zbinbun_faults : %bool;
+  zbinbun_faults = zAArch64_UnalignedAccessFaults(zbinbun_accdesc, zaddress, zsizze);
+  jump zbinbun_faults goto 16;
+  goto 22;
+  zbinbun_fault : %struct zFaultRecord;
+  zbinbun_fault = zAlignmentFault(zbinbun_accdesc);
+  zbinbun_aborted : %unit;
+  zbinbun_aborted = zAArch64_Abort(zaddress, zbinbun_fault);
+  jump have_exception goto 24;
+  goto 22;
+  return = ();
+  end;
+  arbitrary;
+}
+
+// AArch64.ExclusiveMonitorsPass (STXR, STLXR, STXP, STLXP): its alignment
+// check, which Arm makes before the monitors, then the monitors' verdict as
+// binbun's `exclusive_store` (1: they fail), tied to binbun's intrinsic.
+// Neither the translation (a failing store exclusive takes no translation
+// or permission fault: the IMPLEMENTATION DEFINED order binbun picks, as
+// Arm's pseudocode has it; the store that follows writes isla's memory as
+// Mem[] above) nor the monitors' bookkeeping.
+abstract zbinbun_exclusive_store = "binbun_exclusive_store" : (%bv64, %bv8) -> %bv1
+
+fn zAArch64_ExclusiveMonitorsPass(zaddress, zsizze) {
+  zbinbun_acquire : %bool;
+  zbinbun_acquire = false;
+  zbinbun_tagchecked : %bool;
+  zbinbun_tagchecked = false;
+  zbinbun_accdesc : %struct zAccessDescriptor;
+  zbinbun_accdesc = zCreateAccDescExLDST(zMemOp_STORE, zbinbun_acquire, zbinbun_tagchecked);
+  zbinbun_vaddress : %bv;
+  zbinbun_vaddress = zaddress;
+  zbinbun_aligned : %bool;
+  zbinbun_aligned = zIsAligned__1(zbinbun_vaddress, zsizze);
+  jump zbinbun_aligned goto 21;
+  zbinbun_faults : %bool;
+  zbinbun_faults = zAArch64_UnalignedAccessFaults(zbinbun_accdesc, zaddress, zsizze);
+  jump zbinbun_faults goto 15;
+  goto 21;
+  zbinbun_fault : %struct zFaultRecord;
+  zbinbun_fault = zAlignmentFault(zbinbun_accdesc);
+  zbinbun_aborted : %unit;
+  zbinbun_aborted = zAArch64_Abort(zaddress, zbinbun_fault);
+  jump have_exception goto 35;
+  goto 21;
+  zbinbun_eight : %i;
+  zbinbun_eight = zz5i64zDzKz5i(8);
+  zbinbun_zero : %i;
+  zbinbun_zero = zz5i64zDzKz5i(0);
+  zbinbun_size_bits : %bv;
+  zbinbun_size_bits = zget_slice_int(zbinbun_eight, zsizze, zbinbun_zero);
+  zbinbun_bytes : %bv8;
+  zbinbun_bytes = zbinbun_size_bits;
+  zbinbun_failed : %bv1;
+  zbinbun_failed = zbinbun_exclusive_store(zaddress, zbinbun_bytes);
+  zbinbun_passed : %bool;
+  zbinbun_passed = @eq(zbinbun_failed, 0b0);
+  return = zbinbun_passed;
+  end;
+  arbitrary;
+}
+
+// AArch64.DC and AArch64.IC (by address): cache maintenance at EL0 (DC
+// CVAC, CVAU, CVAP, CVADP, CIVAC; IC IVAU) changes only caches, which
+// isla's flat memory does not have; the address translation they do (and
+// its fault) is the memory system's, as for Mem[] above, so nothing is
+// left.
+fn zAArch64_DC(zregval, zcachetype, zcacheop, zopscope_in) {
+  return = ();
+  end;
+}
+
+fn zAArch64_IC__1(zregval, zopscope) {
+  return = ();
+  end;
+}
+
+// AArch64.DataMemZero (DC ZVA): the aligned block's bytes zeroed in
+// isla's memory at the virtual address, as Mem[] above (no translation,
+// tag checks or transactional memory), in one write.
+fn zAArch64_DataMemZero(zregval, zvaddress, zaccdesc_in, zsizze) {
+  zbinbun_eight : %i;
+  zbinbun_eight = zz5i64zDzKz5i(8);
+  zbinbun_bits : %i;
+  zbinbun_bits = zmult_atom(zsizze, zbinbun_eight);
+  zbinbun_zeros : %bv;
+  zbinbun_zeros = zZeros(zbinbun_bits);
+  zbinbun_sixty_four : %i;
+  zbinbun_sixty_four = zz5i64zDzKz5i(64);
+  zbinbun_width : %i64;
+  zbinbun_width = zz5izDzKz5i64(zbinbun_sixty_four);
+  zbinbun_address : %bv;
+  zbinbun_address = zvaddress;
+  zbinbun_written : %bool;
+  zbinbun_written = zwrite_memz3zIRMem_write_requestzIUarm_acc_typezIzKzCbzCOzIRTranslationInfozKzKzK(zaccdesc_in, zbinbun_width, zbinbun_address, zsizze, zbinbun_zeros);
+  return = ();
+  end;
+}

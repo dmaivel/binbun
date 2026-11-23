@@ -1,0 +1,14 @@
+{%- set docs = get_section(path="docs/_index.md") %}
+<aside class="sidebar"><nav aria-label="Docs">
+  <a href="{{ docs.permalink }}"{% if current_path == docs.path %} class="on"{% endif %}>Overview</a>
+  {%- for p in docs.pages %}
+  <a href="{{ p.permalink }}"{% if current_path == p.path %} class="on"{% endif %}>{{ p.title }}</a>
+  {%- endfor %}
+  {%- for path in docs.subsections %}
+  {%- set sub = get_section(path=path) %}
+  <h5><a href="{{ sub.permalink }}"{% if current_path == sub.path %} class="on"{% endif %}>{{ sub.title }}</a></h5>
+  {%- for p in sub.pages %}
+  <a href="{{ p.permalink }}"{% if current_path == p.path %} class="on"{% endif %}>{{ p.title }}</a>
+  {%- endfor %}
+  {%- endfor %}
+</nav></aside>

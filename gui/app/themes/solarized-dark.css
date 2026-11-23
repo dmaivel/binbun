@@ -1,0 +1,177 @@
+/* Solarized Dark, as VS Code bundles it.
+ *
+ * Source: https://github.com/microsoft/vscode at tag 1.112.0,
+ *   commit 07ff9d6178ede9a1bd12ad3399074d726ebe6e43.
+ *   extensions/theme-solarized-dark/themes/solarized-dark-color-theme.json
+ *     sha256 d0d54af2fd3fc4a5b01b41f6b99633a398b007f924d4120de710fc88e0334183
+ * Licence: MIT, Copyright (c) 2015 - present Microsoft Corporation.
+ * Palette: Solarized, https://github.com/altercation/solarized, MIT,
+ *   Copyright (c) 2011 Ethan Schoonover.
+ *
+ * Mapping: the UI roles are the theme's workbench colours, the code roles
+ * its tokenColors (C scopes first). Where the theme sets neither a key
+ * nor its listed alternative, the value is VS Code's own registry default
+ * for that key at 1.112.0, which is what VS Code shows with this theme:
+ * the text (foreground #CCCCCC, descriptionForeground the same at 70%),
+ * the subtler hairlines (editorWidget.border #454545), line numbers
+ * (#858585), the scrollbar slider (#797979 at 40%) and find matches
+ * (#515C6A, others #EA5C0055). The accent is button.background (no link
+ * colour). The theme's error foreground is its own pale #ffeaea. The gap
+ * is the darkest surface (side bar and status bar, #00212B); hairlines
+ * are the panel border (editorGroup.border equals the side bar). Code
+ * scopes resolve as VS Code resolves them (a scope with no rule of its
+ * own takes its parent's colour). Keywords are split: --keyword is
+ * storage.modifier, which the theme's storage rule colours base1 (as it
+ * does struct, union and enum), --keyword-control keyword.control, the
+ * green (keyword.control.return has no colour of its own). Types are
+ * split too: --type is entity.name.type (named types, orange),
+ * --type-builtin storage.type (C's int, base1), which was --type before.
+ * Globals and fields have no colour of their own (variable.other.global,
+ * .member and .property resolve to variable.other), so both are
+ * --variable; macros are entity.name.function.preprocessor, which
+ * resolves to the function blue (the theme's meta.preprocessor yellow
+ * colours only the rest of the directive); operators keyword.operator,
+ * which resolves to the keyword green. Constants are constant.language,
+ * special punctuation the embedded-code markers (red), variables
+ * variable.other; parameters and punctuation have no colour of their own
+ * and are the editor foreground; labels have none and take the function
+ * colour; doc comments take descriptionForeground and hints
+ * editorInlayHint's default (#969696). Mnemonic text is the editor
+ * foreground, base0, Solarized's body text.
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments,
+ * link tints, the lit area, agreed) follow binbun's rule: mnemonics
+ * take the text colour, registers the type colour; addresses by what the
+ * line is (functions the comment colour, code the red, data the
+ * doc-comment colour, unexplored bytes the constant yellow); code xrefs
+ * the special punctuation, data xrefs the doc-comment colour; link tints
+ * blue, violet, yellow and green at 19%; the lit area the panel at half
+ * alpha, its edge the focus border; agreed the success green.
+ * Listing mnemonics by kind: jumps take the control keyword colour,
+ * calls the function colour, returns the control keyword colour too
+ * (keyword.control.return has none of its own), and nops and padding
+ * the dimmest muted foreground that reaches 3:1: the comment colour,
+ * base01, is 2.79:1, so base00 (3.37:1; descriptionForeground is
+ * translucent). Automatic names are drawn at 70% alpha, a cast's
+ * parentheses and type at 60%.
+ * The listing's eight branch-arrow lanes are Solarized's eight accents,
+ * opaque, each at least 3:1 against the editor, in hue order round the
+ * wheel (blue, orange, violet, green, red, cyan, yellow, magenta) with
+ * neighbours (and lanes 8 and 1) at least 20 apart in CIE76 Delta E.
+ * Deviation: the comment colour, base01, is 2.79:1 against the editor,
+ * so function addresses take base00, the nearest Solarized grey that
+ * reaches 3:1.
+ */
+
+:root {
+  --name: "Solarized Dark";
+  --appearance: dark;
+
+  /* Solarized's palette (Ethan Schoonover's names). */
+  --base03: #002b36;
+  --base02: #073642;
+  --base01: #586e75;
+  --base00: #657b83;
+  --base0: #839496;
+  --base1: #93a1a1;
+  --base2: #eee8d5;
+  --base3: #fdf6e3;
+  --yellow: #b58900;
+  --orange: #cb4b16;
+  --red: #dc322f;
+  --magenta: #d33682;
+  --violet: #6c71c4;
+  --blue: #268bd2;
+  --cyan: #2aa198;
+  --green: #859900;
+}
+
+:root {
+  /* Surfaces. */
+  --background: #002C39;
+  --gap: #00212B;
+  --tab-bar: #004052;
+  --panel: #00212B;
+  --editor: var(--base03);
+  --border: #2b2b4a;
+  --border-variant: #454545;
+  --border-focused: #2AA19899;
+  --element-hover: #004454AA;
+  --element-selected: #005A6F;
+  --scrollbar-thumb: #79797966;
+  --scrollbar-track-border: var(--border);
+
+  /* Text. */
+  --text: #CCCCCC;
+  --text-muted: #CCCCCCB3;
+  --text-placeholder: #93A1A1AA;
+  --accent: #2AA19899;
+  --editor-foreground: var(--base0);
+  --line-number: #858585;
+  --active-line-number: #949494;
+  --error: #ffeaea;
+  --success: var(--green);
+
+  /* Highlights. */
+  --active-line: var(--base02);
+  --selection: #274642;
+  --search-match: #EA5C0055;
+  --active-match: #515C6A;
+  --arrow: var(--red);
+
+  /* Code. */
+  --keyword: var(--base1);
+  --type: var(--orange);
+  --function: var(--blue);
+  --parameter: var(--base0);
+  --string: var(--cyan);
+  --number: var(--magenta);
+  --constant: var(--yellow);
+  --comment: var(--base01);
+  --comment-doc: #CCCCCCB3;
+  --hint: #969696;
+  --punctuation: var(--base0);
+  --punctuation-special: var(--red);
+  --embedded: var(--base0);
+  --variable: var(--blue);
+  --label: var(--blue);
+  --keyword-control: var(--green);
+  --type-builtin: var(--base1);
+  --global: var(--variable);
+  --field: var(--variable);
+  --macro: var(--function);
+  --operator: var(--green);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: var(--base00);
+  --map-data: var(--base1);
+  --map-import: var(--violet);
+  --register: var(--type);
+  --address-function: var(--base00);
+  --address-code: var(--red);
+  --address-data: var(--comment-doc);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--comment-doc);
+  --tint-1: color-mix(in srgb, var(--blue) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--violet) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--yellow) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--green) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--blue);
+  --arrow-2: var(--orange);
+  --arrow-3: var(--violet);
+  --arrow-4: var(--green);
+  --arrow-5: var(--red);
+  --arrow-6: var(--cyan);
+  --arrow-7: var(--yellow);
+  --arrow-8: var(--magenta);
+  --auto-name-alpha: 1;
+  --cast-alpha: 1;
+}

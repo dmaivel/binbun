@@ -1,0 +1,35 @@
+# iroh-relay's configuration for relay.binbun.org, installed by setup.sh
+# as /etc/iroh-relay/config.toml. The fields are iroh-relay 1.4.1's
+# (`Config` in its src/main.rs). [tls] contact's placeholder is filled
+# from install.sh's RELAY_EMAIL; or write the address there instead.
+
+enable_relay = true
+# Plain HTTP: with TLS on, only the captive-portal probe (/generate_204)
+# that endpoints run is served here.
+http_bind_addr = "[::]:80"
+# QUIC address discovery: tells an endpoint the address and port it is
+# seen from (UDP), for hole punching. Needs [tls].
+enable_quic_addr_discovery = true
+# Prometheus counters (no endpoint ids or addresses), on loopback only:
+# read over SSH (check.sh does).
+enable_metrics = true
+metrics_bind_addr = "127.0.0.1:9090"
+
+[tls]
+# A Let's Encrypt certificate for both names, renewed by the relay itself
+# (TLS-ALPN-01 on 443: no other port, no certbot).
+cert_mode = "LetsEncrypt"
+hostname = ["us-east.relay.binbun.org", "relay.binbun.org"]
+contact = "@RELAY_EMAIL@"
+prod_tls = true
+cert_dir = "/var/lib/iroh-relay/acme"
+https_bind_addr = "[::]:443"
+quic_bind_addr = "[::]:7842"
+
+# What each endpoint may send through the relay: 2 MiB/s, bursts of
+# 8 MiB (a project's log is small; a binary of 50 MB takes ~25 s, and
+# most links go direct after hole punching anyway). iroh-relay 1.4.1 has
+# no limit on new connections (`accept_conn_limit` is parsed, unused).
+[limits.client.rx]
+bytes_per_second = 2097152
+max_burst_bytes = 8388608

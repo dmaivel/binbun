@@ -1,0 +1,25 @@
+# A separate workspace, so the main build never compiles exarmo. Built by
+# scripts/exarmo-oracle.sh.
+[workspace]
+
+[package]
+name = "exarmo-oracle"
+description = "exarmo-aarch64 as a validity oracle for binbun's A64 decoder (crates/binbun-aarch64/tests/oracle.rs)."
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+# Generated from Arm's 2026-09 specification, the release binbun's
+# third_party/aarchmrs package is.
+exarmo-aarch64 = { version = "=0.4.0", default-features = false }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+indexing_slicing = "warn"

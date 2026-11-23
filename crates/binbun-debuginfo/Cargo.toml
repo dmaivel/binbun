@@ -1,0 +1,33 @@
+[package]
+name = "binbun-debuginfo"
+description = "Reads DWARF and PDB debug information, and fetches debug files from symbol servers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["dwarf", "pdb", "debuginfod", "symbols", "debug-info"]
+categories = ["development-tools::debugging"]
+
+[dependencies]
+binbun-paths.workspace = true
+cab = { workspace = true, optional = true }
+gimli = { version = "0.34.0", default-features = false, features = ["read"] }
+object = { version = "0.40", default-features = false, features = ["read", "std"] }
+pdb2 = "0.10.2"
+ureq = { workspace = true, optional = true }
+
+[features]
+# `symbols`: the symbol servers' client, over HTTP(S). Off, the crate has
+# no network code and builds for wasm32-unknown-unknown (the engine,
+# `binbun`, uses `info` alone).
+symbols = ["dep:cab", "dep:ureq"]
+
+[[test]]
+name = "fetch"
+required-features = ["symbols"]
+
+[lints]
+workspace = true

@@ -1,0 +1,40 @@
+# Changelog
+
+<!--
+How this file is kept (written by hand; never generated from commits):
+
+- Every change a user can notice gets a line under "## Unreleased" in the
+  commit that makes it: the app, the `binbun` command, the Python
+  package, the C library, the decoder crates, project files, install and
+  update. Internal work (refactors, tests, CI) gets none.
+- Lines go under one of: ### Added, ### Changed, ### Fixed, ### Removed,
+  and ### Security for a fix to a security problem (the release is then
+  announced to running binbuns as a security release, which a skipped
+  version doesn't silence).
+- Say what users can do or what they will see, not how it was done:
+  "Opening a PE without a .pdata section no longer hangs", not "Fix loop
+  in pdata parser". Name the surface where it isn't obvious (GUI, CLI,
+  Python, C API). A breaking change says what to do instead.
+- To release: rename "## Unreleased" to "## vX.Y.Z (YYYY-MM-DD)", start a
+  new empty "## Unreleased" above it, set the version in both workspaces
+  (Cargo.toml, gui/Cargo.toml), the crates.io crates' pins on each other
+  (Cargo.toml's [workspace.dependencies], `version = "=X.Y.Z"`) and the
+  C library's constants (core.h, binbun-capi's lib.rs), and tag
+  vX.Y.Z;
+  `scripts/release/check-release.sh vX.Y.Z` says first what is missing.
+  The release workflow refuses a tag whose version has no section here
+  or an empty one, and publishes the section as the release's notes.
+- scripts/release/changelog-draft.sh lists the commit subjects since the
+  last tag: raw material to check against this section, not to paste.
+
+While binbun is 0.x, a 0.Y release may break the Rust crates' APIs, the
+command's subcommands and flags, and the Python API outside
+binbun.API_VERSION's promise; a 0.Y.Z release doesn't. Project files are
+always read by later versions.
+-->
+
+## Unreleased
+
+## v0.1.0 (2026-11-23)
+
+First release of binbun.

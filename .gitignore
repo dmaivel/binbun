@@ -1,0 +1,23 @@
+target/
+/bench/results/*
+!/bench/results/README.md
+!/bench/results/cfg.md
+!/bench/results/decompile.md
+/fuzz/corpus
+/fuzz/artifacts
+/fuzz/coverage
+/fuzz/fuzz-*.log
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+/python/binbun/_native*.so
+/python/binbun/_native*.pyd
+/site/public/
+# The releases' files, fetched before a build (scripts/site/release-files.sh).
+/site/static/install.sh
+/site/static/install/
+/site/static/latest.json
+.DS_Store
+*.profraw

@@ -1,0 +1,30 @@
+<script>
+// The visitor's platform, for the landing page's and the download page's
+// downloads: done(os, arch) with os "macos", "windows" or "linux" and arch
+// "arm64" or "x64", or os "" (phones, tablets, ChromeOS, anything else).
+// The processor comes from Chromium's client hints when they describe the
+// same system; otherwise a Mac is Apple silicon (Safari and Firefox say
+// Intel on every Mac), and anything else x64 unless its user agent says Arm64.
+function binbunPlatform(done) {
+  var agent = navigator.userAgent, hints = navigator.userAgentData;
+  var os = /iPhone|iPad|iPod|Android|CrOS/.test(agent) ? ""
+    : /Macintosh|Mac OS X/.test(agent) ? (navigator.maxTouchPoints > 1 ? "" : "macos")
+    : /Windows/.test(agent) ? "windows"
+    : /Linux/.test(agent) ? "linux" : "";
+  var arch = os === "macos" || /ARM64|aarch64/i.test(agent) ? "arm64" : "x64";
+  var names = { macos: "macOS", windows: "Windows", linux: "Linux" };
+  if (!os || !hints || hints.platform !== names[os] || !hints.getHighEntropyValues) return done(os, arch);
+  hints.getHighEntropyValues(["architecture"]).then(function (values) {
+    done(os, values.architecture === "x86" ? "x64" : values.architecture === "arm" ? "arm64" : arch);
+  }, function () { done(os, arch); });
+}
+// A copy key copies the text of the element its data-copy names.
+document.querySelectorAll("button[data-copy]").forEach(function (button) {
+  button.addEventListener("click", function () {
+    navigator.clipboard.writeText(document.getElementById(button.dataset.copy).textContent).then(function () {
+      button.textContent = "copied";
+      setTimeout(function () { button.textContent = "copy"; }, 1500);
+    });
+  });
+});
+</script>

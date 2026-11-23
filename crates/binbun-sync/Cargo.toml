@@ -1,0 +1,28 @@
+[package]
+name = "binbun-sync"
+description = "binbun's collaboration sync protocol as a state machine without I/O: signed heads, tips and pulls, fork evidence."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["sync", "protocol", "collaboration", "state-machine"]
+categories = ["network-programming"]
+
+[dependencies]
+binbun-bounded.workspace = true
+binbun-session.workspace = true
+blake3.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+# Live heap bytes, measured per told tip against `sync.link`'s charge.
+cap.workspace = true
+# The model peers' membership records and bodies.
+postcard.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

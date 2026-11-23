@@ -1,0 +1,121 @@
+# Builds the signature packs installed with binbun
+# (scripts/signatures/packs.sh: musl 1.2.5 built from its tarball, the
+# four distributions' static glibc, Rust std of three toolchains; every
+# input pinned by URL and SHA-256), each uploaded as artifact
+# signatures-PACK, and adds to them the packs of Microsoft's libraries
+# made by hand and committed in scripts/signatures/hand-built (each
+# checked against its SHA256SUMS): all of them and their PROVENANCE
+# (every pack's header, the hand-built ones' with the script that made
+# them) are artifact signatures, which package.yml passes to the package
+# scripts' --signatures. Called by release.yml (a release's packs) and
+# by nightly.yml (the same, on the default branch, so a release finds
+# them cached).
+#
+# One job per pack. Each pack is cached by its provenance: the script
+# (its pinned inputs), the compilers that build musl, and binbun's
+# signature code (crates/binbun-sigpack, crates/binbun/src/signatures.rs:
+# what decides a pack's identities and recordings); a pack whose
+# provenance is unchanged is not built again.
+
+name: Signatures
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  pack:
+    name: Pack ${{ matrix.pack }}
+    strategy:
+      fail-fast: true
+      matrix:
+        pack:
+          - musl
+          - glibc-debian
+          - glibc-ubuntu
+          - glibc-fedora
+          - glibc-arch
+          - rust-1.100.0
+          - rust-1.99.0
+          - rust-1.98.1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: bsdtar (the distributions' packages), clang (musl's clang build), zstd (the packs' compression)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -q -y --no-install-recommends libarchive-tools clang zstd
+      - id: provenance
+        name: Provenance
+        env:
+          PACK: ${{ matrix.pack }}
+          SIG_CODE: ${{ hashFiles('crates/binbun-sigpack/**', 'crates/binbun/src/signatures.rs') }}
+        run: |
+          scripts/signatures/packs.sh --key "$PACK"
+          key=$({ scripts/signatures/packs.sh --key "$PACK"; echo "$SIG_CODE"; } | sha256sum | cut -c1-32)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+      # The cache holds packs only (data, no toolchain or code that runs),
+      # keyed by their provenance.
+      - id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/signatures
+          key: signatures-${{ matrix.pack }}-${{ steps.provenance.outputs.key }}
+      - name: binbun (rust-toolchain.toml)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo build --release --locked -p binbun-cli
+      - name: The pack
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          PACK: ${{ matrix.pack }}
+        run: scripts/signatures/packs.sh --binbun target/release/binbun --out target/signatures "$PACK"
+      - name: Checked
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          for pack in target/signatures/*.jsonl.zst; do
+            target/release/binbun sig check "$pack"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signatures-${{ matrix.pack }}
+          path: target/signatures/*.jsonl.zst
+          if-no-files-found: error
+
+  release:
+    name: The packs installed, with those made by hand
+    needs: pack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: zstd (the packs' headers)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -q -y --no-install-recommends zstd
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: signatures-*
+          path: target/signatures
+          merge-multiple: true
+      - name: The packs made by hand (scripts/signatures/hand-built), checked, and PROVENANCE
+        run: |
+          scripts/signatures/packs.sh --hand-built --out target/signatures
+          cat target/signatures/PROVENANCE
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signatures
+          path: |
+            target/signatures/*.jsonl.zst
+            target/signatures/PROVENANCE
+          if-no-files-found: error

@@ -1,0 +1,33 @@
+# Every hour (and on demand): relay.binbun.org checked from outside as
+# endpoints use it, by scripts/relay/check.sh --no-ssh (DNS, the
+# certificate and whether its renewal is keeping up, HTTPS, the relay's
+# WebSocket, the captive-portal probe, metrics not public). A failed run
+# is GitHub's mail to whoever last changed the schedule below.
+#
+# The relay is an Oracle always-free VM, which Oracle may reclaim when
+# idle (95th-percentile CPU, network and, on A1 shapes, memory under 20%
+# for 7 days): nothing else would say it is gone. The runner's OpenSSL
+# has no QUIC, so the UDP check is skipped here (check.sh over SSH sees
+# the socket).
+
+name: Relay
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: relay.binbun.org from outside
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/relay
+      - run: scripts/relay/check.sh --no-ssh relay.binbun.org

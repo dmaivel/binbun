@@ -1,0 +1,25 @@
+[package]
+name = "binbun-aarch64-lift"
+description = "Lifts AArch64 instructions to binbun's instruction semantics."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# Its generated code derives from Arm's A-profile Machine Readable Specification (NOTICE-AARCHMRS.html).
+license = "(MIT OR Apache-2.0) AND BSD-3-Clause"
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["aarch64", "lifter", "binary-analysis", "ir"]
+categories = ["development-tools::debugging", "no-std"]
+
+[dependencies]
+binbun-aarch64.workspace = true
+binbun-isa.workspace = true
+binbun-semantics.workspace = true
+
+[dev-dependencies]
+# The AARCHMRS reader (`xtask::aarchmrs`).
+xtask.workspace = true
+
+[lints]
+workspace = true

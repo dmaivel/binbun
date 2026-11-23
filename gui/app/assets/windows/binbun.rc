@@ -1,0 +1,6 @@
+// binbun.exe's icon (binbun.ico, from scripts/icons.sh), compiled and
+// linked by build.rs on Windows. Icon group 1, the executable's only one:
+// Explorer and the taskbar show the first group, and GPUI's windows load
+// icon 1. The manifest is GPUI's own resource (RT_MANIFEST 1); it does
+// not collide with this.
+1 ICON "binbun.ico"

@@ -1,0 +1,23 @@
+[package]
+name = "binbun-sigpack"
+description = "Signature packs that name statically linked library functions in stripped binaries."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["signatures", "binary-analysis", "reverse-engineering", "static-linking"]
+categories = ["development-tools::debugging"]
+
+[dependencies]
+binbun-semantics.workspace = true
+binbun-ssa.workspace = true
+blake3.workspace = true
+ruzstd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

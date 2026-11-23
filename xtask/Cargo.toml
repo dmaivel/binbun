@@ -1,0 +1,30 @@
+[package]
+name = "xtask"
+description = "Development tasks for binbun: code generation from vendored specifications, and the reader of Arm's AARCHMRS package (`xtask::aarchmrs`) the AArch64 generator and tests use."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+# The lift generator checks AArch64 semantics against the checked-in
+# decoder's operand access and flags (xtask/src/aarch64/lift.rs).
+binbun-aarch64.workspace = true
+binbun-isa.workspace = true
+# `cargo xtask header` writes the C API's enumerations from the decoders.
+binbun-x86.workspace = true
+binbun-xed.workspace = true
+# AARCHMRS's package: a gzipped tar of JSON (`aarchmrs`).
+flate2.workspace = true
+prettyplease.workspace = true
+proc-macro2 = { workspace = true, features = ["span-locations"] }
+quote.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+syn = { workspace = true, features = ["full", "parsing", "printing"] }
+tar.workspace = true
+
+[lints]
+workspace = true

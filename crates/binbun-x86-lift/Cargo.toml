@@ -1,0 +1,31 @@
+[package]
+name = "binbun-x86-lift"
+description = "Lifts x86 and x86-64 instructions to binbun's instruction semantics."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# Its generated code derives from Intel XED (LICENSE-XED).
+license = "(MIT OR Apache-2.0) AND Apache-2.0"
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["x86", "lifter", "binary-analysis", "ir"]
+categories = ["development-tools::debugging", "no-std"]
+
+[dependencies]
+binbun-semantics.workspace = true
+binbun-x86.workspace = true
+blake3 = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
+
+[features]
+# The processor profiles (`profiles/`, `binbun_x86_lift::profiles`): needs
+# std, to read them.
+profiles = ["dep:blake3", "dep:toml"]
+
+[dev-dependencies]
+binbun-loader.workspace = true
+binbun-x86-lift = { path = ".", features = ["profiles"] }
+
+[lints]
+workspace = true

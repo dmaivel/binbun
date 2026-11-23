@@ -1,0 +1,188 @@
+/* Dracula, the official Dracula theme for Visual Studio Code.
+ *
+ * Source: https://github.com/dracula/visual-studio-code
+ *   version 2.25.1 (package.json; the release has no git tag, the last
+ *   tag is v2.24.3 and src/dracula.yml is byte-identical there), commit
+ *   ca5a2c4581978e343e0539dee79c00de316871aa.
+ *   The theme JSON is generated from src/dracula.yml by
+ *   scripts/generate.js; the YAML was resolved here the same way (anchors
+ *   expanded, `!alpha [colour, aa]` appended as the alpha byte, empty
+ *   colours dropped). Files read (SHA-256 of the bytes at that commit):
+ *     src/dracula.yml      c0b212b19bdaab789d56322783dd0ac32b43ee9a30ed5bd4d1e4b8a45dbe2c63
+ *     scripts/generate.js  3a769a425ed964bcbb880b76c9d2c6174531a50d49e9560283eec131ab8bc1c8
+ * Licence: MIT, Copyright (c) 2016 Dracula Theme.
+ *
+ * Mapping: the UI roles are the theme's workbench colours (title bar,
+ * tab bar and status bar (the darkest surface), side bar, editor group
+ * and panel border (purple), input border, focus border, list hover and
+ * selection, overview-ruler border, the input placeholder, line numbers,
+ * errorForeground, selection, find matches); the code roles are its
+ * tokenColors resolved for the C grammar's scopes as VS Code ranks them
+ * (keyword, entity.name.function, variable.parameter, string,
+ * constant.numeric and constant.language (both its `constant` rule),
+ * comment, punctuation.section.embedded for the special punctuation,
+ * variable). Picks and fallbacks:
+ * - The (named) type colour is cyan, the theme's entity.name.type (and
+ *   storage.type.c) colour. The built-in type colour is pink: with VS
+ *   Code's current C grammar C's `int` (storage.type.built-in.primitive.c)
+ *   falls to its generic `storage` rule.
+ * - The non-control keywords (storage.modifier, its own rule, and
+ *   storage.type.struct, keyword.other.typedef), the control keywords
+ *   (keyword.control) and the operators (keyword.operator) all resolve to
+ *   pink, through its `storage.modifier`, `storage` and `keyword` rules.
+ * - Globals and struct members (variable.other.global,
+ *   variable.other.member) fall to its `variable` rule, the variable
+ *   colour; macro names (entity.name.function.preprocessor) fall to its
+ *   entity.name.function rule, the function colour.
+ * - The accent is cyan, editorLink.activeForeground: the theme sets no
+ *   textLink.foreground, and its button.background is the selection
+ *   grey #44475a (1.6:1 on the editor), not an accent.
+ * - The theme sets no editor.lineHighlightBackground (it draws only a
+ *   #44475a line border), so the active line is Dracula's own
+ *   LineHighlight colour #44475a75, its list-hover colour.
+ * - Not set by the theme, taken as VS Code falls back:
+ *   descriptionForeground (the muted text, and so the doc-comment and
+ *   inlay-hint colours, as there is no comment.block.documentation rule
+ *   nor editorInlayHint.foreground) is the foreground at 70% alpha;
+ *   editorLineNumber.activeForeground is #c6c6c6; scrollbarSlider
+ *   background is #79797966.
+ * - No git "added" colour: success is terminal.ansiGreen (green, also its
+ *   untracked-file colour). No `punctuation` rule: punctuation is
+ *   editor.foreground. No entity.name.label rule: labels take the
+ *   function colour.
+ * The branch arrows take the special punctuation colour, the link tints
+ * cyan (Dracula has no blue), purple, yellow and green, and the lit area
+ * the panel colour at half alpha.
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments,
+ * link tints, the lit area, agreed) follow the rule binbun used before
+ * themes were files: mnemonics take the text colour, registers the type
+ * colour; addresses by what the line is (functions the comment colour,
+ * code the parameter colour, data the doc-comment colour, unexplored bytes
+ * the constant colour); code xrefs the special punctuation, data xrefs
+ * the doc-comment colour; the lit area's edge the focus border; agreed
+ * the success green. Listing mnemonics by kind: jumps the control-keyword
+ * colour, calls the function colour, returns the control-keyword colour
+ * (the theme gives keyword.control.return no colour of its own), nops and
+ * padding the comment colour (3.03:1; the muted text is translucent).
+ * Automatic names are drawn at 0.7 alpha, a cast's parentheses and type
+ * at 0.6. The listing's eight branch-arrow colours are eight distinct
+ * palette colours, each at least 3:1 on the editor, round the hue wheel
+ * in the order blue, orange, purple, green, red, cyan/teal, yellow,
+ * magenta/pink, so neighbours (and 8 with 1) differ by CIE76 ΔE >= 20:
+ * as Dracula has no blue accent, the first is its only blue,
+ * the comment colour (#6272a4, 3.03:1); then orange, purple, green, red,
+ * cyan, yellow and pink. No other deviation: every pick reaches 3:1 on
+ * the editor.
+ */
+
+:root {
+  --name: "Dracula";
+  --appearance: dark;
+
+  /* Dracula's palette (src/dracula.yml's base colours and UI variants). */
+  --bg: #282a36;
+  --fg: #f8f8f2;
+  --dracula-selection: #44475a;
+  --dracula-comment: #6272a4;
+  --cyan: #8be9fd;
+  --green: #50fa7b;
+  --orange: #ffb86c;
+  --pink: #ff79c6;
+  --purple: #bd93f9;
+  --red: #ff5555;
+  --yellow: #f1fa8c;
+  --line-highlight: #44475a75;
+  --bg-lighter: #424450;
+  --bg-light: #343746;
+  --bg-dark: #21222c;
+  --bg-darker: #191a21;
+}
+
+:root {
+  /* Surfaces. */
+  --background: var(--bg-dark);
+  --gap: var(--bg-darker);
+  --tab-bar: var(--bg-darker);
+  --panel: var(--bg-dark);
+  --editor: var(--bg);
+  --border: var(--purple);
+  --border-variant: var(--bg-darker);
+  --border-focused: var(--dracula-comment);
+  --element-hover: var(--line-highlight);
+  --element-selected: var(--dracula-selection);
+  --scrollbar-thumb: #79797966;
+  --scrollbar-track-border: var(--bg-darker);
+
+  /* Text. */
+  --text: var(--fg);
+  --text-muted: #f8f8f2b3;
+  --text-placeholder: var(--dracula-comment);
+  --accent: var(--cyan);
+  --editor-foreground: var(--fg);
+  --line-number: var(--dracula-comment);
+  --active-line-number: #c6c6c6;
+  --error: var(--red);
+  --success: var(--green);
+
+  /* Highlights. */
+  --active-line: var(--line-highlight);
+  --selection: var(--dracula-selection);
+  --search-match: #ffffff40;
+  --active-match: #ffb86c80;
+  --arrow: var(--pink);
+
+  /* Code. */
+  --keyword: var(--pink);
+  --type: var(--cyan);
+  --function: var(--green);
+  --parameter: var(--orange);
+  --string: var(--yellow);
+  --number: var(--purple);
+  --constant: var(--purple);
+  --comment: var(--dracula-comment);
+  --comment-doc: var(--text-muted);
+  --hint: var(--text-muted);
+  --punctuation: var(--fg);
+  --punctuation-special: var(--pink);
+  --embedded: var(--fg);
+  --variable: var(--fg);
+  --label: var(--green);
+  --keyword-control: var(--pink);
+  --type-builtin: var(--pink);
+  --global: var(--variable);
+  --field: var(--variable);
+  --macro: var(--function);
+  --operator: var(--pink);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: var(--dracula-comment);
+  --register: var(--type);
+  --address-function: var(--comment);
+  --address-code: var(--parameter);
+  --address-data: var(--comment-doc);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--comment-doc);
+  --tint-1: color-mix(in srgb, var(--cyan) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--purple) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--yellow) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--green) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--dracula-comment);
+  --arrow-2: var(--orange);
+  --arrow-3: var(--purple);
+  --arrow-4: var(--green);
+  --arrow-5: var(--red);
+  --arrow-6: var(--cyan);
+  --arrow-7: var(--yellow);
+  --arrow-8: var(--pink);
+  --auto-name-alpha: 1;
+  --cast-alpha: 1;
+}

@@ -1,0 +1,19 @@
+[package]
+name = "binbun-semantics"
+description = "binbun's instruction semantics, with a verifier and interpreter, and the core types its crates share."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["binary-analysis", "ir", "semantics", "lifter"]
+categories = ["development-tools::debugging", "no-std"]
+
+[dependencies]
+binbun-macros.workspace = true
+rustc_apfloat.workspace = true
+
+[lints]
+workspace = true

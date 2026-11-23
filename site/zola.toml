@@ -1,0 +1,37 @@
+# binbun.org: build and deploy in README.md beside this file.
+base_url = "https://binbun.org"
+title = "binbun"
+description = "An open-source interactive disassembler and decompiler."
+# The blog feed's author.
+author = "binbun"
+default_language = "en"
+compile_sass = false
+build_search_index = false
+# No site-wide feed; the blog's section has its own (content/blog/_index.md).
+generate_feeds = false
+feed_filenames = ["atom.xml"]
+generate_sitemap = true
+generate_robots_txt = true
+
+[markdown]
+definition_list = true
+external_links_external = false
+
+[markdown.highlighting]
+error_on_missing_language = true
+style = "class"
+theme = "one-dark-pro"
+
+[link_checker]
+internal_level = "error"
+external_level = "warn"
+
+[extra]
+# The release the download page offers until one is published; after, the
+# latest release's latest.json (scripts/site/release-files.sh) gives the
+# version and the date.
+version = "0.1.0"
+status = "Preview"
+released = "November 2026"
+repository = "https://github.com/dmaivel/binbun"
+sponsor = "https://github.com/sponsors/dmaivel"

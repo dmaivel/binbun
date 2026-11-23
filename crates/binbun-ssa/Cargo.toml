@@ -1,0 +1,22 @@
+[package]
+name = "binbun-ssa"
+description = "SSA form of machine-code functions, built from binbun's instruction semantics."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["ssa", "ir", "binary-analysis", "decompiler"]
+categories = ["development-tools::debugging", "compilers", "no-std"]
+
+[dependencies]
+binbun-semantics.workspace = true
+
+[dev-dependencies]
+binbun-aarch64.workspace = true
+binbun-aarch64-lift.workspace = true
+
+[lints]
+workspace = true

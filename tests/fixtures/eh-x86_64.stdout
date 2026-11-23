@@ -1,0 +1,15 @@
+1: by_type 2 several 2 any 2 nested 4 loop 1
+rethrow 2
+cleanup 5 live 0
+-1: by_type -1 several -1 any 0 nested 0 loop 6
+error
+rethrown -1
+cleanup threw, live 0
+too big
+too big
+200: by_type 0 several -1 any 0 nested -2 loop 0
+rethrown other
+cleanup threw, live 0
+42: by_type 0 several 42 any 0 nested 0 loop 903
+rethrown other
+cleanup threw, live 0

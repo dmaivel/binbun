@@ -1,0 +1,79 @@
+# Extensions, truncations and concatenations: what 32-bit operations kept
+# in 64-bit registers, partial registers and widening multiplies leave.
+
+# Chains of extensions.
+rule zext-zext: zext(zext(x:K, N), W) => zext(x, W)
+  widths K in 1 8 16 32 64; N in 8 16 32 64 128; W in 16 32 64 128
+rule sext-sext: sext(sext(x:K, N), W) => sext(x, W)
+  widths K in 1 8 16 32 64; N in 8 16 32 64 128; W in 16 32 64 128
+rule sext-zext: sext(zext(x:K, N), W) => zext(x, W)
+  widths K in 1 8 16 32 64; N in 8 16 32 64 128; W in 16 32 64 128
+
+# The low bits of an extension.
+rule low-of-zext: extract(zext(x:N, W), 0, N) => x
+  widths N in 1 8 16 32 64; W in 8 16 32 64 128
+rule low-of-sext: extract(sext(x:N, W), 0, N) => x
+  widths N in 1 8 16 32 64; W in 8 16 32 64 128
+rule lower-of-zext: extract(zext(x:N, W), 0, K) => extract(x, 0, K) if K < N
+  widths K in 1 8 16 32; N in 8 16 32 64; W in 16 32 64 128
+rule lower-of-sext: extract(sext(x:N, W), 0, K) => extract(x, 0, K) if K < N
+  widths K in 1 8 16 32; N in 8 16 32 64; W in 16 32 64 128
+rule part-of-zext: extract(zext(x:N, W), 0, K) => zext(x, K) if N < K, K < W
+  widths K in 8 16 32 64; N in 1 8 16 32; W in 16 32 64 128
+rule part-of-sext: extract(sext(x:N, W), 0, K) => sext(x, K) if N < K, K < W
+  widths K in 8 16 32 64; N in 1 8 16 32; W in 16 32 64 128
+
+# Bits of bits, up to a ZMM register's (the low lane of an XMM register
+# read from a ZMM one: `extract(extract(x:512, 0, 128), 0, 64)`).
+rule extract-whole: extract(x:W, 0, W) => x
+  widths W in 1 8 16 32 64 128
+rule extract-extract: extract(extract(x:W, A, N), B, K) => extract(x, A + B, K)
+  widths W in 32 64 128 256 512; A in 0 8 16 32 64 128 256; N in 8 16 32 64 128 256;
+  B in 0 8 16 32 64; K in 1 8 16 32 64
+
+# Concatenations. An extraction that lies wholly within one operand is that
+# operand's extraction, at the widths of registers, their parts and vector
+# lanes up to a ZMM register's 512 bits (an instruction writing an XMM
+# register leaves `concat(undefined:384, x:128)` in the ZMM register).
+rule concat-zero: concat(0:K, x:N) => zext(x, K + N)
+  widths K in 8 16 24 32 48 56 64; N in 1 8 16 32 64
+rule low-of-concat: extract(concat(h:K, l:N), 0, N) => l if K + N <= 512
+  widths K in 8 16 24 32 48 56 64 80 96 128 192 256 320 384 448 480 496 504;
+  N in 8 16 24 32 48 56 64 80 96 128 192 256 320 384 448 480 496 504
+rule high-of-concat: extract(concat(h:K, l:N), N, K) => h if K + N <= 512
+  widths K in 8 16 24 32 48 56 64 80 96 128 192 256 320 384 448 480 496 504;
+  N in 8 16 24 32 48 56 64 80 96 128 192 256 320 384 448 480 496 504
+rule within-low-of-concat: extract(concat(h:K, l:N), O, M) => extract(l, O, M)
+  if M < N, O + M <= N, K + N <= 512
+  widths K in 8 16 24 32 48 56 64 80 96 128 192 256 320 384 448 480 496 504;
+  N in 8 16 24 32 48 56 64 80 96 128 192 256 320 384 448 480 496 504;
+  O in 0 8 16 24 32 48 56 64 80 96 128 192 256 320 384 448;
+  M in 1 8 16 32 64 80 128 256
+rule within-high-of-concat: extract(concat(h:K, l:N), O, M) => extract(h, O - N, M)
+  if N <= O, M < K, O + M <= K + N, K + N <= 512
+  widths K in 8 16 24 32 48 56 64 80 96 128 192 256 320 384 448 480 496 504;
+  N in 8 16 24 32 48 56 64 80 96 128 192 256 320 384 448 480 496 504;
+  O in 8 16 24 32 48 56 64 80 96 128 192 256 320 384 448 480 496 504;
+  M in 1 8 16 32 64 80 128 256
+rule over-concat: extract(concat(h:K, l:N), 0, M) => concat(extract(h, 0, M - N), l)
+  if N < M, M < K + N
+  widths K in 8 16 24 32 48 56 64; N in 8 16 32; M in 16 32 64
+
+# Truncating an operation truncates its operands (the low bits of a sum,
+# a product or a bitwise result depend only on the operands' low bits).
+rule low-of-add: extract(add(x:W, y), 0, N) => add(extract(x, 0, N), extract(y, 0, N)) if N < W
+  widths N in 8 16 32 64; W in 16 32 64 128
+rule low-of-sub: extract(sub(x:W, y), 0, N) => sub(extract(x, 0, N), extract(y, 0, N)) if N < W
+  widths N in 8 16 32 64; W in 16 32 64 128
+rule low-of-mul: extract(mul(x:W, y), 0, N) => mul(extract(x, 0, N), extract(y, 0, N)) if N < W
+  widths N in 8 16 32 64; W in 16 32 64 128
+rule low-of-and: extract(and(x:W, y), 0, N) => and(extract(x, 0, N), extract(y, 0, N)) if N < W
+  widths N in 1 8 16 32 64; W in 16 32 64 128
+rule low-of-or: extract(or(x:W, y), 0, N) => or(extract(x, 0, N), extract(y, 0, N)) if N < W
+  widths N in 1 8 16 32 64; W in 16 32 64 128
+rule low-of-xor: extract(xor(x:W, y), 0, N) => xor(extract(x, 0, N), extract(y, 0, N)) if N < W
+  widths N in 1 8 16 32 64; W in 16 32 64 128
+rule low-of-not: extract(not(x:W), 0, N) => not(extract(x, 0, N)) if N < W
+  widths N in 1 8 16 32 64; W in 16 32 64 128
+rule low-of-neg: extract(neg(x:W), 0, N) => neg(extract(x, 0, N)) if N < W
+  widths N in 8 16 32 64; W in 16 32 64 128

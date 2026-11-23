@@ -1,0 +1,61 @@
+[package]
+name = "binbun"
+description = "Disassembler and decompiler engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["disassembler", "decompiler", "reverse-engineering", "binary-analysis"]
+categories = ["development-tools::debugging"]
+
+[dependencies]
+binbun-aarch64.workspace = true
+binbun-aarch64-lift.workspace = true
+binbun-ast.workspace = true
+binbun-print.workspace = true
+binbun-debuginfo.workspace = true
+binbun-decompile.workspace = true
+binbun-demangle.workspace = true
+binbun-isa.workspace = true
+binbun-loader.workspace = true
+binbun-semantics.workspace = true
+binbun-sigpack.workspace = true
+binbun-ssa.workspace = true
+binbun-typedb.workspace = true
+binbun-typeinfer.workspace = true
+binbun-x86.workspace = true
+binbun-x86-lift = { workspace = true, features = ["profiles"] }
+blake3.workspace = true
+msvc-demangler.workspace = true
+serde.workspace = true
+sha2.workspace = true
+toml = { workspace = true, features = ["display"] }
+
+[[example]]
+name = "decompile"
+path = "../../examples/rust/decompile.rs"
+
+[[example]]
+name = "list_functions"
+path = "../../examples/rust/list_functions.rs"
+
+[[example]]
+name = "xrefs"
+path = "../../examples/rust/xrefs.rs"
+
+[[example]]
+name = "verify"
+path = "../../examples/rust/verify.rs"
+
+[[example]]
+name = "calls_with_constant"
+path = "../../examples/rust/calls_with_constant.rs"
+
+[[example]]
+name = "list_calls"
+path = "../../examples/rust/list_calls.rs"
+
+[lints]
+workspace = true

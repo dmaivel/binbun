@@ -1,0 +1,15 @@
+[package]
+name = "binbun-paths"
+description = "Where binbun keeps its configuration, data and cache on each platform."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["xdg", "paths", "directories", "config"]
+categories = ["config", "filesystem"]
+
+[lints]
+workspace = true

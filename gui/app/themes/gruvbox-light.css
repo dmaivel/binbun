@@ -1,0 +1,197 @@
+/* Gruvbox Light, the "Gruvbox Light Medium" variant of jdinhify's Gruvbox
+ * Theme for VS Code.
+ *
+ * Source: https://github.com/jdinhify/vscode-theme-gruvbox
+ *   tag v1.29.2, commit 5538f16b660b5ebf12450e5dfcf15e6f9f64960a.
+ *   The theme JSON is generated, not committed; it was built at that
+ *   commit with `bun src/main.ts` (the repo's `build` script, which needs
+ *   no dependencies). Files read (SHA-256 of the bytes at that commit):
+ *     src/main.ts                            5aacfd5bdf42ead7e76d64b44d7a3b07493561df6ef9a012a6801934e7cf7e1b
+ *     src/shared.ts                          eedad00a6ee9bc28318a221c329e138b7de6e01d2d67dc0a14c5c18913a8d45a
+ *     src/colors/base.ts                     5d11503988f6ac69db60f63d40b8fdcf2aa33d6387ccc08f129d85d4e3725a0e
+ *     src/token-colors/base.ts               acc393afc9f259e1bec2c04dd10fcc48ac3e7fecd4c930620857e6812db67ae4
+ *     src/token-colors/languages/c.ts        0d017292dd4e07bc26d88c9e05679ffa8bc181592c6da2974d6bc1d283eb4b09
+ *     src/token-colors/languages/xml-html.ts 811f6504260604aaae7a1510c5a2b35a601844df6fd38f7c359304757e32f842
+ *   and the generated themes/gruvbox-light-medium.json
+ *     3074faa9d1b2df2461e98ebb114c0c5e760f04bf772ac1144a3baf7c2e2b82be
+ * Licence: MIT, Copyright © 2017 JD.
+ *
+ * Mapping: the UI roles are the theme's workbench colours (title bar,
+ * tab bar, side bar, editor group border, widget border, focus border,
+ * list hover/selection, scrollbar slider, overview-ruler border, line
+ * numbers, find matches, selection and line highlight, the text link for
+ * the accent, errorForeground, the git "added" green); the code roles are
+ * its tokenColors resolved for the C grammar's scopes as VS Code ranks
+ * them (storage.modifier for the non-control keywords such as `static`
+ * and `const`, which its storage.type rule shares with `struct`/`enum`;
+ * keyword.control for the control keywords; entity.name.type for named
+ * types; storage.type for built-in types such as `int`;
+ * entity.name.function, variable.parameter, string, constant.numeric and
+ * constant.language (both caught by its `constant` rule), comment,
+ * punctuation, punctuation.definition.tag for the special punctuation,
+ * variable, entity.name for labels, keyword.operator for operators).
+ * The type colour moved: it was storage.type (orange) and is now
+ * entity.name.type (yellow); orange is the built-in type colour. Globals
+ * and struct members have no rule of their own (variable.other.global,
+ * variable.other.member fall to its `variable.other` rule), so they take
+ * the variable colour; macro names (entity.name.function.preprocessor)
+ * fall to its entity.name.function rule, so they take the function
+ * colour. Medium is the variant; its editor is bg0.
+ * Values the theme does not set, taken as VS Code itself falls back:
+ * descriptionForeground (the muted text, and so the doc-comment colour,
+ * as the theme has no comment.block.documentation rule) is VS Code's
+ * light default #717171; editorLineNumber.activeForeground is VS Code's
+ * light default #0b216f. The overview-ruler border is transparent
+ * upstream (#0000) and stays so. The branch arrows take the warning
+ * yellow (editorWarning.foreground), the link tints the faded blue,
+ * purple, yellow and green, and the lit area the panel colour at half
+ * alpha.
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments,
+ * link tints, the lit area, agreed) follow the rule binbun used before
+ * themes were files: mnemonics take the text colour, registers the type
+ * colour; addresses by what the line is (functions the comment colour,
+ * code the parameter colour, data the doc-comment colour, unexplored bytes
+ * the constant colour); code xrefs the special punctuation, data xrefs
+ * the doc-comment colour; the lit area's edge the focus border; agreed
+ * the success green. Listing mnemonics by kind: jumps the control-keyword
+ * colour, calls the function colour, returns the control-keyword colour
+ * (the theme gives keyword.control.return no colour of its own), nops and
+ * padding the comment grey, the dimmest palette foreground above 3:1
+ * (dimmer than the muted text, VS Code's #717171). Automatic names are
+ * drawn at 0.7 alpha, a cast's parentheses and type at 0.6. The
+ * listing's eight branch-arrow colours are eight distinct palette
+ * colours, each at least 3:1 on the editor, round the hue wheel in the
+ * order blue, orange, purple, green, red, cyan/teal, yellow,
+ * magenta/pink, so neighbours (and 8 with 1) differ by CIE76 ΔE >= 20:
+ * the faded blue, orange, purple, green, red, aqua and yellow, and, as
+ * Gruvbox has no pink, its neutral purple (#b16286, the brighter variant
+ * of its pinkish purple). No other deviation: every pick reaches 3:1 on
+ * the editor.
+ * The feature map's library code takes the faded aqua: the type yellow
+ * is its functions' code's.
+ */
+
+:root {
+  --name: "Gruvbox Light";
+  --appearance: light;
+
+  /* Gruvbox's light palette (jdinhify's bg0_hard … orange2; the colours
+   * numbered 1 are Gruvbox's neutral ones, 2 its faded ones). */
+  --bg0-hard: #f9f5d7;
+  --bg0: #fbf1c7;
+  --bg0-soft: #f2e5bc;
+  --bg1: #ebdbb2;
+  --bg2: #d5c4a1;
+  --bg3: #bdae93;
+  --bg4: #a89984;
+  --gray: #928374;
+  --fg0: #282828;
+  --fg1: #3c3836;
+  --fg2: #504945;
+  --fg3: #665c54;
+  --fg4: #7c6f64;
+  --neutral-red: #cc241d;
+  --faded-red: #9d0006;
+  --neutral-green: #98971a;
+  --faded-green: #79740e;
+  --neutral-yellow: #d79921;
+  --faded-yellow: #b57614;
+  --neutral-blue: #458588;
+  --faded-blue: #076678;
+  --neutral-purple: #b16286;
+  --faded-purple: #8f3f71;
+  --neutral-aqua: #689d6a;
+  --faded-aqua: #427b58;
+  --neutral-orange: #d65d0e;
+  --faded-orange: #af3a03;
+}
+
+:root {
+  /* Surfaces. */
+  --background: var(--bg0);
+  --gap: var(--bg0);
+  --tab-bar: var(--bg0);
+  --panel: var(--bg0);
+  --editor: var(--bg0);
+  --border: var(--bg1);
+  --border-variant: var(--bg1);
+  --border-focused: var(--bg1);
+  --element-hover: #ebdbb280;
+  --element-selected: #ebdbb280;
+  --scrollbar-thumb: #d5c4a199;
+  --scrollbar-track-border: #00000000;
+
+  /* Text. */
+  --text: var(--fg1);
+  --text-muted: #717171;
+  --text-placeholder: #3c383660;
+  --accent: var(--faded-blue);
+  --editor-foreground: var(--fg1);
+  --line-number: var(--bg3);
+  --active-line-number: #0b216f;
+  --error: var(--faded-red);
+  --success: var(--neutral-green);
+
+  /* Highlights. */
+  --active-line: #ebdbb260;
+  --selection: #689d6a40;
+  --search-match: #af3a0330;
+  --active-match: #07667870;
+  --arrow: var(--neutral-yellow);
+
+  /* Code. */
+  --keyword: var(--faded-orange);
+  --type: var(--faded-yellow);
+  --function: var(--faded-yellow);
+  --parameter: var(--faded-blue);
+  --string: var(--faded-green);
+  --number: var(--faded-purple);
+  --constant: var(--faded-purple);
+  --comment: var(--gray);
+  --comment-doc: var(--text-muted);
+  --hint: var(--gray);
+  --punctuation: var(--fg4);
+  --punctuation-special: var(--faded-blue);
+  --embedded: var(--fg1);
+  --variable: var(--faded-blue);
+  --label: var(--faded-yellow);
+  --keyword-control: var(--faded-red);
+  --type-builtin: var(--faded-orange);
+  --global: var(--variable);
+  --field: var(--variable);
+  --macro: var(--function);
+  --operator: var(--faded-aqua);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: var(--gray);
+  --map-library: var(--faded-aqua);
+  --register: var(--type);
+  --address-function: var(--comment);
+  --address-code: var(--parameter);
+  --address-data: var(--comment-doc);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--comment-doc);
+  --tint-1: color-mix(in srgb, var(--faded-blue) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--faded-purple) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--faded-yellow) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--faded-green) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--faded-blue);
+  --arrow-2: var(--faded-orange);
+  --arrow-3: var(--faded-purple);
+  --arrow-4: var(--faded-green);
+  --arrow-5: var(--faded-red);
+  --arrow-6: var(--faded-aqua);
+  --arrow-7: var(--faded-yellow);
+  --arrow-8: var(--neutral-purple);
+  --auto-name-alpha: 1;
+  --cast-alpha: 1;
+}

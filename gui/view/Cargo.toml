@@ -1,0 +1,40 @@
+[package]
+name = "binbun-gui-view"
+description = "binbun's GUI without the framework: panes, tabs, history, selection, commands, settings, and the listing and C viewports over a session."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+binbun.workspace = true
+binbun-ast.workspace = true
+binbun-print.workspace = true
+# The update checks (`binbun_cli::update`).
+binbun-cli.workspace = true
+binbun-debuginfo = { workspace = true, features = ["symbols"] }
+binbun-demangle.workspace = true
+binbun-loader.workspace = true
+binbun-paths.workspace = true
+binbun-protocol.workspace = true
+binbun-semantics.workspace = true
+binbun-session.workspace = true
+binbun-ssa.workspace = true
+binbun-typedb.workspace = true
+blake3.workspace = true
+jiff.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+toml_edit.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
+[dev-dependencies]
+binbun-decompile.workspace = true
+binbun-typeinfer.workspace = true
+
+[lints]
+workspace = true

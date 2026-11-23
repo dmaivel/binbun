@@ -1,0 +1,7 @@
+V1 {
+    global: memcpy;
+    local: *;
+};
+V2 {
+    global: malloc; calloc;
+} V1;

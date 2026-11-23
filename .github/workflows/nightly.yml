@@ -1,0 +1,247 @@
+# Nightly (and on demand): the ignored tests whose oracles can be built
+# here (XED, LLVM 22, exarmo, z3 proofs, the AArch64 CPU on an Arm
+# runner), the system-binary tests, a fuzzing smoke run, the release
+# build as a dry run with the Linux CLI's reproducibility checked, and
+# cargo deny (new advisories arrive without commits). The x86 CPU oracle
+# stays local: its semantics follow the owner's processor's E-cores.
+
+name: Nightly
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+    # Sundays also run the AArch64 decoder against LLVM on every word.
+    - cron: "41 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      whole-space:
+        description: Also compare every AArch64 word with LLVM (hours)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  oracle-x86:
+    name: x86 decoder against XED
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: XED at third_party/xed/VERSION's commits
+        run: scripts/ci/build-xed.sh "$RUNNER_TEMP/xed"
+      - name: Toolchain (rust-toolchain.toml)
+        run: cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Oracle tests
+        run: |
+          scripts/xed-oracle.sh "$RUNNER_TEMP/xed/xed"
+          BINBUN_XED_ORACLE=target/xed-oracle BINBUN_ORACLE_CASES=3000000 \
+            cargo test --release --locked -p binbun-x86 --test oracle -- --ignored
+
+  oracle-aarch64:
+    name: AArch64 decoder against LLVM and exarmo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    # The pinned Arch snapshot has LLVM 22, the version the oracle's
+    # allow-lists are written for.
+    container: archlinux:base-devel@sha256:fa2d4ce3310ddd90a4208e5168be8ad367da5129af1245f38fd2d803bcbe3239
+    steps:
+      - name: git, for checkout
+        run: pacman -Sy --noconfirm --needed git
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Packages and toolchain
+        run: |
+          scripts/ci/arch-setup.sh
+          pacman -S --noconfirm --needed libarchive
+          cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: |
+            . -> target
+            tools/exarmo-oracle -> target
+      - name: The AArch64 corpus (checked against its SHA-256s)
+        run: scripts/aarch64-corpus.sh "$RUNNER_TEMP/corpus"
+      - name: Oracles
+        run: |
+          scripts/llvm-oracle.sh
+          scripts/exarmo-oracle.sh
+      - name: Oracle and corpus tests
+        env:
+          WHOLE_SPACE: ${{ github.event.schedule == '41 2 * * 0' || inputs.whole-space }}
+        run: |
+          export BINBUN_LLVM_ORACLE=$PWD/target/llvm-oracle BINBUN_EXARMO_ORACLE=$PWD/target/exarmo-oracle
+          export BINBUN_ARM64_CORPUS=$RUNNER_TEMP/corpus
+          skip=(--skip whole_space_matches_llvm)
+          [ "$WHOLE_SPACE" = true ] && skip=()
+          cargo test --release --locked -p binbun-aarch64 --test oracle -- --ignored "${skip[@]}"
+          cargo test --release --locked -p binbun --test aarch64 -- --ignored
+          cargo test --release --locked -p binbun-capi --test capi -- --ignored aarch64_every_word_fits_the_bounds
+
+  cpu-aarch64:
+    name: AArch64 lifter against the processor
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain (rust-toolchain.toml)
+        run: cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: CPU oracle test
+        run: |
+          scripts/cpu-oracle-aarch64.sh
+          BINBUN_CPU_ORACLE_AARCH64=target/cpu-oracle-aarch64 \
+            cargo test --release --locked -p binbun-aarch64-lift --test hardware -- --ignored --nocapture
+      # The whole suite reads x86 Arch's bash and libc; on arm64 the
+      # crates that don't.
+      - name: AArch64 crates' tests on arm64
+        run: >
+          cargo test --release --locked -p binbun-isa -p binbun-aarch64
+          -p binbun-aarch64-lift -p binbun-capi -p binbun-semantics -p binbun-ssa
+
+  proofs:
+    name: Division rewrites proved with z3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: z3
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -q -y --no-install-recommends z3
+      - name: Toolchain (rust-toolchain.toml)
+        run: cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Proofs
+        run: cargo test --release --locked -p binbun-decompile --test division -- --ignored
+
+  system:
+    name: System binaries (bash, libc)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    container: archlinux:base-devel@sha256:fa2d4ce3310ddd90a4208e5168be8ad367da5129af1245f38fd2d803bcbe3239
+    steps:
+      - name: git, for checkout
+        run: pacman -Sy --noconfirm --needed git
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Packages and toolchain
+        run: |
+          scripts/ci/arch-setup.sh
+          cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # libc_functions_lower_and_run_as_l1_with_debug_information needs a
+      # glibc build with its debug information: local only.
+      - name: Ignored system-binary tests
+        env:
+          BINBUN_SAMPLE: "300"
+        run: |
+          cargo test --release --locked -p binbun --test decompile -- --ignored
+          cargo test --release --locked -p binbun --test run -- --ignored
+          cargo test --release --locked -p binbun --test lower -- --ignored \
+            --skip libc_functions_lower_and_run_as_l1_with_debug_information
+          cargo test --release --locked -p binbun --test graph_function -- --ignored
+
+  fuzz:
+    name: Fuzzing smoke run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      RUSTC_BOOTSTRAP: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: XED (the differential target's reference)
+        run: scripts/ci/build-xed.sh "$RUNNER_TEMP/xed"
+      - name: Toolchain and cargo-fuzz
+        run: |
+          cargo --version
+          cargo install --locked cargo-fuzz@0.13.2
+      - name: Fuzz each target for ten minutes
+        working-directory: fuzz
+        env:
+          XED_DIR: ${{ runner.temp }}/xed/xed
+        run: |
+          cargo fuzz run capi -- -max_len=32 -max_total_time=600
+          cargo fuzz run -s none theme_css -- -max_len=4096 -max_total_time=600
+          cargo fuzz run -s none --features xed differential -- -max_len=24 -max_total_time=600
+      - name: Keep what failed
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+
+  package:
+    name: Release dry run
+    needs: signatures
+    uses: ./.github/workflows/package.yml # zizmor: ignore[self-repository] (actionlint knows only ./)
+    with:
+      attest: false
+      signatures: true
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+  # The packs, cached by their provenance on the default branch, where a
+  # release finds them.
+  signatures:
+    name: Signature packs
+    uses: ./.github/workflows/signatures.yml # zizmor: ignore[self-repository] (actionlint knows only ./)
+    permissions:
+      contents: read
+
+  reproducible:
+    name: Linux CLI reproducible
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    container: almalinux:8@sha256:2d0f2eb2a83cc09dbc2eb92fade4dbe8f709628149e81aa00aec70630406603b
+    env:
+      CARGO_HOME: /usr/local/cargo
+      RUSTUP_HOME: /usr/local/rustup
+    steps:
+      - name: git, for checkout
+        run: dnf -y -q install git
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build environment (scripts/release/container-setup.sh)
+        run: |
+          scripts/release/container-setup.sh
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+      - name: Two builds from two paths, compared
+        run: scripts/release/reproduce-check.sh "$RUNNER_TEMP/reproduce"
+
+  deny:
+    name: cargo deny (${{ matrix.manifest }})
+    strategy:
+      fail-fast: false
+      matrix:
+        manifest: [Cargo.toml, gui/Cargo.toml]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          manifest-path: ${{ matrix.manifest }}
+          command: check

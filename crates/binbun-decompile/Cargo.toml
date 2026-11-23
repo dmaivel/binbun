@@ -1,0 +1,25 @@
+[package]
+name = "binbun-decompile"
+description = "Decompiler passes that recover variables, expressions, control structure and types from SSA."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["decompiler", "binary-analysis", "reverse-engineering"]
+categories = ["development-tools::debugging", "no-std"]
+
+[dependencies]
+binbun-ast.workspace = true
+binbun-semantics.workspace = true
+binbun-ssa.workspace = true
+binbun-typeinfer.workspace = true
+
+[dev-dependencies]
+# The scopes tests print and compile what they place.
+binbun-print.workspace = true
+
+[lints]
+workspace = true

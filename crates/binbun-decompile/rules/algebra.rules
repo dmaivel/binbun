@@ -1,0 +1,63 @@
+# Arithmetic and bitwise identities, as address computations (`lea`) and
+# flag-setting idioms leave them.
+
+# Neutral and absorbing operands.
+rule add-0: add(x:W, 0) => x
+rule add-0-left: add(0, x:W) => x
+rule sub-0: sub(x:W, 0) => x
+rule mul-1: mul(x:W, 1) => x
+rule mul-1-left: mul(1, x:W) => x
+rule mul-0: mul(x:W, 0) => 0
+rule and-ones: and(x:W, -1) => x
+rule and-0: and(x:W, 0) => 0
+rule or-0: or(x:W, 0) => x
+rule or-0-left: or(0, x:W) => x
+rule xor-0: xor(x:W, 0) => x
+rule shl-0: shl(x:W, 0) => x
+rule lshr-0: lshr(x:W, 0) => x
+rule ashr-0: ashr(x:W, 0) => x
+
+# A value with itself.
+rule xor-self: xor(x:W, x) => 0
+  widths W in 1 8 16 32 64 128
+rule sub-self: sub(x:W, x) => 0
+rule and-self: and(x:W, x) => x
+  widths W in 1 8 16 32 64 128
+rule or-self: or(x:W, x) => x
+  widths W in 1 8 16 32 64 128
+rule add-self: add(x:W, x) => mul(x, 2)
+rule add-mul-self: add(x:W, mul(x, #c)) => mul(x, add(#c, 1))
+rule add-mul-self-left: add(mul(x:W, #c), x) => mul(x, add(#c, 1))
+rule sub-mul-self: sub(mul(x:W, #c), x) => mul(x, sub(#c, 1))
+
+# Negation and complement.
+rule not-not: not(not(x:W)) => x
+  widths W in 1 8 16 32 64 128
+rule neg-neg: neg(neg(x:W)) => x
+rule neg-of-sub: sub(0, x:W) => neg(x)
+rule not-of-xor: xor(x:W, -1) => not(x)
+rule add-neg: add(x:W, neg(y)) => sub(x, y)
+rule sub-neg: sub(x:W, neg(y)) => add(x, y)
+
+# Constants on the right, then together.
+rule add-const-left: add(#c:W, x) => add(x, #c)
+rule mul-const-left: mul(#c:W, x) => mul(x, #c)
+rule and-const-left: and(#c:W, x) => and(x, #c)
+rule or-const-left: or(#c:W, x) => or(x, #c)
+rule xor-const-left: xor(#c:W, x) => xor(x, #c)
+rule add-add-const: add(add(x:W, #c), #d) => add(x, add(#c, #d))
+rule add-sub-const: add(sub(x:W, #c), #d) => add(x, sub(#d, #c))
+rule sub-add-const: sub(add(x:W, #c), #d) => add(x, sub(#c, #d))
+rule sub-sub-const: sub(sub(x:W, #c), #d) => sub(x, add(#c, #d))
+rule mul-mul-const: mul(mul(x:W, #c), #d) => mul(x, mul(#c, #d))
+
+# Adding a negative constant is subtracting its magnitude (but the most
+# negative, which is its own negation).
+rule add-negative: add(x:W, #c) => sub(x, neg(#c))
+  if slt(#c, 0), ne(#c, shl(1, {W-1}))
+rule sub-negative: sub(x:W, #c) => add(x, neg(#c))
+  if slt(#c, 0), ne(#c, shl(1, {W-1}))
+
+# The remainder `x - x / d * d` is the division pass's: z3 proves it
+# for a constant divisor in seconds, for every divisor at once not in
+# hours at 64 bits.

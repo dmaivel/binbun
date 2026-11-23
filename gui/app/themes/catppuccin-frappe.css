@@ -1,0 +1,204 @@
+/* Catppuccin Frappé, from Catppuccin for VS Code.
+ *
+ * Source: https://github.com/catppuccin/vscode
+ *   npm @catppuccin/vscode 3.18.1, git tag @catppuccin/vscode-v3.18.1,
+ *   commit 155479e33394c54eab2bcc40c2d8de9c17ab4599 (the package's
+ *   npm provenance attests a build of that commit). The theme JSON is
+ *   generated at build time and not in git; it is the package's
+ *   themes/frappe.json sha256
+ *   e85b9a273221ff2e48296922d86de6def8f7dc12cd206e0052a5b85c0f72a888.
+ *   Palette names from @catppuccin/palette 1.7.1, the version that
+ *   commit's lockfile pins.
+ * Licence: MIT, Copyright (c) 2021 Catppuccin.
+ *
+ * Mapping: the UI roles are the workbench colours of the same meaning
+ * (title bar, sidebar, editor, list, scrollbar, find, line numbers); the
+ * code roles are the tokenColors rules VS Code resolves for C scopes.
+ * Values that are a palette colour are written as the palette variable;
+ * the colours with alpha and the two find-match colours are upstream
+ * one-off literals, kept exactly. Those literals differ per flavour (and
+ * Latte's selection alpha and arrow differ too), so each flavour is a
+ * full file rather than an @import of a sibling. Choices where a key is
+ * missing or ambiguous:
+ * - gap: activityBar.background, the darkest surface (crust).
+ * - border-variant: Catppuccin sets no editorWidget.border or
+ *   widget.border (VS Code would fall back to its own grey, not a
+ *   Catppuccin colour) and makes input.border transparent; its widget
+ *   borders (editorHoverWidget.border, editorSuggestWidget.border) are
+ *   surface2, so that.
+ * - keyword / keyword-control: keyword holds C's non-control keywords
+ *   (storage.modifier, storage.type.struct|union|enum, keyword.other),
+ *   keyword-control the control flow (keyword.control); Catppuccin gives
+ *   both mauve (one rule: keyword, storage.type, storage.modifier).
+ * - type / type-builtin: type is the named types, Catppuccin's "Types"
+ *   rule (entity.name.type, support.type), yellow; type-builtin is C's
+ *   primitive types (storage.type.built-in.primitive), mauve like
+ *   keywords.
+ * - global, field: Catppuccin has no variable.other.global rule and no
+ *   C member/property rule (variable.other.member/property,
+ *   support.variable.property), so both are the variable colour.
+ * - macro: no macro rule; entity.name.function.preprocessor and
+ *   entity.name.function.macro resolve to entity.name.function, so the
+ *   function colour.
+ * - operator: keyword.operator, Catppuccin's "Punctuation" rule (teal);
+ *   sizeof (keyword.operator.sizeof) resolves there too.
+ * - constant: the "Booleans, constants, numbers" rule
+ *   (variable.other.constant), peach; bare constant.language is
+ *   Catppuccin's built-in red.
+ * - comment-doc: there is no documentation-comment rule;
+ *   comment.block.documentation resolves to the comment rule (overlay2),
+ *   so doc comments look like comments.
+ * - hint: editorInlayHint.foreground (surface2).
+ * - punctuation-special: punctuation.definition.tag (teal).
+ * - label: no entity.name.label rule; the function colour (blue).
+ * - text-muted: descriptionForeground, which Catppuccin sets to text.
+ * - arrow: the special-punctuation teal, as for every dark theme.
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments,
+ * link tints, the lit area, agreed) follow binbun's rule: mnemonics
+ * take the embedded-text colour, jumps the control-keyword colour, calls
+ * the function colour, returns the control-keyword colour (Catppuccin
+ * gives keyword.control.return no colour of its own), no-ops the dimmest
+ * palette foreground reaching 3:1 (descriptionForeground is text):
+ *   overlay1, as overlay0 is 2.87;
+ * registers the type colour; addresses by what the line is (functions
+ * the comment colour, code the parameter colour, data the doc-comment
+ * colour, unexplored bytes the constant colour); code xrefs the special
+ * punctuation, data xrefs the doc-comment colour; link tints blue, mauve,
+ * yellow and green at 19% alpha; the lit area the panel colour at half
+ * alpha, its edge the focus border; agreed the success green. A pick
+ * under 3:1 on the editor takes the nearest palette colour of the same
+ * hue family that reaches 3:1.
+ * The branch-arrow lanes (arrow-1..8) are eight distinct opaque palette
+ * colours, each at least 3:1 on the editor, in the hue order blue,
+ * orange, purple, green, red, teal, yellow, pink so neighbouring lanes
+ * (and lane 8 next to lane 1) differ by CIE76 dE >= 20; a missing or
+ * too-faint hue takes the palette's next most distinct accent (an
+ * upstream one-off colour, as a literal, where the palette has none).
+ * Automatic names are drawn at 0.7 alpha, a cast's parentheses and type
+ * at 0.6.
+ *
+ * No deviation in this flavour: every pick reaches 3:1, and every
+ * arrow lane takes its own hue (orange is peach, pink is pink).
+ */
+
+:root {
+  --name: "Catppuccin Frappé";
+  --appearance: dark;
+
+  /* Catppuccin Frappé's palette, prefixed --ctp-. */
+  --ctp-rosewater: #f2d5cf;
+  --ctp-flamingo: #eebebe;
+  --ctp-pink: #f4b8e4;
+  --ctp-mauve: #ca9ee6;
+  --ctp-red: #e78284;
+  --ctp-maroon: #ea999c;
+  --ctp-peach: #ef9f76;
+  --ctp-yellow: #e5c890;
+  --ctp-green: #a6d189;
+  --ctp-teal: #81c8be;
+  --ctp-sky: #99d1db;
+  --ctp-sapphire: #85c1dc;
+  --ctp-blue: #8caaee;
+  --ctp-lavender: #babbf1;
+  --ctp-text: #c6d0f5;
+  --ctp-subtext1: #b5bfe2;
+  --ctp-subtext0: #a5adce;
+  --ctp-overlay2: #949cbb;
+  --ctp-overlay1: #838ba7;
+  --ctp-overlay0: #737994;
+  --ctp-surface2: #626880;
+  --ctp-surface1: #51576d;
+  --ctp-surface0: #414559;
+  --ctp-base: #303446;
+  --ctp-mantle: #292c3c;
+  --ctp-crust: #232634;
+}
+
+:root {
+  /* Surfaces. */
+  --background: var(--ctp-crust);
+  --gap: var(--ctp-crust);
+  --tab-bar: var(--ctp-crust);
+  --panel: var(--ctp-mantle);
+  --editor: var(--ctp-base);
+  --border: var(--ctp-surface2);
+  --border-variant: var(--ctp-surface2);
+  --border-focused: var(--ctp-mauve);
+  --element-hover: #41455980; /* surface0 at alpha 0x80 */
+  --element-selected: var(--ctp-surface0);
+  --scrollbar-thumb: #62688080; /* surface2 at alpha 0x80 */
+  --scrollbar-track-border: #c6d0f512; /* text at alpha 0x12 */
+
+  /* Text. */
+  --text: var(--ctp-text);
+  --text-muted: var(--ctp-text);
+  --text-placeholder: #c6d0f573; /* text at alpha 0x73 */
+  --accent: var(--ctp-blue);
+  --editor-foreground: var(--ctp-text);
+  --line-number: var(--ctp-overlay1);
+  --active-line-number: var(--ctp-mauve);
+  --error: var(--ctp-red);
+  --success: var(--ctp-green);
+
+  /* Highlights. */
+  --active-line: #c6d0f512; /* text at alpha 0x12 */
+  --selection: #949cbb40; /* overlay2 at alpha 0x40 */
+  --search-match: #506373; /* upstream one-off */
+  --active-match: #674b59; /* upstream one-off */
+  --arrow: var(--ctp-teal);
+
+  /* Code. */
+  --keyword: var(--ctp-mauve);
+  --type: var(--ctp-yellow);
+  --function: var(--ctp-blue);
+  --parameter: var(--ctp-maroon);
+  --string: var(--ctp-green);
+  --number: var(--ctp-peach);
+  --constant: var(--ctp-peach);
+  --comment: var(--ctp-overlay2);
+  --comment-doc: var(--ctp-overlay2);
+  --hint: var(--ctp-surface2);
+  --punctuation: var(--ctp-overlay2);
+  --punctuation-special: var(--ctp-teal);
+  --embedded: var(--ctp-text);
+  --variable: var(--ctp-text);
+  --label: var(--ctp-blue);
+  --keyword-control: var(--ctp-mauve);
+  --type-builtin: var(--ctp-mauve);
+  --global: var(--variable);
+  --field: var(--variable);
+  --macro: var(--function);
+  --operator: var(--ctp-teal);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: var(--ctp-overlay1);
+  --register: var(--type);
+  --address-function: var(--comment);
+  --address-code: var(--parameter);
+  --address-data: var(--comment-doc);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--comment-doc);
+  --tint-1: color-mix(in srgb, var(--ctp-blue) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--ctp-mauve) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--ctp-yellow) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--ctp-green) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--ctp-blue);
+  --arrow-2: var(--ctp-peach);
+  --arrow-3: var(--ctp-mauve);
+  --arrow-4: var(--ctp-green);
+  --arrow-5: var(--ctp-red);
+  --arrow-6: var(--ctp-teal);
+  --arrow-7: var(--ctp-yellow);
+  --arrow-8: var(--ctp-pink);
+  --auto-name-alpha: 1;   /* automatic names (v17, sub_a9090, field_38) */
+  --cast-alpha: 1;        /* a cast's parentheses and type */
+}

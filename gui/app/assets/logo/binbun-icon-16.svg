@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>binbun</title>
+  <!-- binbun-icon.svg drawn for 16 px, also used at 20 (at 16, one pixel
+       is 32 units): the small drawing's bunny (binbun-icon-small.svg)
+       larger still, tighter corners, no nose; each eye one dark pixel
+       (3.5 and 7.5, 10.5). -->
+  <rect width="512" height="512" rx="80" fill="#1D1F24"/>
+  <g transform="translate(256 250) scale(1.12) translate(-212 -196)" fill="#F5F3EB">
+    <path d="m368 236c-15.5 0-28-12.5-28-28 0-15.5 12.5-28 28-28 15.5 0 28 12.5 28 28 0 15.5-12.5 28-28 28z"/>
+    <path d="M114 351C64 342 25 291 29 251 36 186 74 131 134 106 134 81 134 61 152 46 176 27 196 53 184 89 179 103 174 113 169 123C174 91 218 66 246 53C274 40 274 69 249 97C234 111 226 121 219 131 284 121 339 156 356 216 370 266 360 321 319 341 269 366 174 361 114 351Z"/>
+  </g>
+  <path d="m69 279c-6.1 0-11-4-11-9 0-5 4.9-9 11-9 6.1 0 11 4 11 9 0 5-4.9 9-11 9z" fill="#1D1F24" transform="translate(112 336) scale(1.818 2.222) translate(-69 -270)"/>
+  <path d="m185 282c-6.6 0-12-4.5-12-10 0-5.5 5.4-10 12-10 6.6 0 12 4.5 12 10 0 5.5-5.4 10-12 10z" fill="#1D1F24" transform="translate(240 336) scale(1.667 2) translate(-185 -272)"/>
+</svg>

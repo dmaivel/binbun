@@ -1,0 +1,178 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/dmaivel/binbun"
+homepage = "https://binbun.org"
+
+[workspace.dependencies]
+# The crates published to crates.io (the `binbun` command's and the C
+# library's) carry the version beside the path: every one is released at
+# the workspace's version, and each requires exactly that of the others
+# (scripts/release/check-release.sh checks the pins against the tag).
+binbun = { path = "crates/binbun", version = "=0.1.0" }
+binbun-aarch64 = { path = "crates/binbun-aarch64", version = "=0.1.0" }
+binbun-aarch64-lift = { path = "crates/binbun-aarch64-lift", version = "=0.1.0" }
+binbun-ast = { path = "crates/binbun-ast", version = "=0.1.0" }
+binbun-bounded = { path = "crates/binbun-bounded", version = "=0.1.0" }
+binbun-capi = { path = "crates/binbun-capi", version = "=0.1.0" }
+binbun-collab = { path = "crates/binbun-collab", version = "=0.1.0" }
+binbun-debuginfo = { path = "crates/binbun-debuginfo", version = "=0.1.0" }
+binbun-decompile = { path = "crates/binbun-decompile", version = "=0.1.0" }
+binbun-demangle = { path = "crates/binbun-demangle", version = "=0.1.0" }
+binbun-disasm = { path = "crates/binbun-disasm", version = "=0.1.0", default-features = false }
+binbun-isa = { path = "crates/binbun-isa", version = "=0.1.0" }
+binbun-loader = { path = "crates/binbun-loader", version = "=0.1.0" }
+binbun-macros = { path = "crates/binbun-macros", version = "=0.1.0" }
+binbun-paths = { path = "crates/binbun-paths", version = "=0.1.0" }
+binbun-print = { path = "crates/binbun-print", version = "=0.1.0" }
+binbun-semantics = { path = "crates/binbun-semantics", version = "=0.1.0" }
+binbun-session = { path = "crates/binbun-session", version = "=0.1.0" }
+binbun-sigpack = { path = "crates/binbun-sigpack", version = "=0.1.0" }
+binbun-ssa = { path = "crates/binbun-ssa", version = "=0.1.0" }
+binbun-sync = { path = "crates/binbun-sync", version = "=0.1.0" }
+binbun-typedb = { path = "crates/binbun-typedb", version = "=0.1.0" }
+binbun-typeinfer = { path = "crates/binbun-typeinfer", version = "=0.1.0" }
+binbun-x86 = { path = "crates/binbun-x86", version = "=0.1.0" }
+binbun-x86-lift = { path = "crates/binbun-x86-lift", version = "=0.1.0" }
+# Not published.
+binbun-protocol = { path = "crates/binbun-protocol" }
+binbun-xed = { path = "crates/binbun-xed" }
+xtask = { path = "xtask" }
+
+# `.pd_` files on symbol servers are cabinets (MSZIP or LZX).
+cab = "0.6.0"
+# The journal (`binbun-session`): changes hashed into their chains,
+# signed by their authors' identity keys, encoded as postcard.
+blake3 = "1.8.7"
+ed25519-dalek = { version = "3.0.0", features = ["serde"] }
+postcard = { version = "1.1.3", default-features = false, features = ["use-std"] }
+# Tests of bounded decoding (`binbun-bounded`): an allocator that tracks
+# and limits live heap bytes, so a test fails if a call allocates past
+# what it may.
+cap = "0.1.2"
+# Property tests of the sync protocol (`binbun-sync`): model peers under
+# arbitrary schedules.
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+# An install's agreement key, which will receive shared projects' keys.
+x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
+# Collaboration (`binbun-collab`):
+# changes sealed with XChaCha20-Poly1305 under HKDF subkeys of an epoch
+# key, epoch keys wrapped to members with HPKE (RFC 9180), tickets in
+# base32, peers over iroh's QUIC (mDNS for the LAN) on tokio.
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc"] }
+data-encoding = "2.11.1"
+hkdf = "0.13.0"
+hpke = { version = "0.15.1", default-features = false, features = ["alloc", "chacha", "getrandom", "x25519"] }
+iroh = "1.4.1"
+iroh-mdns-address-lookup = "0.6.1"
+# Files by hash: the binary and debug files, as ciphertext,
+# in iroh-blobs' store and verified streaming (BLAKE3), run over binbun's
+# own links; its byte streams and stream combinators.
+bytes = "1.12.1"
+iroh-blobs = { version = "0.105.0", default-features = false, features = ["fs-store"] }
+n0-future = "0.3.2"
+sha2 = "0.11.1"
+# What remote parties may spend (`binbun-collab`'s budgets): rates as
+# GCRA, keyed by identity, on a clock the tests replace.
+governor = { version = "0.10.4", default-features = false, features = ["std"] }
+tokio = { version = "1.54.1", features = ["io-util", "macros", "rt-multi-thread", "signal", "sync", "time"] }
+zeroize = "1.9.1"
+cpp_demangle = "0.5.1"
+msvc-demangler = "0.11.0"
+flate2 = { version = "1.1.11", default-features = false, features = ["zlib-rs"] }
+prettyplease = "0.3.0"
+proc-macro2 = "1.0.107"
+# `binbun-py`: binbun as a Python extension module.
+pyo3 = "0.30.1"
+quote = "1.0.47"
+# Windows' script socket (`binbun-protocol`): a named pipe made with a
+# security descriptor (interprocess's safe wrappers; its Tokio pipes so
+# that a read waiting can be given up), its unguessable name from the
+# OS's random numbers, the descriptor's SDDL as UTF-16.
+getrandom = "0.4.3"
+interprocess = { version = "2.4.8", features = ["tokio"] }
+widestring = "1.2.1"
+# Text search through the listing and the C (`binbun-session`'s search).
+regex = "1.13.1"
+# A project's key, the binary's SHA-256: the SHA extensions where the
+# processor has them; already built for rustls.
+ring = { version = "0.17.14", default-features = false }
+# `binbun mcp`: the MCP server over stdio (the official Rust SDK). Pinned
+# exactly: it releases often. Apache-2.0 per crates.io; its repository's
+# LICENSE says it is moving from MIT to Apache-2.0, so parts may still
+# be MIT: both are allowed (deny.toml).
+rmcp = { version = "=3.10.0", default-features = false, features = ["server", "transport-io"] }
+# Whether a script server's discovery file is a running process's
+# (`binbun-protocol`): `kill(pid, 0)` without unsafe.
+rustix = { version = "1.1.6", default-features = false, features = ["std", "process"] }
+rustc_apfloat = "0.2.3"
+# zstd: the embedded type databases (`binbun-typedb`) and signature
+# packs (`.jsonl.zst`) read and packs written in pure Rust (ruzstd); the
+# type databases compressed at build time by zstd's own library (the
+# build script's, not linked into binbun), whose higher levels ruzstd's
+# encoder does not have.
+ruzstd = "0.9.1"
+zstd = { version = "0.14.0", default-features = false }
+self_cell = "1.3.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["raw_value"] }
+syn = { version = "3.0.9", default-features = false, features = ["derive", "parsing", "printing", "proc-macro"] }
+tar = { version = "0.4.46", default-features = false }
+toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
+# Symbol servers: blocking HTTP(S) over rustls (ring, webpki roots).
+ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Clones must be deliberate.
+clone_on_ref_ptr = "warn"
+implicit_clone = "warn"
+redundant_clone = "warn"
+# Every enum match names its variants, so adding a variant is a compile error.
+wildcard_enum_match_arm = "warn"
+match_wildcard_for_single_variants = "warn"
+# No silent panics on attacker-controlled input.
+unwrap_used = "warn"
+indexing_slicing = "warn"
+# Taste.
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+# `cargo xtask codegen` decompresses and parses 215 MB of AARCHMRS JSON
+# (`xtask::aarchmrs`); at opt-level 0 that takes minutes instead of seconds.
+[profile.dev.package.xtask]
+opt-level = 3
+[profile.dev.package.serde_json]
+opt-level = 3
+[profile.dev.package.serde_core]
+opt-level = 3
+[profile.dev.package.zlib-rs]
+opt-level = 3
+# zstd's library compresses the type databases at level 19 in the build
+# script of `binbun-typedb`: 15 s optimised, minutes at opt-level 0
+# (build dependencies' default, in release builds too).
+[profile.dev.package.zstd-sys]
+opt-level = 3
+[profile.release.package.zstd-sys]
+opt-level = 3
+# The Win32 database decompressed (21.8 MB) in tests and debug builds.
+[profile.dev.package.ruzstd]
+opt-level = 3

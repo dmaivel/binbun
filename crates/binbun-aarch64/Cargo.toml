@@ -1,0 +1,31 @@
+[package]
+name = "binbun-aarch64"
+description = "AArch64 instruction decoder generated from Arm's machine-readable specification."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# Its generated code derives from Arm's A-profile Machine Readable Specification (NOTICE-AARCHMRS.html).
+license = "(MIT OR Apache-2.0) AND BSD-3-Clause"
+repository.workspace = true
+homepage.workspace = true
+keywords = ["aarch64", "arm64", "disassembler", "decoder"]
+categories = ["parser-implementations", "development-tools::debugging", "no-std"]
+
+[dependencies]
+binbun-isa.workspace = true
+
+[dev-dependencies]
+# The AARCHMRS reader (`xtask::aarchmrs`), for the oracle test.
+xtask.workspace = true
+object = { version = "0.40", default-features = false, features = ["read", "std"] }
+
+[[example]]
+name = "disassemble_aarch64"
+path = "../../examples/rust/disassemble_aarch64.rs"
+
+[[example]]
+name = "color_tokens"
+path = "../../examples/rust/color_tokens.rs"
+
+[lints]
+workspace = true

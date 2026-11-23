@@ -1,0 +1,100 @@
+# A separate workspace: cargo-fuzz builds it with nightly and sanitizer
+# coverage, and the differential target links Intel XED (`XED_DIR`), neither
+# of which belongs in the main build.
+[workspace]
+
+[package]
+name = "binbun-fuzz"
+description = "Fuzzing of binbun's decoders (differential against Intel XED, the C API), of the GUI's theme files and of collaboration's wire decoders."
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[features]
+# Builds and links XED (`XED_DIR`) for the differential target.
+xed = ["dep:cc"]
+
+[dependencies]
+binbun-collab = { path = "../crates/binbun-collab" }
+binbun-capi = { path = "../crates/binbun-capi" }
+binbun-isa = { path = "../crates/binbun-isa" }
+binbun-session = { path = "../crates/binbun-session" }
+binbun-sync = { path = "../crates/binbun-sync" }
+binbun-x86 = { path = "../crates/binbun-x86", features = ["internal-reference"] }
+# The wire targets' allocation bound: live heap bytes, limited around
+# each decode.
+cap = "0.1.2"
+libfuzzer-sys = "0.4"
+serde = "1.0.229"
+
+[build-dependencies]
+cc = { version = "1.11.1", optional = true }
+
+[[bin]]
+name = "differential"
+path = "fuzz_targets/differential.rs"
+required-features = ["xed"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "capi"
+path = "fuzz_targets/capi.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "theme_css"
+path = "fuzz_targets/theme_css.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wire_control"
+path = "fuzz_targets/wire_control.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wire_live"
+path = "fuzz_targets/wire_live.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wire_blob"
+path = "fuzz_targets/wire_blob.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wire_records"
+path = "fuzz_targets/wire_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wire_sync"
+path = "fuzz_targets/wire_sync.rs"
+test = false
+doc = false
+bench = false
+
+[lints.rust]
+unsafe_code = "deny"
+unused_qualifications = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+must_use_candidate = "allow"

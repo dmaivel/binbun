@@ -1,0 +1,43 @@
+[package]
+name = "binbun-py"
+description = "binbun as a Python library: the `binbun._native` extension (PyO3, stable ABI from Python 3.11) behind the `binbun` package, a binbun-session in process."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+# Published as the `binbun` wheel on PyPI, not on crates.io.
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+# Python's tests (`python/tests`) exercise it; the Rust test harness
+# cannot load an extension module without an interpreter.
+test = false
+doctest = false
+
+[dependencies]
+binbun.workspace = true
+binbun-aarch64.workspace = true
+binbun-ast.workspace = true
+binbun-print.workspace = true
+binbun-demangle.workspace = true
+binbun-paths.workspace = true
+# `binbun.Decoder`: one decoder for both architectures.
+binbun-disasm = { workspace = true, features = ["x86", "aarch64"] }
+# The decoders' vocabulary as the C API has it (statuses, branches,
+# tokens, operands); the Rust library only, no C symbol is called.
+binbun-capi.workspace = true
+binbun-isa.workspace = true
+binbun-loader.workspace = true
+# Writes, transactions and the history, as the GUI's server makes them.
+binbun-protocol.workspace = true
+binbun-session.workspace = true
+binbun-x86.workspace = true
+pyo3 = { workspace = true, features = ["abi3-py311"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

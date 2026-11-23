@@ -1,0 +1,1419 @@
+/* binbun/disasm.h: the C API of binbun's disassemblers (libbinbun; the
+ * version, statuses and strings every part shares are binbun/core.h's).
+ *
+ * x86 (16, 32 and 64-bit, XED-exact) and AArch64 (A64, LLVM-exact text).
+ * Decode an instruction once into storage you own, then ask it what it is:
+ * its mnemonic and form or encoding, its operands, what it does to the
+ * flags and to the flow of control, and its text, plain or as tokens.
+ * binbun_decode decodes either architecture through one API ("Either
+ * architecture", at the end).
+ *
+ * Conventions, with binbun/core.h's:
+ *
+ * - Nothing allocates, nothing calls back, and there is no global state.
+ *   Every function may be called from any thread at the same time; an
+ *   instruction's storage may be read by several threads at once, but not
+ *   while a decode writes it. A decoder (binbun_x86_decoder) belongs to one
+ *   thread at a time.
+ * - Decodes write `out` only when they return BINBUN_STATUS_OK.
+ * - Functions reading an instruction take storage a successful decode
+ *   wrote (or a copy of it). They return their failure value for a null
+ *   pointer, for zero-initialised storage and for storage holding the other
+ *   architecture's instruction; storage holding anything else (never
+ *   initialised, or written by other code) is undefined behaviour, as for
+ *   any C object. Storage is only meaningful to the library build that
+ *   wrote it: do not keep it across processes or library versions.
+ * - Functions writing text take a buffer and its capacity, write as much as
+ *   fits, NUL-terminate when the capacity allows (capacity 0 writes
+ *   nothing), and return the length of the whole text without the NUL, so
+ *   that a result >= capacity means the buffer was too small. Buffers of
+ *   BINBUN_<ARCH>_MAX_TEXT + 1 bytes and BINBUN_<ARCH>_MAX_TOKENS tokens
+ *   always suffice.
+ * - Functions writing arrays (operands, tokens, registers) write up to the
+ *   capacity and return how many there are.
+ * - Strings the library returns (binbun_str) are not NUL-terminated and are
+ *   constants of the library, valid while it is loaded.
+ * - Ids (mnemonics, forms, registers, encodings...) start at 1; 0 is none.
+ *   Their constants are in disasm_generated.h. They are stable for one
+ *   version of the library; across versions use the names.
+ */
+#ifndef BINBUN_DISASM_H
+#define BINBUN_DISASM_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "core.h"
+#include "disasm_generated.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ------------------------------------------------------------------------
+ * Shared types
+ * ---------------------------------------------------------------------- */
+
+/* The disassemblers' statuses (binbun_status, binbun/core.h): from
+ * BINBUN_STATUS_INVALID to 63, why bytes are no instruction. */
+enum {
+    /* x86: no instruction has this encoding. */
+    BINBUN_STATUS_INVALID = 16,
+    /* x86: the instruction would be longer than 15 bytes. */
+    BINBUN_STATUS_X86_TOO_LONG = 17,
+    /* x86: the instruction does not exist in the mode. */
+    BINBUN_STATUS_X86_INVALID_MODE = 18,
+    /* x86: a register field encodes no register. */
+    BINBUN_STATUS_X86_BAD_REGISTER = 19,
+    /* x86: LOCK on an instruction that does not allow it. */
+    BINBUN_STATUS_X86_BAD_LOCK_PREFIX = 20,
+    /* x86: 66, F2 or F3 where none is allowed (before VEX, say). */
+    BINBUN_STATUS_X86_BAD_LEGACY_PREFIX = 21,
+    /* x86: REX where none is allowed. */
+    BINBUN_STATUS_X86_BAD_REX_PREFIX = 22,
+    /* x86: an opcode map that does not exist. */
+    BINBUN_STATUS_X86_BAD_MAP = 23,
+    /* x86: EVEX.V' is 0 outside 64-bit mode. */
+    BINBUN_STATUS_X86_BAD_EVEX_V_PRIME = 24,
+    /* x86: EVEX.z without a mask register. */
+    BINBUN_STATUS_X86_BAD_EVEX_ZEROING = 25,
+    /* x86: EVEX.L'L is 3 without embedded rounding. */
+    BINBUN_STATUS_X86_BAD_EVEX_LENGTH = 26,
+    /* x86: a gather's index, destination and mask registers are not all
+     * different. */
+    BINBUN_STATUS_X86_GATHER_REGISTERS = 27,
+    /* x86: registers that must differ are the same. */
+    BINBUN_STATUS_X86_BAD_REGISTER_MATCH = 28,
+    /* AArch64: no encoding has the word. */
+    BINBUN_STATUS_AARCH64_UNALLOCATED = 32,
+    /* AArch64: the encoding's decode makes the word UNDEFINED. */
+    BINBUN_STATUS_AARCH64_UNDEFINED = 33,
+    /* AArch64: the word is CONSTRAINED UNPREDICTABLE, rejected as LLVM's
+     * disassembler rejects it. */
+    BINBUN_STATUS_AARCH64_UNPREDICTABLE = 34,
+};
+
+/* Whether `status` says the bytes are no instruction: from
+ * BINBUN_STATUS_INVALID to 63. Evaluates `status` once (a call may be the
+ * argument): below BINBUN_STATUS_INVALID the unsigned difference wraps. */
+#define BINBUN_STATUS_IS_INVALID(status) \
+    ((uint32_t)((uint32_t)(status) - (uint32_t)BINBUN_STATUS_INVALID) <= (uint32_t)(63 - BINBUN_STATUS_INVALID))
+
+/* Bits of an operand's access. */
+#define BINBUN_ACCESS_READ 1u
+#define BINBUN_ACCESS_WRITE 2u
+
+/* How an instruction transfers control. */
+typedef uint8_t binbun_branch_kind;
+enum {
+    /* Execution continues with the next instruction. */
+    BINBUN_BRANCH_NONE = 0,
+    /* A jump: conditional (`jz`, `b.eq`, `cbz`) or not. */
+    BINBUN_BRANCH_JUMP = 1,
+    /* A call; the callee normally returns to the next instruction. */
+    BINBUN_BRANCH_CALL = 2,
+    /* A return from a call. */
+    BINBUN_BRANCH_RETURN = 3,
+    /* A software interrupt or deliberate exception (`int3`, `ud2`, `brk`):
+     * conditional (`into`) or not. */
+    BINBUN_BRANCH_TRAP = 4,
+    /* An entry to the operating system or hypervisor (`syscall`, `svc`),
+     * which normally returns to the next instruction. */
+    BINBUN_BRANCH_SYSTEM_CALL = 5,
+    /* A return from an interrupt, exception or system call (`iret`,
+     * `sysret`, `eret`). */
+    BINBUN_BRANCH_EXCEPTION_RETURN = 6,
+    /* A halt until the next interrupt (`hlt`). */
+    BINBUN_BRANCH_HALT = 7,
+};
+
+/* Where a jump or call goes, as far as the instruction alone tells. */
+typedef uint8_t binbun_target_kind;
+enum {
+    /* The instruction neither jumps nor calls. */
+    BINBUN_TARGET_NONE = 0,
+    /* A known address, in `target`. */
+    BINBUN_TARGET_ADDRESS = 1,
+    /* The address stored in memory at `target`, `pointer_size` bytes: an
+     * x86 `jmp [rip+disp]`, how imports are reached through the GOT or the
+     * IAT. */
+    BINBUN_TARGET_POINTER = 2,
+    /* A register or a computed memory operand. */
+    BINBUN_TARGET_INDIRECT = 3,
+    /* A segmented address: `selector` and the offset in `target`. */
+    BINBUN_TARGET_FAR = 4,
+};
+
+/* What an instruction does to the flow of control, as it would at an
+ * address. */
+typedef struct binbun_branch {
+    /* A binbun_branch_kind. */
+    uint8_t kind;
+    /* Whether the jump or trap happens only when a condition holds. */
+    bool conditional;
+    /* Whether execution can continue with the next instruction. */
+    bool falls_through;
+    /* A binbun_target_kind. */
+    uint8_t target_kind;
+    /* For BINBUN_TARGET_POINTER, the pointer's size in bytes. */
+    uint8_t pointer_size;
+    uint8_t reserved;
+    /* For BINBUN_TARGET_FAR, the segment selector. */
+    uint16_t selector;
+    /* The address, the pointer's address or the far offset; 0 otherwise. */
+    uint64_t target;
+} binbun_branch;
+
+/* Text options. */
+#define BINBUN_TEXT_DEFAULT 0u
+/* AArch64 only: labels as offsets from the instruction (or its 4 KiB page
+ * for `adrp`), as LLVM's C API writes them (`b #0x40`), instead of the
+ * addresses they name (`b 0x1040`). */
+#define BINBUN_TEXT_RELATIVE_LABELS 1u
+
+/* What a token of an instruction's text is. */
+typedef uint8_t binbun_token_kind;
+enum {
+    /* The mnemonic (`add`, `b.eq`, `call far`). */
+    BINBUN_TOKEN_MNEMONIC = 0,
+    /* A prefix written as a word before the mnemonic (`lock`, `rep`). */
+    BINBUN_TOKEN_PREFIX = 1,
+    /* A register, with what is written on it (`v0.16b`, `p0/z`); `value` is
+     * the x86 register (binbun_x86_register), 0 on AArch64. */
+    BINBUN_TOKEN_REGISTER = 2,
+    /* An immediate (`0x10`, `#-0x8`), whose value `value` holds (two's
+     * complement when negative). */
+    BINBUN_TOKEN_IMMEDIATE = 3,
+    /* A number written bare: a scale, a lane index, an SME slice offset. */
+    BINBUN_TOKEN_INTEGER = 4,
+    /* A floating-point immediate (`#1.00000000`); `value` holds the bits of
+     * the double. */
+    BINBUN_TOKEN_FLOAT = 5,
+    /* A branch target or another PC-relative address, which `value` holds
+     * (the offset with BINBUN_TEXT_RELATIVE_LABELS). */
+    BINBUN_TOKEN_ADDRESS = 6,
+    /* An x86 memory operand's displacement, which `value` holds signed
+     * (`-0x10` is -16). */
+    BINBUN_TOKEN_DISPLACEMENT = 7,
+    /* A word from a fixed set: a size (`dword`, `ptr`), a decoration (`{z}`,
+     * `{1to16}`), a shift or extend, a condition, a named operand. */
+    BINBUN_TOKEN_SYMBOL = 8,
+    /* Brackets, braces and other punctuation within an operand, including
+     * a `, ` that does not separate operands (`[x1, #0x8]`). */
+    BINBUN_TOKEN_PUNCTUATION = 9,
+    /* The `, ` between two operands, and only there, so counting these
+     * counts operands. Always BINBUN_TOKEN_NO_OPERAND. */
+    BINBUN_TOKEN_SEPARATOR = 10,
+    /* Spaces and tabs. */
+    BINBUN_TOKEN_WHITESPACE = 11,
+};
+
+/* What a token's `operand` is when it is part of no operand. */
+#define BINBUN_TOKEN_NO_OPERAND 0xFF
+
+/* One token, a span of the text buffer it was written with. */
+typedef struct binbun_token {
+    /* A binbun_token_kind. */
+    uint8_t kind;
+    /* Which operand (in the order of binbun_<arch>_instruction_operands) the
+     * token shows, or BINBUN_TOKEN_NO_OPERAND for the mnemonic, prefixes,
+     * the separators and the whitespace between them. On x86 the write
+     * mask written on the first operand (`{k1}`) belongs to the mask
+     * operand. */
+    uint8_t operand;
+    uint16_t reserved0;
+    /* Where the token starts in the text, and its length. A token cut short
+     * by the text buffer keeps its full length. */
+    uint32_t offset;
+    uint32_t length;
+    uint32_t reserved1;
+    /* What the token stands for, as its kind says; 0 otherwise. */
+    uint64_t value;
+} binbun_token;
+
+/* How many tokens and how much text an instruction has. */
+typedef struct binbun_text_size {
+    size_t tokens;
+    /* The length of the text without its NUL. */
+    size_t length;
+} binbun_text_size;
+
+/* ------------------------------------------------------------------------
+ * x86
+ * ---------------------------------------------------------------------- */
+
+/* The processor mode. */
+typedef uint32_t binbun_x86_mode;
+enum {
+    /* Real-address mode with 16-bit code segments. */
+    BINBUN_X86_MODE_REAL16 = 1,
+    /* Real-address mode with a 32-bit code segment (CS.D = 1). */
+    BINBUN_X86_MODE_REAL32 = 2,
+    /* 16-bit protected or compatibility mode. */
+    BINBUN_X86_MODE_BITS16 = 3,
+    /* 32-bit protected or compatibility mode. */
+    BINBUN_X86_MODE_BITS32 = 4,
+    /* 64-bit mode. */
+    BINBUN_X86_MODE_BITS64 = 5,
+};
+
+/* The longest instruction, in bytes. */
+#define BINBUN_X86_MAX_LENGTH 15
+/* Most operands an instruction has. */
+#define BINBUN_X86_MAX_OPERANDS 16
+/* The longest text, without its NUL, and the most tokens. x86 cannot be
+ * swept whole: these are bounds well above any instruction seen (57 bytes
+ * and 21 tokens at any offset of libc, libcrypto, libstdc++ and bash), which
+ * the library's fuzzing checks. */
+#define BINBUN_X86_MAX_TEXT 160
+#define BINBUN_X86_MAX_TOKENS 64
+
+/* A decoded instruction, opaque: storage you own, which a decode writes and
+ * the functions below read. It has no address; functions that need one take
+ * it. It may be copied (memcpy, assignment) like any C object. */
+typedef struct binbun_x86_instruction {
+    uint64_t opaque[24];
+} binbun_x86_instruction;
+
+/* How many bytes of storage a decode writes, as the library was built: at
+ * most sizeof(binbun_x86_instruction). A program built against another
+ * version's header compares the two before decoding. */
+size_t binbun_x86_instruction_size(void);
+
+/* Decode the instruction at the start of the `len` bytes at `bytes` in
+ * `mode` into `out`. BINBUN_STATUS_TRUNCATED if the bytes end before the
+ * instruction does; BINBUN_STATUS_NULL_POINTER if `out` is null, or `bytes`
+ * is null and `len` is not 0; BINBUN_STATUS_BAD_ARGUMENT for an unknown mode
+ * or misaligned `out`. */
+binbun_status binbun_x86_decode_bytes(binbun_x86_mode mode, const uint8_t *bytes, size_t len,
+                                      binbun_x86_instruction *out);
+
+/* The length of the instruction at the start of the `len` bytes at `bytes`
+ * in `mode`, into `*length`: XED's length decoder alone, which decodes
+ * prefixes and opcode maps but does not check which instructions exist, so
+ * it accepts some bytes binbun_x86_decode_bytes rejects. */
+binbun_status binbun_x86_decode_length(binbun_x86_mode mode, const uint8_t *bytes, size_t len,
+                                       size_t *length);
+
+/* A linear sweep over a buffer of code. Its fields are yours to read and
+ * to set (`offset` to continue elsewhere); `bytes` must stay readable while
+ * it is used. */
+typedef struct binbun_x86_decoder {
+    const uint8_t *bytes;
+    size_t length;
+    /* Offset in `bytes` of the next instruction; past the end, none. */
+    size_t offset;
+    /* The address of `bytes[0]`. */
+    uint64_t address;
+    /* A binbun_x86_mode. */
+    binbun_x86_mode mode;
+    uint32_t reserved;
+} binbun_x86_decoder;
+
+/* Start a sweep of the `length` bytes at `bytes`, at `address`, in `mode`.
+ * BINBUN_STATUS_NULL_POINTER if `decoder` is null or `bytes` is null and
+ * `length` is not 0; BINBUN_STATUS_BAD_ARGUMENT for an unknown mode. */
+binbun_status binbun_x86_decoder_init(binbun_x86_decoder *decoder, binbun_x86_mode mode,
+                                      const uint8_t *bytes, size_t length, uint64_t address);
+
+/* Decode the next instruction into `out` and its address into `*address`
+ * (if `address` is not null), then move past it; after bytes that are no
+ * instruction (any status but OK and END), move one byte on, so that a
+ * sweep over data resynchronises. BINBUN_STATUS_END when no bytes are
+ * left. */
+binbun_status binbun_x86_decoder_next(binbun_x86_decoder *decoder, binbun_x86_instruction *out,
+                                      uint64_t *address);
+
+/* The instruction's length in bytes, 1 to 15. */
+uint8_t binbun_x86_instruction_length(const binbun_x86_instruction *inst);
+
+/* The mnemonic: XED's iclass, so `rep movsb` is BINBUN_X86_MNEMONIC_REP_MOVSB. */
+binbun_x86_mnemonic binbun_x86_instruction_mnemonic(const binbun_x86_instruction *inst);
+
+/* The form: XED's iform, the mnemonic with its operand types
+ * (ADD_GPRv_GPRv_01). */
+binbun_x86_form binbun_x86_instruction_form(const binbun_x86_instruction *inst);
+
+/* The category (BINBUN_X86_CATEGORY_COND_BR...). */
+binbun_x86_category binbun_x86_instruction_category(const binbun_x86_instruction *inst);
+
+/* The ISA extension (BINBUN_X86_EXTENSION_AVX2...). */
+binbun_x86_extension binbun_x86_instruction_extension(const binbun_x86_instruction *inst);
+
+/* The feature set the instruction needs (BINBUN_X86_ISA_SET_AVX2...). */
+binbun_x86_isa_set binbun_x86_instruction_isa_set(const binbun_x86_instruction *inst);
+
+/* How the instruction is encoded. */
+typedef uint8_t binbun_x86_encoding;
+enum {
+    BINBUN_X86_ENCODING_LEGACY = 1,
+    BINBUN_X86_ENCODING_VEX = 2,
+    BINBUN_X86_ENCODING_EVEX = 3,
+    BINBUN_X86_ENCODING_XOP = 4,
+};
+binbun_x86_encoding binbun_x86_instruction_encoding(const binbun_x86_instruction *inst);
+
+/* The condition an instruction tests (Jcc, SETcc, CMOVcc, LOOP, ...). */
+typedef uint8_t binbun_x86_condition;
+enum {
+    BINBUN_X86_CONDITION_NONE = 0,
+    BINBUN_X86_CONDITION_O = 1,
+    BINBUN_X86_CONDITION_NO = 2,
+    /* CF set: below, carry. */
+    BINBUN_X86_CONDITION_B = 3,
+    BINBUN_X86_CONDITION_NB = 4,
+    /* ZF set: zero, equal. */
+    BINBUN_X86_CONDITION_Z = 5,
+    BINBUN_X86_CONDITION_NZ = 6,
+    /* CF or ZF set. */
+    BINBUN_X86_CONDITION_BE = 7,
+    /* CF and ZF clear: above. */
+    BINBUN_X86_CONDITION_NBE = 8,
+    BINBUN_X86_CONDITION_S = 9,
+    BINBUN_X86_CONDITION_NS = 10,
+    BINBUN_X86_CONDITION_P = 11,
+    BINBUN_X86_CONDITION_NP = 12,
+    /* SF != OF. */
+    BINBUN_X86_CONDITION_L = 13,
+    BINBUN_X86_CONDITION_NL = 14,
+    /* ZF set or SF != OF. */
+    BINBUN_X86_CONDITION_LE = 15,
+    BINBUN_X86_CONDITION_NLE = 16,
+    /* Never, always: APX CCMPF, CCMPT. */
+    BINBUN_X86_CONDITION_FALSE = 17,
+    BINBUN_X86_CONDITION_TRUE = 18,
+    /* JCXZ, JECXZ, JRCXZ: the count register is zero. */
+    BINBUN_X86_CONDITION_COUNT_ZERO = 19,
+    /* LOOP: the decremented count is not zero. */
+    BINBUN_X86_CONDITION_LOOP = 20,
+    /* LOOPE: and ZF is set. */
+    BINBUN_X86_CONDITION_LOOP_ZERO = 21,
+    /* LOOPNE: and ZF is clear. */
+    BINBUN_X86_CONDITION_LOOP_NOT_ZERO = 22,
+    /* XBEGIN: the transaction aborts (the target is the fallback). */
+    BINBUN_X86_CONDITION_TRANSACTION_ABORT = 23,
+};
+binbun_x86_condition binbun_x86_instruction_condition(const binbun_x86_instruction *inst);
+
+/* The effective operand width in bits: 8, 16, 32 or 64. */
+uint32_t binbun_x86_instruction_operand_width(const binbun_x86_instruction *inst);
+/* The effective address width in bits, 16, 32 or 64, or 0 for none. */
+uint32_t binbun_x86_instruction_address_width(const binbun_x86_instruction *inst);
+/* The stack address width in bits: 16, 32 or 64. */
+uint32_t binbun_x86_instruction_stack_address_width(const binbun_x86_instruction *inst);
+
+/* What the instruction at `address` does to the flow of control. Relative
+ * targets are addresses, wrapped as the instruction pointer wraps; a jump or
+ * call through `[rip+disp]` or an absolute address is a
+ * BINBUN_TARGET_POINTER. Kind BINBUN_BRANCH_NONE and nothing else set if
+ * `inst` holds no instruction. */
+binbun_branch binbun_x86_instruction_branch(const binbun_x86_instruction *inst, uint64_t address);
+
+/* The address a RIP-relative `lea` at `address` computes, into `*out`;
+ * false if it computes none or `out` is null. */
+bool binbun_x86_instruction_computed_address(const binbun_x86_instruction *inst, uint64_t address,
+                                             uint64_t *out);
+
+/* The flags: RFLAGS bit positions, and the x87 condition codes C0-C3 in
+ * bits 28-31. */
+enum {
+    BINBUN_X86_FLAG_CF = 1u << 0,
+    BINBUN_X86_FLAG_PF = 1u << 2,
+    BINBUN_X86_FLAG_AF = 1u << 4,
+    BINBUN_X86_FLAG_ZF = 1u << 6,
+    BINBUN_X86_FLAG_SF = 1u << 7,
+    BINBUN_X86_FLAG_TF = 1u << 8,
+    BINBUN_X86_FLAG_IF = 1u << 9,
+    BINBUN_X86_FLAG_DF = 1u << 10,
+    BINBUN_X86_FLAG_OF = 1u << 11,
+    BINBUN_X86_FLAG_IOPL = 3u << 12,
+    BINBUN_X86_FLAG_NT = 1u << 14,
+    BINBUN_X86_FLAG_RF = 1u << 16,
+    BINBUN_X86_FLAG_VM = 1u << 17,
+    BINBUN_X86_FLAG_AC = 1u << 18,
+    BINBUN_X86_FLAG_VIF = 1u << 19,
+    BINBUN_X86_FLAG_VIP = 1u << 20,
+    BINBUN_X86_FLAG_ID = 1u << 21,
+    BINBUN_X86_FLAG_FC0 = 1u << 28,
+    BINBUN_X86_FLAG_FC1 = 1u << 29,
+    BINBUN_X86_FLAG_FC2 = 1u << 30,
+};
+#define BINBUN_X86_FLAG_FC3 (1u << 31)
+
+/* What an instruction does to the flags, as XED's flags records say. */
+typedef struct binbun_x86_flag_effect {
+    /* BINBUN_X86_FLAG_ bits read. */
+    uint32_t read;
+    /* Bits written: modified, set, cleared or left undefined. */
+    uint32_t written;
+    /* Bits left undefined. */
+    uint32_t undefined;
+    /* Whether the instruction may write flags, and whether it always does
+     * (a shift by a count of 0 does not). */
+    bool may_write;
+    bool must_write;
+    uint16_t reserved;
+} binbun_x86_flag_effect;
+
+/* What the instruction does to the flags; all zero for none. */
+binbun_x86_flag_effect binbun_x86_instruction_flags(const binbun_x86_instruction *inst);
+
+/* What an operand's value is, and so which fields of binbun_x86_operand
+ * hold it. */
+typedef uint8_t binbun_x86_operand_kind;
+enum {
+    /* A register, in `reg` (0 where XED reports none). */
+    BINBUN_X86_OPERAND_REGISTER = 1,
+    /* A memory operand or an address computation (`lea`): `segment`,
+     * `base`, `index`, `scale`, `displacement`, `memory_size`. */
+    BINBUN_X86_OPERAND_MEMORY = 2,
+    /* The first immediate: `value` (its bytes zero-extended) and
+     * `signed_immediate`. */
+    BINBUN_X86_OPERAND_IMMEDIATE = 3,
+    /* The second immediate (ENTER, EXTRQ), in `value`. */
+    BINBUN_X86_OPERAND_SECOND_IMMEDIATE = 4,
+    /* A branch displacement from the next instruction, in `displacement`
+     * (binbun_x86_instruction_branch gives the target). */
+    BINBUN_X86_OPERAND_RELATIVE = 5,
+    /* An absolute branch address or far pointer offset, in `value`. */
+    BINBUN_X86_OPERAND_FIELD = 6,
+};
+
+/* Which decoder field holds an operand (XED's operand names). */
+typedef uint8_t binbun_x86_operand_field;
+enum {
+    BINBUN_X86_FIELD_REG0 = 1,
+    BINBUN_X86_FIELD_REG1 = 2,
+    BINBUN_X86_FIELD_REG2 = 3,
+    BINBUN_X86_FIELD_REG3 = 4,
+    BINBUN_X86_FIELD_REG4 = 5,
+    BINBUN_X86_FIELD_REG5 = 6,
+    BINBUN_X86_FIELD_REG6 = 7,
+    BINBUN_X86_FIELD_REG7 = 8,
+    BINBUN_X86_FIELD_REG8 = 9,
+    BINBUN_X86_FIELD_REG9 = 10,
+    BINBUN_X86_FIELD_BASE0 = 11,
+    BINBUN_X86_FIELD_BASE1 = 12,
+    BINBUN_X86_FIELD_MEM0 = 13,
+    BINBUN_X86_FIELD_MEM1 = 14,
+    BINBUN_X86_FIELD_AGEN = 15,
+    BINBUN_X86_FIELD_IMM0 = 16,
+    BINBUN_X86_FIELD_IMM1 = 17,
+    BINBUN_X86_FIELD_RELBR = 18,
+    BINBUN_X86_FIELD_ABSBR = 19,
+    BINBUN_X86_FIELD_PTR = 20,
+};
+
+/* Whether the text shows an operand. */
+typedef uint8_t binbun_x86_visibility;
+enum {
+    /* Written in assembly. */
+    BINBUN_X86_VISIBILITY_EXPLICIT = 1,
+    /* Implied by the mnemonic, but shown (x87 `st`). */
+    BINBUN_X86_VISIBILITY_IMPLICIT = 2,
+    /* Not shown (the stack pointer of `push`, the flags). */
+    BINBUN_X86_VISIBILITY_SUPPRESSED = 3,
+};
+
+/* How an instruction accesses an operand. */
+typedef uint8_t binbun_x86_action;
+enum {
+    BINBUN_X86_ACTION_READ = 1,
+    BINBUN_X86_ACTION_WRITE = 2,
+    BINBUN_X86_ACTION_READ_WRITE = 3,
+    /* Possibly read (under a REP prefix, say). */
+    BINBUN_X86_ACTION_CONDITIONAL_READ = 4,
+    BINBUN_X86_ACTION_CONDITIONAL_WRITE = 5,
+    /* Possibly read, always written. */
+    BINBUN_X86_ACTION_CONDITIONAL_READ_WRITE = 6,
+    /* Read, possibly written. */
+    BINBUN_X86_ACTION_READ_CONDITIONAL_WRITE = 7,
+};
+
+/* One operand. Which fields hold the value depends on `kind`; the others
+ * are 0. */
+typedef struct binbun_x86_operand {
+    /* A binbun_x86_operand_kind. */
+    uint8_t kind;
+    /* A binbun_x86_operand_field. */
+    uint8_t field;
+    /* A binbun_x86_visibility. */
+    uint8_t visibility;
+    /* A binbun_x86_action. */
+    uint8_t action;
+    /* BINBUN_ACCESS_READ and BINBUN_ACCESS_WRITE bits: whether it may be
+     * read, may be written. */
+    uint8_t access;
+    /* Memory: the index's multiplier, 1, 2, 4 or 8, or 0 without a SIB
+     * byte. */
+    uint8_t scale;
+    /* Immediate: whether the instruction sign-extends it. */
+    bool signed_immediate;
+    uint8_t reserved;
+    /* Register: the register. */
+    binbun_x86_register reg;
+    /* Memory: the segment register as XED reports it (outside 64-bit mode
+     * the segment used, default or not; in 64-bit mode only an FS or GS
+     * override; none for an address computation), the base and the index
+     * register, each 0 for none. */
+    binbun_x86_register segment;
+    binbun_x86_register base;
+    binbun_x86_register index;
+    /* The operand's width in bits. */
+    uint32_t bits;
+    /* Memory: bytes accessed, 0 for an address computation. */
+    uint32_t memory_size;
+    /* Memory: the displacement (scaled for EVEX compressed
+     * displacements); relative: the branch displacement. */
+    int64_t displacement;
+    /* Immediate, second immediate, field: the value. */
+    uint64_t value;
+} binbun_x86_operand;
+
+/* Write the instruction's operands into `out`, up to `capacity`, in XED's
+ * order: those the text shows, then implied ones (the stack pointer, the
+ * flags). Returns how many there are, at most BINBUN_X86_MAX_OPERANDS. */
+size_t binbun_x86_instruction_operands(const binbun_x86_instruction *inst, binbun_x86_operand *out,
+                                       size_t capacity);
+
+/* Write the instruction at `address` as Intel-syntax text, as XED prints
+ * it (`lock add dword ptr [rax+rbx*4-0x10], 0x5`; branch targets as
+ * addresses). `options` must be BINBUN_TEXT_DEFAULT. Returns 0 if `inst`
+ * holds no instruction or for other options. */
+size_t binbun_x86_instruction_text(const binbun_x86_instruction *inst, uint64_t address, uint32_t options,
+                                   char *text, size_t capacity);
+
+/* Write the instruction at `address` as tokens: the text (as
+ * binbun_x86_instruction_text writes it) into `text`, NUL-terminated when
+ * `text_capacity` allows, and each token into `tokens`, up to
+ * `token_capacity`. Both sizes are 0 if `inst` holds no instruction or for
+ * options other than BINBUN_TEXT_DEFAULT. */
+binbun_text_size binbun_x86_instruction_tokens(const binbun_x86_instruction *inst, uint64_t address,
+                                               uint32_t options, char *text, size_t text_capacity,
+                                               binbun_token *tokens, size_t token_capacity);
+
+/* Names: XED's (`REP_MOVSB`, `ADD_GPRv_GPRv_01`, `BINARY`, `BASE`, `I86`),
+ * registers as the text writes them (`rax`, `st(0)`). Empty for a value
+ * that is none. */
+binbun_str binbun_x86_mnemonic_name(binbun_x86_mnemonic mnemonic);
+binbun_str binbun_x86_form_name(binbun_x86_form form);
+binbun_str binbun_x86_category_name(binbun_x86_category category);
+binbun_str binbun_x86_extension_name(binbun_x86_extension extension);
+binbun_str binbun_x86_isa_set_name(binbun_x86_isa_set isa_set);
+binbun_str binbun_x86_register_name(binbun_x86_register reg);
+
+/* The value with the name `length` bytes at `name` (exact, as the
+ * functions above spell it), or 0. */
+binbun_x86_mnemonic binbun_x86_mnemonic_from_name(const char *name, size_t length);
+binbun_x86_form binbun_x86_form_from_name(const char *name, size_t length);
+binbun_x86_register binbun_x86_register_from_name(const char *name, size_t length);
+
+/* A register's kind (XED's register classes). */
+typedef uint8_t binbun_x86_register_class;
+enum {
+    BINBUN_X86_REGISTER_CLASS_BNDCFG = 1,
+    BINBUN_X86_REGISTER_CLASS_BNDSTAT = 2,
+    BINBUN_X86_REGISTER_CLASS_BOUND = 3,
+    BINBUN_X86_REGISTER_CLASS_CR = 4,
+    BINBUN_X86_REGISTER_CLASS_DR = 5,
+    BINBUN_X86_REGISTER_CLASS_FLAGS = 6,
+    BINBUN_X86_REGISTER_CLASS_GPR = 7,
+    BINBUN_X86_REGISTER_CLASS_IP = 8,
+    BINBUN_X86_REGISTER_CLASS_MASK = 9,
+    BINBUN_X86_REGISTER_CLASS_MMX = 10,
+    BINBUN_X86_REGISTER_CLASS_MSR = 11,
+    BINBUN_X86_REGISTER_CLASS_MXCSR = 12,
+    BINBUN_X86_REGISTER_CLASS_PSEUDO = 13,
+    BINBUN_X86_REGISTER_CLASS_PSEUDOX87 = 14,
+    BINBUN_X86_REGISTER_CLASS_SR = 15,
+    BINBUN_X86_REGISTER_CLASS_TMP = 16,
+    BINBUN_X86_REGISTER_CLASS_TREG = 17,
+    BINBUN_X86_REGISTER_CLASS_UIF = 18,
+    BINBUN_X86_REGISTER_CLASS_X87 = 19,
+    BINBUN_X86_REGISTER_CLASS_XCR = 20,
+    BINBUN_X86_REGISTER_CLASS_XMM = 21,
+    BINBUN_X86_REGISTER_CLASS_YMM = 22,
+    BINBUN_X86_REGISTER_CLASS_ZMM = 23,
+};
+
+/* What a register is. */
+typedef struct binbun_x86_register_info {
+    /* A binbun_x86_register_class. */
+    uint8_t class_;
+    uint8_t reserved;
+    /* Its width in bits in 64-bit mode; 0 for pseudo registers. */
+    uint16_t width;
+    /* The largest register containing it in 64-bit mode (rax for al), and
+     * outside 64-bit mode (eax for al). */
+    binbun_x86_register full;
+    binbun_x86_register full32;
+    /* The bit at which it starts within `full`: 8 for ah, else 0. */
+    uint32_t offset;
+} binbun_x86_register_info;
+
+/* What `reg` is, into `*out`; false if it is no register or `out` is
+ * null. */
+bool binbun_x86_register_describe(binbun_x86_register reg, binbun_x86_register_info *out);
+
+/* ------------------------------------------------------------------------
+ * AArch64
+ * ---------------------------------------------------------------------- */
+
+/* Every instruction is 4 bytes. */
+#define BINBUN_AARCH64_LENGTH 4
+/* Most operands an instruction has. */
+#define BINBUN_AARCH64_MAX_OPERANDS 8
+/* The longest text, without its NUL, and the most tokens: bounds for every
+ * word (71 and 26 in this release, checked over all 2^32 words), with room
+ * for later releases. */
+#define BINBUN_AARCH64_MAX_TEXT 96
+#define BINBUN_AARCH64_MAX_TOKENS 40
+
+/* A decoded instruction, opaque, as binbun_x86_instruction. */
+typedef struct binbun_aarch64_instruction {
+    uint64_t opaque[4];
+} binbun_aarch64_instruction;
+
+/* How many bytes of storage a decode writes, as the library was built: at
+ * most sizeof(binbun_aarch64_instruction). */
+size_t binbun_aarch64_instruction_size(void);
+
+/* Decode the instruction word `word` into `out`. */
+binbun_status binbun_aarch64_decode_word(uint32_t word, binbun_aarch64_instruction *out);
+
+/* Decode the instruction at the start of the `len` bytes at `bytes`
+ * (little-endian) into `out`. BINBUN_STATUS_TRUNCATED if `len` is less than
+ * 4; BINBUN_STATUS_NULL_POINTER if `out` is null, or `bytes` is null and
+ * `len` is not 0. */
+binbun_status binbun_aarch64_decode_bytes(const uint8_t *bytes, size_t len, binbun_aarch64_instruction *out);
+
+/* A linear sweep over a buffer of code, as binbun_x86_decoder. */
+typedef struct binbun_aarch64_decoder {
+    const uint8_t *bytes;
+    size_t length;
+    size_t offset;
+    uint64_t address;
+} binbun_aarch64_decoder;
+
+/* Start a sweep of the `length` bytes at `bytes`, at `address`. */
+binbun_status binbun_aarch64_decoder_init(binbun_aarch64_decoder *decoder, const uint8_t *bytes, size_t length,
+                                          uint64_t address);
+
+/* Decode the next instruction into `out` and its address into `*address`
+ * (if not null), then move 4 bytes on, after an invalid word too; a last
+ * piece shorter than 4 bytes is BINBUN_STATUS_TRUNCATED. BINBUN_STATUS_END
+ * when no bytes are left. */
+binbun_status binbun_aarch64_decoder_next(binbun_aarch64_decoder *decoder, binbun_aarch64_instruction *out,
+                                          uint64_t *address);
+
+/* The instruction word. */
+uint32_t binbun_aarch64_instruction_word(const binbun_aarch64_instruction *inst);
+
+/* The instruction's length in bytes: 4. */
+uint8_t binbun_aarch64_instruction_length(const binbun_aarch64_instruction *inst);
+
+/* The encoding the word is an instance of, as Arm's specification names it
+ * (BINBUN_AARCH64_ENC_ADD_64_addsub_shift). */
+binbun_aarch64_encoding binbun_aarch64_instruction_encoding(const binbun_aarch64_instruction *inst);
+
+/* The mnemonic as the text writes it, after alias selection: `mov` for
+ * `orr x0, xzr, x1`, `b.eq`. */
+binbun_str binbun_aarch64_instruction_mnemonic(const binbun_aarch64_instruction *inst);
+
+/* An encoding's name (`ADD_64_addsub_shift`), the mnemonic of its own
+ * syntax (`ADD`), or empty for a value that is no encoding. */
+binbun_str binbun_aarch64_encoding_name(binbun_aarch64_encoding encoding);
+binbun_str binbun_aarch64_encoding_mnemonic(binbun_aarch64_encoding encoding);
+
+/* The encoding named `length` bytes at `name` (exact), or 0. */
+binbun_aarch64_encoding binbun_aarch64_encoding_from_name(const char *name, size_t length);
+
+/* What the instruction at `address` does to the flow of control: `b`,
+ * `b.cond`, `cbz`, `tbz`, `bl` give their target; `br`, `blr` and their
+ * pointer-authenticating forms (`braa`, `blraaz`...) are
+ * BINBUN_TARGET_INDIRECT; `ret`, `retaa` returns; `eret`, `drps` exception
+ * returns; `svc`, `hvc`, `smc` system calls; `brk`, `udf`, `hlt` traps. */
+binbun_branch binbun_aarch64_instruction_branch(const binbun_aarch64_instruction *inst, uint64_t address);
+
+/* The address an `adr` at `address` computes, into `*out`; false if it
+ * computes none or `out` is null. (`adrp` computes a page, not a pointer.) */
+bool binbun_aarch64_instruction_computed_address(const binbun_aarch64_instruction *inst, uint64_t address,
+                                                 uint64_t *out);
+
+/* A condition field: the A64 encoding of the condition, `eq` 0 to `nv` 15. */
+typedef uint8_t binbun_aarch64_cond;
+enum {
+    BINBUN_AARCH64_COND_EQ = 0,
+    BINBUN_AARCH64_COND_NE = 1,
+    BINBUN_AARCH64_COND_HS = 2,
+    BINBUN_AARCH64_COND_LO = 3,
+    BINBUN_AARCH64_COND_MI = 4,
+    BINBUN_AARCH64_COND_PL = 5,
+    BINBUN_AARCH64_COND_VS = 6,
+    BINBUN_AARCH64_COND_VC = 7,
+    BINBUN_AARCH64_COND_HI = 8,
+    BINBUN_AARCH64_COND_LS = 9,
+    BINBUN_AARCH64_COND_GE = 10,
+    BINBUN_AARCH64_COND_LT = 11,
+    BINBUN_AARCH64_COND_GT = 12,
+    BINBUN_AARCH64_COND_LE = 13,
+    BINBUN_AARCH64_COND_AL = 14,
+    BINBUN_AARCH64_COND_NV = 15,
+};
+
+/* The register classes: the letter and width a register is written with. */
+typedef uint8_t binbun_aarch64_register_class;
+enum {
+    /* 32-bit general register; 31 is wzr. */
+    BINBUN_AARCH64_REG_W = 1,
+    /* 64-bit general register; 31 is xzr. */
+    BINBUN_AARCH64_REG_X = 2,
+    /* 32-bit general register; 31 is wsp. */
+    BINBUN_AARCH64_REG_WSP = 3,
+    /* 64-bit general register; 31 is sp. */
+    BINBUN_AARCH64_REG_XSP = 4,
+    /* SIMD&FP scalars by width. */
+    BINBUN_AARCH64_REG_B = 5,
+    BINBUN_AARCH64_REG_H = 6,
+    BINBUN_AARCH64_REG_S = 7,
+    BINBUN_AARCH64_REG_D = 8,
+    BINBUN_AARCH64_REG_Q = 9,
+    /* SIMD&FP vector. */
+    BINBUN_AARCH64_REG_V = 10,
+    /* SVE vector, predicate, predicate-as-counter. */
+    BINBUN_AARCH64_REG_Z = 11,
+    BINBUN_AARCH64_REG_P = 12,
+    BINBUN_AARCH64_REG_PN = 13,
+    /* SME lookup table zt0. */
+    BINBUN_AARCH64_REG_ZT = 14,
+    /* System instruction control register c0-c15. */
+    BINBUN_AARCH64_REG_C = 15,
+    /* The SVE first-fault register (implicit registers only). */
+    BINBUN_AARCH64_REG_FFR = 16,
+};
+
+/* Element sizes. */
+typedef uint8_t binbun_aarch64_element;
+enum {
+    BINBUN_AARCH64_ELEMENT_NONE = 0,
+    BINBUN_AARCH64_ELEMENT_B = 1,
+    BINBUN_AARCH64_ELEMENT_H = 2,
+    BINBUN_AARCH64_ELEMENT_S = 3,
+    BINBUN_AARCH64_ELEMENT_D = 4,
+    BINBUN_AARCH64_ELEMENT_Q = 5,
+};
+
+/* A predicate qualifier. */
+typedef uint8_t binbun_aarch64_predication;
+enum {
+    BINBUN_AARCH64_PREDICATION_NONE = 0,
+    /* `/z`: inactive elements are zeroed. */
+    BINBUN_AARCH64_PREDICATION_ZEROING = 1,
+    /* `/m`: inactive elements keep their value. */
+    BINBUN_AARCH64_PREDICATION_MERGING = 2,
+};
+
+/* A register, with what is written on it. */
+typedef struct binbun_aarch64_register {
+    /* A binbun_aarch64_register_class. */
+    uint8_t class_;
+    uint8_t number;
+    /* The arrangement: `lanes` elements of `element` (`16b`), or only the
+     * element size (`lanes` 0: `v0.s[1]`, `z0.d`), or none (`element` 0). */
+    uint8_t lanes;
+    uint8_t element;
+    /* The element index (`v0.s[1]`), where `has_index`. */
+    uint8_t index;
+    bool has_index;
+    /* A binbun_aarch64_predication. */
+    uint8_t predication;
+    uint8_t reserved;
+} binbun_aarch64_register;
+
+/* The condition an instruction tests. */
+typedef uint8_t binbun_aarch64_condition_kind;
+enum {
+    /* The flags satisfy `cond`: b.cond, csel, ccmp, ... */
+    BINBUN_AARCH64_CONDITION_FLAGS = 1,
+    /* `register` is zero (`sense`, cbz) or not (cbnz). */
+    BINBUN_AARCH64_CONDITION_ZERO = 2,
+    /* Bit `bit` of `register` is set (`sense`, tbnz) or clear (tbz). */
+    BINBUN_AARCH64_CONDITION_BIT = 3,
+    /* `register` compared with the right operand satisfies `cond`
+     * (cb<cc>, FEAT_CMPBR). */
+    BINBUN_AARCH64_CONDITION_COMPARE = 4,
+};
+typedef uint8_t binbun_aarch64_compare_kind;
+enum {
+    BINBUN_AARCH64_COMPARE_REGISTER = 1,
+    BINBUN_AARCH64_COMPARE_IMMEDIATE = 2,
+};
+typedef struct binbun_aarch64_condition {
+    /* A binbun_aarch64_condition_kind. */
+    uint8_t kind;
+    /* A binbun_aarch64_cond, for FLAGS and COMPARE. It describes the
+     * encoding as Arm's pseudocode does: `cset w0, eq` tests `ne`. */
+    uint8_t cond;
+    bool sense;
+    uint8_t bit;
+    /* A binbun_aarch64_compare_kind, for COMPARE. */
+    uint8_t right_kind;
+    uint8_t reserved[3];
+    binbun_aarch64_register reg;
+    binbun_aarch64_register right_register;
+    int64_t right_immediate;
+} binbun_aarch64_condition;
+
+/* The condition the instruction tests, into `*out`; false if it tests
+ * none or `out` is null. */
+bool binbun_aarch64_instruction_condition(const binbun_aarch64_instruction *inst, binbun_aarch64_condition *out);
+
+/* The condition flags, as they sit in NZCV. */
+enum {
+    BINBUN_AARCH64_FLAG_N = 1 << 3,
+    BINBUN_AARCH64_FLAG_Z = 1 << 2,
+    BINBUN_AARCH64_FLAG_C = 1 << 1,
+    BINBUN_AARCH64_FLAG_V = 1 << 0,
+};
+typedef struct binbun_aarch64_flag_effect {
+    /* BINBUN_AARCH64_FLAG_ bits read (those the condition tests, the carry
+     * of adc...) and written. */
+    uint8_t read;
+    uint8_t written;
+    uint16_t reserved;
+} binbun_aarch64_flag_effect;
+binbun_aarch64_flag_effect binbun_aarch64_instruction_flags(const binbun_aarch64_instruction *inst);
+
+/* What kind of memory access an instruction makes. */
+typedef uint8_t binbun_aarch64_memory_kind;
+enum {
+    BINBUN_AARCH64_MEMORY_LOAD = 1,
+    BINBUN_AARCH64_MEMORY_STORE = 2,
+    /* A read-modify-write: LSE atomics, swp, cas. */
+    BINBUN_AARCH64_MEMORY_ATOMIC = 3,
+    BINBUN_AARCH64_MEMORY_LOAD_EXCLUSIVE = 4,
+    BINBUN_AARCH64_MEMORY_STORE_EXCLUSIVE = 5,
+    /* A prefetch hint: no data is accessed. */
+    BINBUN_AARCH64_MEMORY_PREFETCH = 6,
+    /* A memory copy (CPY*): the first memory operand written, the second
+     * read. */
+    BINBUN_AARCH64_MEMORY_COPY = 7,
+    BINBUN_AARCH64_MEMORY_LOAD_TAG = 8,
+    BINBUN_AARCH64_MEMORY_STORE_TAG = 9,
+};
+typedef struct binbun_aarch64_memory_access {
+    /* A binbun_aarch64_memory_kind. */
+    uint8_t kind;
+    uint8_t reserved[3];
+    /* Bytes accessed in total for a fixed-size access; 0 where it depends
+     * on the vector length, the implementation or a register. */
+    uint32_t size;
+} binbun_aarch64_memory_access;
+
+/* The memory access the instruction makes through an operand, into `*out`;
+ * false if it makes none or `out` is null. */
+bool binbun_aarch64_instruction_memory(const binbun_aarch64_instruction *inst,
+                                       binbun_aarch64_memory_access *out);
+
+/* Write the registers the instruction reads, or writes, without naming
+ * them (x30 of `bl` and `ret`, x16/x17 of `pacia1716`, FFR) into `out`, up
+ * to `capacity`; returns how many there are. */
+size_t binbun_aarch64_instruction_implicit_reads(const binbun_aarch64_instruction *inst,
+                                                 binbun_aarch64_register *out, size_t capacity);
+size_t binbun_aarch64_instruction_implicit_writes(const binbun_aarch64_instruction *inst,
+                                                  binbun_aarch64_register *out, size_t capacity);
+
+/* What an operand is, and so which member of `detail` holds it. */
+typedef uint8_t binbun_aarch64_operand_kind;
+enum {
+    BINBUN_AARCH64_OPERAND_REGISTER = 1,         /* register */
+    BINBUN_AARCH64_OPERAND_LIST = 2,             /* list */
+    BINBUN_AARCH64_OPERAND_IMMEDIATE = 3,        /* immediate */
+    BINBUN_AARCH64_OPERAND_FLOAT = 4,            /* float_ */
+    BINBUN_AARCH64_OPERAND_SHIFT = 5,            /* shift, of the operand before it */
+    BINBUN_AARCH64_OPERAND_EXTEND = 6,           /* extend, of the register before it */
+    BINBUN_AARCH64_OPERAND_MEMORY = 7,           /* memory */
+    BINBUN_AARCH64_OPERAND_WRITEBACK = 8,        /* register, written back without brackets (`x2!`) */
+    BINBUN_AARCH64_OPERAND_LABEL = 9,            /* label */
+    BINBUN_AARCH64_OPERAND_CONDITION = 10,       /* condition, a binbun_aarch64_cond */
+    BINBUN_AARCH64_OPERAND_SYSTEM_REGISTER = 11, /* system_register */
+    BINBUN_AARCH64_OPERAND_NAMED = 12,           /* named */
+    BINBUN_AARCH64_OPERAND_ZA = 13,              /* za */
+    BINBUN_AARCH64_OPERAND_ZA_LIST = 14,         /* za_list */
+    BINBUN_AARCH64_OPERAND_TABLE_SLICE = 15,     /* table_slice: `zt0[<n>, mul vl]` */
+    BINBUN_AARCH64_OPERAND_INDEXED_REGISTER = 16 /* indexed_register */
+};
+
+/* How a number is written. */
+typedef uint8_t binbun_aarch64_radix;
+enum {
+    BINBUN_AARCH64_RADIX_HEX = 1,
+    BINBUN_AARCH64_RADIX_DECIMAL = 2,
+    /* LLVM's zero-padded hex of 64-bit MOVI masks. */
+    BINBUN_AARCH64_RADIX_PADDED_HEX = 3,
+};
+
+/* A register list: `count` registers from `first`, numbers `stride` apart,
+ * wrapping at 32 (16 for predicates). */
+typedef uint8_t binbun_aarch64_list_style;
+enum {
+    /* Every register, separated by commas: `{ v0.16b, v1.16b }`. */
+    BINBUN_AARCH64_LIST_COMMAS = 1,
+    /* The first and the last: `{ z0.s - z3.s }`. */
+    BINBUN_AARCH64_LIST_RANGE = 2,
+};
+typedef struct binbun_aarch64_register_list {
+    binbun_aarch64_register first;
+    uint8_t count;
+    uint8_t stride;
+    /* A binbun_aarch64_list_style. */
+    uint8_t style;
+    uint8_t reserved[5];
+} binbun_aarch64_register_list;
+
+typedef struct binbun_aarch64_immediate {
+    /* The value; two's complement when `is_signed`. */
+    uint64_t value;
+    bool is_signed;
+    /* A binbun_aarch64_radix. */
+    uint8_t radix;
+    uint8_t reserved[6];
+} binbun_aarch64_immediate;
+
+typedef struct binbun_aarch64_float {
+    double value;
+    /* Whether it is a constant the encoding selects (written shortest:
+     * `#0.5`) rather than encodes (eight decimals: `#1.00000000`). */
+    bool exact;
+    uint8_t reserved[7];
+} binbun_aarch64_float;
+
+typedef uint8_t binbun_aarch64_shift_kind;
+enum {
+    BINBUN_AARCH64_SHIFT_LSL = 1,
+    BINBUN_AARCH64_SHIFT_LSR = 2,
+    BINBUN_AARCH64_SHIFT_ASR = 3,
+    BINBUN_AARCH64_SHIFT_ROR = 4,
+    BINBUN_AARCH64_SHIFT_MSL = 5,
+    /* SVE's `mul #n`. */
+    BINBUN_AARCH64_SHIFT_MUL = 6,
+};
+typedef struct binbun_aarch64_shift {
+    /* A binbun_aarch64_shift_kind. */
+    uint8_t kind;
+    uint8_t amount;
+    uint8_t reserved[6];
+} binbun_aarch64_shift;
+
+typedef uint8_t binbun_aarch64_extend_kind;
+enum {
+    BINBUN_AARCH64_EXTEND_UXTB = 1,
+    BINBUN_AARCH64_EXTEND_UXTH = 2,
+    BINBUN_AARCH64_EXTEND_UXTW = 3,
+    BINBUN_AARCH64_EXTEND_UXTX = 4,
+    BINBUN_AARCH64_EXTEND_SXTB = 5,
+    BINBUN_AARCH64_EXTEND_SXTH = 6,
+    BINBUN_AARCH64_EXTEND_SXTW = 7,
+    BINBUN_AARCH64_EXTEND_SXTX = 8,
+};
+typedef struct binbun_aarch64_extend {
+    /* A binbun_aarch64_extend_kind. */
+    uint8_t kind;
+    /* The shift amount, where `has_amount`. */
+    uint8_t amount;
+    bool has_amount;
+    uint8_t reserved[5];
+} binbun_aarch64_extend;
+
+/* What a memory operand adds to its base. */
+typedef uint8_t binbun_aarch64_offset_kind;
+enum {
+    BINBUN_AARCH64_OFFSET_NONE = 0,
+    /* An immediate, in `offset`. */
+    BINBUN_AARCH64_OFFSET_IMMEDIATE = 1,
+    /* A register, `index`, shifted or extended as `modifier` says. */
+    BINBUN_AARCH64_OFFSET_REGISTER = 2,
+    /* `offset` vector lengths (`#-1, mul vl`). */
+    BINBUN_AARCH64_OFFSET_VECTOR_LENGTH = 3,
+};
+typedef uint8_t binbun_aarch64_writeback;
+enum {
+    BINBUN_AARCH64_WRITEBACK_NONE = 0,
+    /* Before the access: `[x0, #8]!`. */
+    BINBUN_AARCH64_WRITEBACK_PRE = 1,
+    /* After the access, by the offset written after the bracket: `[x0], #8`. */
+    BINBUN_AARCH64_WRITEBACK_POST = 2,
+};
+typedef uint8_t binbun_aarch64_modifier;
+enum {
+    BINBUN_AARCH64_MODIFIER_NONE = 0,
+    /* A binbun_aarch64_shift_kind in `modifier_kind`. */
+    BINBUN_AARCH64_MODIFIER_SHIFT = 1,
+    /* A binbun_aarch64_extend_kind in `modifier_kind`. */
+    BINBUN_AARCH64_MODIFIER_EXTEND = 2,
+};
+typedef struct binbun_aarch64_memory {
+    binbun_aarch64_register base;
+    binbun_aarch64_register index;
+    /* The immediate (two's complement when `offset_signed`) or the number
+     * of vector lengths. */
+    int64_t offset;
+    /* A binbun_aarch64_offset_kind. */
+    uint8_t offset_kind;
+    /* A binbun_aarch64_writeback. */
+    uint8_t writeback;
+    bool offset_signed;
+    /* A binbun_aarch64_radix. */
+    uint8_t offset_radix;
+    /* A binbun_aarch64_modifier. */
+    uint8_t modifier;
+    uint8_t modifier_kind;
+    uint8_t modifier_amount;
+    bool modifier_has_amount;
+} binbun_aarch64_memory;
+
+typedef uint8_t binbun_aarch64_label_base;
+enum {
+    /* From the instruction's address. */
+    BINBUN_AARCH64_LABEL_INSTRUCTION = 1,
+    /* From its 4 KiB page (adrp). */
+    BINBUN_AARCH64_LABEL_PAGE = 2,
+};
+/* A PC-relative address: base + `offset`. binbun_aarch64_instruction_branch
+ * gives branch targets as addresses. */
+typedef struct binbun_aarch64_label {
+    int64_t offset;
+    /* A binbun_aarch64_label_base. */
+    uint8_t base;
+    /* A binbun_aarch64_radix, for BINBUN_TEXT_RELATIVE_LABELS. */
+    uint8_t radix;
+    uint8_t reserved[6];
+} binbun_aarch64_label;
+
+typedef struct binbun_aarch64_system_register {
+    /* Its name for this access as LLVM writes it (`TPIDR_EL0`); empty where
+     * it has none (written `S3_3_C13_C0_2`). */
+    binbun_str name;
+    /* op0:op1:CRn:CRm:op2, op0 in bits 15:14. */
+    uint16_t encoding;
+    bool has_name;
+    uint8_t reserved[5];
+} binbun_aarch64_system_register;
+
+typedef uint8_t binbun_aarch64_name_kind;
+enum {
+    BINBUN_AARCH64_NAME_PREFETCH = 1,
+    BINBUN_AARCH64_NAME_BARRIER = 2,
+    BINBUN_AARCH64_NAME_BRANCH_TARGET = 3,
+    BINBUN_AARCH64_NAME_PSTATE_FIELD = 4,
+    BINBUN_AARCH64_NAME_PATTERN = 5,
+    BINBUN_AARCH64_NAME_SYSTEM_OPERATION = 6,
+    BINBUN_AARCH64_NAME_KEYWORD = 7,
+};
+typedef struct binbun_aarch64_named {
+    /* The name, lower case (`pldl1keep`, `ish`). */
+    binbun_str name;
+    /* A binbun_aarch64_name_kind. */
+    uint8_t kind;
+    uint8_t reserved[7];
+} binbun_aarch64_named;
+
+typedef uint8_t binbun_aarch64_slice_direction;
+enum {
+    BINBUN_AARCH64_SLICE_NONE = 0,
+    BINBUN_AARCH64_SLICE_HORIZONTAL = 1,
+    BINBUN_AARCH64_SLICE_VERTICAL = 2,
+};
+/* The SME array or a tile, whole or sliced: `za`, `za1.d`, `za0h.s[w12, 3]`,
+ * `za.d[w8, 0, vgx2]`. */
+typedef struct binbun_aarch64_za {
+    /* The tile, where `has_tile`; else the whole array. */
+    uint8_t tile;
+    bool has_tile;
+    /* A binbun_aarch64_element. */
+    uint8_t element;
+    /* A binbun_aarch64_slice_direction. */
+    uint8_t direction;
+    /* The slice, where `has_slice`: index register w<slice_index>, offset
+     * `slice_offset`, to `slice_last` where `has_last`, vector group
+     * `group` (2, 4) or 0. */
+    bool has_slice;
+    uint8_t slice_index;
+    uint8_t slice_offset;
+    uint8_t slice_last;
+    bool has_last;
+    uint8_t group;
+    uint8_t reserved[6];
+} binbun_aarch64_za;
+
+typedef uint8_t binbun_aarch64_za_list_kind;
+enum {
+    /* One tile slice, in `za`. */
+    BINBUN_AARCH64_ZA_LIST_SLICE = 1,
+    /* The 64-bit tiles in `tiles`, bit i for za<i>.d. */
+    BINBUN_AARCH64_ZA_LIST_TILES = 2,
+};
+typedef struct binbun_aarch64_za_list {
+    /* A binbun_aarch64_za_list_kind. */
+    uint8_t kind;
+    uint8_t tiles;
+    uint8_t reserved[6];
+    binbun_aarch64_za za;
+} binbun_aarch64_za_list;
+
+/* A register selected by a general register plus an offset:
+ * `p2.b[w12, 15]`. */
+typedef struct binbun_aarch64_indexed_register {
+    binbun_aarch64_register reg;
+    binbun_aarch64_register index;
+    uint8_t offset;
+    uint8_t reserved[7];
+} binbun_aarch64_indexed_register;
+
+/* One operand, as the text writes it. */
+typedef struct binbun_aarch64_operand {
+    /* A binbun_aarch64_operand_kind. */
+    uint8_t kind;
+    /* BINBUN_ACCESS_READ and BINBUN_ACCESS_WRITE bits. A memory operand's
+     * access is the memory access (its base and offset registers are read,
+     * the base written back as `writeback` says); values (immediates,
+     * shifts, labels, names) are read. */
+    uint8_t access;
+    uint8_t reserved[6];
+    union {
+        binbun_aarch64_register reg;
+        binbun_aarch64_register_list list;
+        binbun_aarch64_immediate immediate;
+        binbun_aarch64_float float_;
+        binbun_aarch64_shift shift;
+        binbun_aarch64_extend extend;
+        binbun_aarch64_memory memory;
+        binbun_aarch64_label label;
+        uint8_t condition;
+        binbun_aarch64_system_register system_register;
+        binbun_aarch64_named named;
+        binbun_aarch64_za za;
+        binbun_aarch64_za_list za_list;
+        uint8_t table_slice;
+        binbun_aarch64_indexed_register indexed_register;
+        uint64_t raw[4];
+    } detail;
+} binbun_aarch64_operand;
+
+/* Write the instruction's operands, as the text writes them (after alias
+ * selection), into `out`, up to `capacity`. Returns how many there are, at
+ * most BINBUN_AARCH64_MAX_OPERANDS. */
+size_t binbun_aarch64_instruction_operands(const binbun_aarch64_instruction *inst, binbun_aarch64_operand *out,
+                                           size_t capacity);
+
+/* Write the instruction at `address` as text, as LLVM writes it: the
+ * mnemonic, a tab, the operands (`ldr\tx0, [x1, #0x8]`); labels as the
+ * addresses they name, or as offsets with BINBUN_TEXT_RELATIVE_LABELS.
+ * Returns 0 if `inst` holds no instruction or for unknown options. */
+size_t binbun_aarch64_instruction_text(const binbun_aarch64_instruction *inst, uint64_t address,
+                                       uint32_t options, char *text, size_t capacity);
+
+/* Write the instruction at `address` as tokens, as
+ * binbun_x86_instruction_tokens does. */
+binbun_text_size binbun_aarch64_instruction_tokens(const binbun_aarch64_instruction *inst, uint64_t address,
+                                                   uint32_t options, char *text, size_t text_capacity,
+                                                   binbun_token *tokens, size_t token_capacity);
+
+/* ------------------------------------------------------------------------
+ * Either architecture
+ * ---------------------------------------------------------------------- */
+
+/* The architecture, for one decoder of both, chosen by the caller (nothing
+ * is guessed from the bytes), as the Rust crate binbun-disasm and the Python
+ * package's binbun.Decoder have it. An instruction is bound to its address
+ * and keeps its bytes; what both architectures share (mnemonic, text,
+ * control flow, the registers it reads and writes) is asked of it with the
+ * functions below, and binbun_instruction_as_x86 or
+ * binbun_instruction_as_aarch64 give the native instruction for the rest
+ * (operands, flags, tokens). */
+typedef uint32_t binbun_arch;
+enum {
+    /* x86, in a mode (binbun_x86_mode). */
+    BINBUN_ARCH_X86 = 1,
+    /* AArch64's A64 instruction set. */
+    BINBUN_ARCH_AARCH64 = 2,
+};
+
+/* The longest instruction, in bytes, and the longest text, without its
+ * NUL: x86's, the larger. */
+#define BINBUN_MAX_LENGTH 15
+#define BINBUN_MAX_TEXT 160
+/* The most registers an instruction reads, or writes. */
+#define BINBUN_MAX_REGISTERS 72
+/* The longest register name, without its NUL: 23 in this release
+ * (`ICH_PPI_PRIORITYR15_EL2`), with room for later releases. */
+#define BINBUN_MAX_REGISTER_NAME 32
+
+/* A decoded instruction of either architecture, opaque, as
+ * binbun_x86_instruction, but with its address and bytes. */
+typedef struct binbun_instruction {
+    uint64_t opaque[32];
+} binbun_instruction;
+
+/* How many bytes of storage a decode writes, as the library was built: at
+ * most sizeof(binbun_instruction). */
+size_t binbun_instruction_size(void);
+
+/* Decode the instruction at the start of the `len` bytes at `bytes`, which
+ * is at `address`, for `arch` into `out`: x86 in `mode` (a
+ * binbun_x86_mode), AArch64 with `mode` 0. The statuses are the native
+ * decoders' (BINBUN_STATUS_TRUNCATED, BINBUN_STATUS_INVALID,
+ * BINBUN_STATUS_AARCH64_UNALLOCATED...); BINBUN_STATUS_NULL_POINTER if `out`
+ * is null, or `bytes` is null and `len` is not 0; BINBUN_STATUS_BAD_ARGUMENT
+ * for an unknown architecture or mode, a mode other than 0 for AArch64, an
+ * architecture the library was built without, or misaligned `out`. */
+binbun_status binbun_decode(binbun_arch arch, binbun_x86_mode mode, const uint8_t *bytes, size_t len,
+                            uint64_t address, binbun_instruction *out);
+
+/* A linear sweep over a buffer of code, as binbun_x86_decoder, for an
+ * architecture. */
+typedef struct binbun_decoder {
+    const uint8_t *bytes;
+    size_t length;
+    /* Offset in `bytes` of the next instruction; past the end, none. */
+    size_t offset;
+    /* The address of `bytes[0]`. */
+    uint64_t address;
+    /* A binbun_arch. */
+    binbun_arch arch;
+    /* For x86, a binbun_x86_mode; for AArch64, 0. */
+    binbun_x86_mode mode;
+} binbun_decoder;
+
+/* Start a sweep of the `length` bytes at `bytes`, at `address`, for `arch`
+ * (x86 in `mode`, AArch64 with `mode` 0). BINBUN_STATUS_NULL_POINTER if
+ * `decoder` is null or `bytes` is null and `length` is not 0;
+ * BINBUN_STATUS_BAD_ARGUMENT as for binbun_decode. */
+binbun_status binbun_decoder_init(binbun_decoder *decoder, binbun_arch arch, binbun_x86_mode mode,
+                                  const uint8_t *bytes, size_t length, uint64_t address);
+
+/* Decode the next instruction into `out` and its address into `*address`
+ * (if `address` is not null), then move past it; after bytes that are no
+ * instruction (any status but OK and END), move on as the native decoders
+ * do: one byte on x86, so that a sweep over data resynchronises, four on
+ * AArch64 (a last piece shorter than 4 bytes is BINBUN_STATUS_TRUNCATED).
+ * BINBUN_STATUS_END when no bytes are left. */
+binbun_status binbun_decoder_next(binbun_decoder *decoder, binbun_instruction *out, uint64_t *address);
+
+/* The instruction's architecture, or 0 if `inst` holds none. */
+binbun_arch binbun_instruction_arch(const binbun_instruction *inst);
+
+/* The x86 mode it was decoded in; 0 on AArch64. */
+binbun_x86_mode binbun_instruction_mode(const binbun_instruction *inst);
+
+/* The instruction's address. */
+uint64_t binbun_instruction_address(const binbun_instruction *inst);
+
+/* The instruction's length in bytes: 1 to 15 on x86, 4 on AArch64. */
+uint8_t binbun_instruction_length(const binbun_instruction *inst);
+
+/* The bytes it was decoded from (binbun_instruction_length of them; on
+ * AArch64 the word, little-endian), in `inst`'s storage: valid while it is.
+ * Null if `inst` holds no instruction. */
+const uint8_t *binbun_instruction_bytes(const binbun_instruction *inst);
+
+/* The mnemonic the text writes, lower case: on x86 the word after any
+ * prefix words (`movsb` of `rep movsb`; `call far`), on AArch64 after alias
+ * selection, with its suffix (`mov`, `b.eq`). The native mnemonics, XED's
+ * iclass and Arm's encoding, are the native instruction's. */
+binbun_str binbun_instruction_mnemonic(const binbun_instruction *inst);
+
+/* What the instruction does to the flow of control, at its address. */
+binbun_branch binbun_instruction_branch(const binbun_instruction *inst);
+
+/* Write the instruction as text at its address, as its architecture's
+ * binbun_<arch>_instruction_text writes it: Intel syntax as XED writes it,
+ * or LLVM's (a tab after the mnemonic). `options` as there: x86 has none,
+ * AArch64 takes BINBUN_TEXT_RELATIVE_LABELS. Returns 0 if `inst` holds no
+ * instruction or for options its architecture does not know. A buffer of
+ * BINBUN_MAX_TEXT + 1 bytes always suffices. */
+size_t binbun_instruction_text(const binbun_instruction *inst, uint32_t options, char *text, size_t capacity);
+
+/* What kind of register a binbun_register is. */
+typedef uint8_t binbun_register_kind;
+enum {
+    /* An x86 register, `value` (a binbun_x86_register), as XED names it: a
+     * partial register is itself (`al`, `eax` and `rax` are three), and
+     * XED's pseudo registers that are machine state (`x87status`, `msrs`,
+     * `tsc`) are registers too. */
+    BINBUN_REGISTER_X86 = 1,
+    /* An AArch64 register by `class_` (a binbun_aarch64_register_class) and
+     * `number`, without what an operand writes on it: `x0` and `w0` are two
+     * registers, as are `v0`, `q0` and `d0`. Number 31 is xzr/wzr (classes
+     * X, W) or sp/wsp (XSP, WSP); below 31 the class is X or W. */
+    BINBUN_REGISTER_AARCH64 = 2,
+    /* The SME array (`za`) or, where `has_tile`, tile `number` of element
+     * size `element` (`za1.d`), without a slice. */
+    BINBUN_REGISTER_AARCH64_ZA = 3,
+    /* A system register an MRS, MSR, MRRS or MSRR names: `value` its
+     * encoding (op0:op1:CRn:CRm:op2, op0 in bits 15:14), `name` its name
+     * for the access where `has_name` (`TPIDR_EL0`; else written
+     * `S3_3_C13_C0_2`). */
+    BINBUN_REGISTER_AARCH64_SYSTEM = 4,
+};
+
+/* A register an instruction reads or writes. The fields its kind does not
+ * name are 0 (and `name` empty), so two registers are the same when their
+ * fields but `name` are. */
+typedef struct binbun_register {
+    /* A binbun_register_kind. */
+    uint8_t kind;
+    uint8_t class_;
+    uint8_t number;
+    /* A binbun_aarch64_element, 0 for none. */
+    uint8_t element;
+    bool has_tile;
+    bool has_name;
+    uint16_t value;
+    binbun_str name;
+} binbun_register;
+
+/* Write the registers the instruction may read, or write, into `out`, up
+ * to `capacity`; return how many there are, at most BINBUN_MAX_REGISTERS.
+ * Each register once, in the order of the operands (implied ones included),
+ * then AArch64's implicit registers. These are the decoders' facts, not a
+ * complete account of what the instruction does:
+ *
+ * - The condition flags are left out (x86's flags register, AArch64's
+ *   NZCV): the native instruction's flags give them. An MRS or MSR that
+ *   names NZCV is a system register access and is listed.
+ * - On x86 an operand is read or written as XED's action says, a
+ *   conditional action (REP, CMOVcc) as a may. A memory operand's segment,
+ *   base and index registers are read (rip of a RIP-relative operand too);
+ *   the memory is no register. An AVX-512 write mask k0 (no masking) is not
+ *   read. XED's pseudo registers for stack adjustments and default flag
+ *   values are left out (the stack pointer, or the x87 status word, is
+ *   listed as itself).
+ * - On AArch64 register lists are expanded; a memory operand's base and
+ *   offset registers are read and the base written back where its
+ *   writeback says; a ZA slice's index register is read. SYS's control
+ *   registers c0-c15 name an operation and are left out; FPCR, FPSR, side
+ *   effects on system registers (ELR of `eret`) and the ZA effects of
+ *   `smstart`/`smstop` are not reported. */
+size_t binbun_instruction_registers_read(const binbun_instruction *inst, binbun_register *out, size_t capacity);
+size_t binbun_instruction_registers_written(const binbun_instruction *inst, binbun_register *out,
+                                            size_t capacity);
+
+/* Write the register's name as its architecture writes it (`rax`, `x0`,
+ * `za1.d`, `TPIDR_EL0`) into `text`. Returns 0 if `reg` is null or names no
+ * register. A buffer of BINBUN_MAX_REGISTER_NAME + 1 bytes always
+ * suffices. */
+size_t binbun_register_name(const binbun_register *reg, char *text, size_t capacity);
+
+/* The native instruction, in `inst`'s storage (valid while it is), for
+ * every binbun_x86_* or binbun_aarch64_* function; null if `inst` holds the
+ * other architecture's instruction or none. */
+const binbun_x86_instruction *binbun_instruction_as_x86(const binbun_instruction *inst);
+const binbun_aarch64_instruction *binbun_instruction_as_aarch64(const binbun_instruction *inst);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

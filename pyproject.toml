@@ -1,0 +1,47 @@
+# The `binbun` wheel: the pure-Python package in `python/binbun` and the
+# extension `binbun._native` (`crates/binbun-py`), one stable-ABI wheel
+# per OS and architecture.
+# `scripts/python-tests.sh` builds it into a venv and runs `python/tests`.
+
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[project]
+name = "binbun"
+description = "Python bindings to the binbun disassembler and decompiler."
+readme = "python/README.md"
+requires-python = ">=3.11"
+# The extension holds the decoders generated from Intel XED (Apache-2.0)
+# and Arm's machine-readable specification (BSD-3-Clause).
+license = "(MIT OR Apache-2.0) AND Apache-2.0 AND BSD-3-Clause"
+license-files = [
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "third_party/xed/LICENSE",
+    "third_party/aarchmrs/notice.html",
+    # The crates the extension is built from (scripts/release/third-party-licenses.sh).
+    "third_party/licenses/python.md",
+]
+dynamic = ["version"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Security",
+    "Topic :: Software Development :: Disassemblers",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://binbun.org"
+Documentation = "https://binbun.org/docs/python/"
+Repository = "https://github.com/dmaivel/binbun"
+Issues = "https://github.com/dmaivel/binbun/issues"
+Changelog = "https://github.com/dmaivel/binbun/blob/main/CHANGELOG.md"
+
+[tool.maturin]
+manifest-path = "crates/binbun-py/Cargo.toml"
+python-source = "python"
+module-name = "binbun._native"
+# The extension without its symbols: 34 MB installed instead of 40.
+strip = true

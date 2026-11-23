@@ -1,0 +1,17 @@
+[package]
+name = "binbun-typeinfer"
+description = "Type inference for machine code by algebraic subtyping (BinSub)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["type-inference", "subtyping", "decompiler", "binary-analysis"]
+categories = ["development-tools::debugging", "no-std"]
+
+[dependencies]
+
+[lints]
+workspace = true

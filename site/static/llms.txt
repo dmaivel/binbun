@@ -1,0 +1,35 @@
+# binbun
+
+> binbun is an open-source interactive disassembler and decompiler for x86 and AArch64 executables (ELF, PE, Mach-O): a desktop app, a `binbun` command, a Python library with the whole engine, and its disassemblers as libraries for Rust, C and C++. Its decompiler prints C in which every line leads back to the instructions it came from, and checks that C against the machine code.
+
+Agents should use the Python API: `pip install binbun`, then `binbun.open(path)` to open a binary, list its functions, read each function's C with its provenance (`CDocument.lines`, each line's instruction addresses), verify it (`Function.verify()`) and make edits in transactions (`with db.transaction(label, author="agent"):`), each one step in the history that a person can review and undo (`db.undo()`). `binbun.connect()` works the same way in a window already open. MCP hosts get the same API through `binbun mcp` (`codex mcp add binbun -- binbun mcp`): a `python` tool running code in a persistent interpreter on the open window's binary, and an `api` tool describing the API.
+
+## Python
+
+- [Python](https://binbun.org/docs/python/): the working model: opening a binary, transactions and undo, the GUI's console, connecting to an open window, agents.
+- [Agents](https://binbun.org/docs/agents/): an agent on a binary through Python or `binbun mcp`, each harness's setup, which window it works in, attribution and address threads.
+- [Python API reference](https://binbun.org/docs/reference/python/): every module, class, function and argument of the `binbun` package, generated from its type stubs and docstrings.
+
+## Docs
+
+- [Getting started](https://binbun.org/docs/getting-started/): installing binbun, opening a binary, reading its listing and C, making and saving an edit.
+- [Switching from other tools](https://binbun.org/docs/switching/): the keys that carry over, and how tabs differ.
+- [The GUI](https://binbun.org/docs/gui/): panes, views and tabs, navigation, renaming, comments and types, bookmarks and evidence.
+- [The decompiler](https://binbun.org/docs/decompiler/): how the C is made, and how what binbun cannot determine stays visible in it.
+- [Verify](https://binbun.org/docs/verify/): checking a function's C against its lifted machine code, and what that does not prove.
+- [Signatures](https://binbun.org/docs/signatures/): naming library functions from signature packs.
+- [Profiles and runs](https://binbun.org/docs/profiles/): processor profiles for values the architecture leaves undefined, running a function from chosen values, comparing processors.
+- [Collaboration](https://binbun.org/docs/collaboration/): shared projects, roles, relays and what a relay receives.
+- [C, C++ and Rust libraries](https://binbun.org/docs/c-api/): the disassemblers as libraries.
+- [Command line](https://binbun.org/docs/command-line/): finding functions, reading C, instructions and references, checking and running from the `binbun` command.
+- [Platforms and files](https://binbun.org/docs/platforms-and-files/): desktop and headless installations, the files binbun analyses and where it keeps its own.
+
+## Reference
+
+- [C API reference](https://binbun.org/docs/reference/c/): `binbun/disasm.h`, generated from its comments.
+- [Command line reference](https://binbun.org/docs/reference/cli/): `binbun --help` and each command's usage.
+- [Download](https://binbun.org/download/): the current release for each platform.
+
+## Blog
+
+- [Blog](https://binbun.org/blog/): releases and notes on binbun's development, also as an Atom feed (https://binbun.org/blog/atom.xml).

@@ -1,0 +1,53 @@
+[package]
+name = "binbun-collab"
+description = "End-to-end encrypted sync of binbun projects between collaborators."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["collaboration", "sync", "end-to-end", "encryption"]
+categories = ["network-programming"]
+
+[dependencies]
+binbun-bounded.workspace = true
+binbun-paths.workspace = true
+binbun-session.workspace = true
+binbun-sync.workspace = true
+blake3.workspace = true
+bytes.workspace = true
+chacha20poly1305.workspace = true
+data-encoding.workspace = true
+ed25519-dalek.workspace = true
+governor.workspace = true
+hkdf.workspace = true
+hpke.workspace = true
+iroh.workspace = true
+iroh-blobs.workspace = true
+iroh-mdns-address-lookup.workspace = true
+n0-future.workspace = true
+postcard.workspace = true
+ring.workspace = true
+serde.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+zeroize.workspace = true
+
+# The fetch cache's directories worked on by handle, no link followed
+# (`src/fetches.rs`).
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["fs"] }
+
+[dev-dependencies]
+# A signature pack made in the tests (`sig make`).
+binbun.workspace = true
+# What reading a ticket allocates, measured (`tests/bounds.rs`).
+cap.workspace = true
+# A relay of iroh's own in the tests (relay-only sessions, no direct
+# path), and the relay certificates they trust without checking.
+iroh = { workspace = true, features = ["test-utils"] }
+
+[lints]
+workspace = true

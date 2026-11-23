@@ -1,0 +1,19 @@
+[package]
+name = "binbun-ast"
+description = "Typed syntax trees of binbun's decompiled functions."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["ast", "decompiler", "binary-analysis"]
+categories = ["development-tools::debugging", "no-std"]
+
+[dependencies]
+binbun-semantics.workspace = true
+binbun-ssa.workspace = true
+
+[lints]
+workspace = true

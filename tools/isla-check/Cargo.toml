@@ -1,0 +1,35 @@
+# A separate workspace, so the main build never compiles isla (and its
+# z3 bindings). Built with `cargo build --release` here; see src/main.rs.
+[workspace]
+
+[package]
+name = "isla-check"
+description = "Checks binbun's AArch64 L0 against sail-arm's execute pseudocode: isla runs the model symbolically per opcode, z3 proves binbun's final state equal on every path or gives a counterexample."
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+binbun-aarch64 = { path = "../../crates/binbun-aarch64" }
+binbun-aarch64-lift = { path = "../../crates/binbun-aarch64-lift" }
+binbun-semantics = { path = "../../crates/binbun-semantics" }
+crossbeam = "0.8.1"
+# isla at the commit the AArch64 semantics were checked with (BSD-2-Clause).
+isla-lib = { git = "https://github.com/rems-project/isla", rev = "e9b5d945394277656593a0d429466d7fa0a2b4b3" }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+wildcard_enum_match_arm = "warn"
+unwrap_used = "warn"
+indexing_slicing = "warn"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+
+[profile.dev.package."*"]
+opt-level = 2

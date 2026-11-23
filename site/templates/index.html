@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}binbun: an interactive disassembler and decompiler{% endblock title %}
+
+{% block main %}
+  <section class="band"><div class="frame pad hero">
+    <h1>An open-source interactive disassembler and decompiler.</h1>
+    <p class="tagline">Decompiled C you can trace back to the machine code.</p>
+    <div class="actions">
+      <a href="{{ get_url(path='download/') }}" class="button primary large" id="get"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.25v8M4.75 7 8 10.25 11.25 7M2.75 13.5h10.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="get-label">Download</span></a>
+      <a href="{{ config.extra.repository }}" class="button large"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>View on GitHub</a>
+    </div>
+    <p class="get-note" id="get-note" hidden>
+      <span id="get-unsigned" hidden></span>
+      <span class="copy" id="get-command" hidden><span><span class="prompt">$</span> <span id="install">curl -fsSL https://binbun.org/install.sh | sh</span></span><button type="button" class="kbd" data-copy="install">copy</button></span>
+      <a href="{{ get_url(path='download/') }}">Other platforms</a>
+    </p>
+  </div></section>
+
+  <section class="band"><div class="frame">
+    <div class="shot theme-tabs">
+      {%- set themes = [["one-dark", "One Dark"], ["one-light", "One Light"]] %}
+      {%- for theme in themes %}
+      <input type="radio" name="theme" id="theme-{{ theme[0] }}"{% if loop.first %} checked{% endif %}>
+      {%- endfor %}
+      {%- for theme in themes %}
+      <div class="window {{ theme[0] }}"><img src="{{ get_url(path='assets/preview/' ~ theme[0] ~ '.webp') }}" width="1920" height="1200"{% if not loop.first %} loading="lazy"{% endif %} alt="A shared binbun session in its {{ theme[1] }} theme on bash's get_directory_stack, seen by its host ana: the function list, the disassembly and the decompiled C, where collaborators kit and sam each have a cursor on a line in their own colour and kit has renamed v6 to words; in the title bar, kit's and sam's avatars; on the right, the session's chat, where the three discuss the function"></div>
+      {%- endfor %}
+      <div class="tabs">{% for theme in themes %}<label for="theme-{{ theme[0] }}">{{ theme[1] }}</label>{% endfor %}</div>
+    </div>
+  </div></section>
+
+  <section class="band"><div class="frame">
+    <div class="cards">
+      <div class="card"><h3>Provenance</h3><p>Every line of decompiled C leads back to the instructions it came from, and every inferred type and name comes with its evidence.</p></div>
+      <div class="card"><h3>Verification</h3><p>Each function's decompiled form is run beside its machine code from the same states. Differences are reported, not hidden.</p></div>
+      <div class="card"><h3>Familiar keys</h3><p>Listing, graph, C and hex views with the shortcuts reverse engineers already know: N, Y, X, G, Space, and the C, U, D, A, * and P corrections.</p></div>
+    </div>
+    <div class="cards">
+      <div class="card"><h3>Collaboration</h3><p>Share a project and work on it together, end-to-end encrypted: edits, cursors, chat and threads at addresses, each change kept with its author.</p></div>
+      <div class="card"><h3>Python and agents</h3><p>The whole engine from Python, headless or in your open window. Agents use it the same way or through <code>binbun mcp</code>, and their edits carry their name, one undo step each.</p></div>
+      <div class="card"><h3>Open source</h3><p>MIT or Apache-2.0, written in Rust. Projects live outside your binaries and travel as single files.</p></div>
+    </div>
+  </div></section>
+
+  <section class="band"><div class="frame story">
+    <div class="story-copy">
+      <h2>Undefined stays undefined.</h2>
+      <p>The same <code>imul</code> by zero in our <a href="{{ config.extra.repository }}/tree/main/examples/undefined">twin example</a> prints <code>0xdead</code> on an Intel Raptor Cove P-core and <code>0xbeef</code> on a Gracemont E-core because a multiply leaves the zero flag undefined: Raptor Cove clears it, Gracemont sets it. binbun keeps that value unknown, as <code>_ZF_undefined</code> in the reading view and <code>binbun_undefined_bool()</code> in the exact view, with the instruction and the reason. It does not turn one processor's answer into a constant for every machine.</p>
+    </div>
+    <figure class="story-shot"><a href="{{ get_url(path='assets/story-undefined.webp') }}" aria-label="Enlarge the undefined zero flag crop"><img src="{{ get_url(path='assets/story-undefined.webp') }}" width="850" height="310" loading="lazy" alt="binbun keeps twin's zero flag unknown and shows the imul instruction and processor-dependent flag rules."></a></figure>
+  </div></section>
+
+  <section class="band"><div class="frame story">
+    <div class="story-copy">
+      <h2>Every line has a source.</h2>
+      <p>Hover a line of C to highlight the instructions it came from. Hover a marked name or type, or choose <strong>Why…</strong>, to see the evidence behind it. The explanation stays tied to the code, so you can check an inference instead of trusting it.</p>
+    </div>
+    <figure class="story-shot"><a href="{{ get_url(path='assets/story-provenance.webp') }}" aria-label="Enlarge the provenance crop"><img src="{{ get_url(path='assets/story-provenance.webp') }}" width="1510" height="340" loading="lazy" alt="binbun shows loop_sum's C alongside highlighted source instructions. The Why card traces an inferred int32_t parameter to a signed comparison at 11F8 and its callers."></a></figure>
+  </div></section>
+
+  <section class="band"><div class="frame story">
+    <div class="story-copy">
+      <h2>Verify.</h2>
+      <p>Run <code>binbun verify</code> or choose <strong>Verify Function</strong> in the app to compare the decompiler's structured form with its lifted machine code, interpreted from the same states. Differences are reported, not hidden; a function that cannot be checked is labelled as such. This is sampled verification, not a proof or native execution of compiled C; <a href="{{ get_url(path='docs/verify/') }}">the verification guide</a> explains the boundary.</p>
+    </div>
+    <figure class="story-shot"><a href="{{ get_url(path='assets/story-verify.webp') }}" aria-label="Enlarge the verification result crop"><img src="{{ get_url(path='assets/story-verify.webp') }}" width="800" height="140" loading="lazy" alt="binbun reports agreement on 16 states, the reading view's assumption and twin's processor-dependent zero flag."></a></figure>
+  </div></section>
+
+  <section class="band code-band"><div class="frame split">
+    <div>
+      <h2>The disassemblers, on their own.</h2>
+      <p>binbun's decoders are libraries you can use without the rest: <code>pip install binbun</code> for Python, the <code>binbun-disasm</code> crate (or <code>binbun-x86</code> and <code>binbun-aarch64</code>, one architecture each) for Rust, and <code>libbinbun</code> for C and C++.</p>
+      <p>The same example in each language, and the rest of the engine, are in the <a href="{{ config.extra.repository }}/tree/main/examples">examples</a>.</p>
+    </div>
+    <div class="code-tabs">
+      {%- set examples = [["python", "Python", "py"], ["rust", "Rust", "rs"], ["c", "C", "c"], ["cpp", "C++", "cpp"]] %}
+      {%- for example in examples %}
+      <input type="radio" name="language" id="language-{{ example[0] }}"{% if loop.first %} checked{% endif %}>
+      {%- endfor %}
+      <div class="tabs">{% for example in examples %}<label for="language-{{ example[0] }}">{{ example[1] }}</label>{% endfor %}</div>
+      {%- for example in examples %}
+      {%- set code = load_data(path="snippets/quick_start." ~ example[2], format="plain") %}
+      {%- set fenced = "```" ~ example[0] ~ "
+" ~ code ~ "```" %}
+      <div class="code {{ example[0] }}">{{ fenced | markdown | safe }}</div>
+      {%- endfor %}
+<pre class="out">0x401000  push rbp
+0x401001  mov rbp, rsp
+0x401004  xor eax, eax
+0x401006  pop rbp
+0x401007  ret</pre>
+    </div>
+  </div></section>
+
+  <section class="band code-band"><div class="frame split">
+    <div>
+      <h2>The decompiler, as a library.</h2>
+      <p>The whole engine the app runs on, from <code>pip install binbun</code> or the <code>binbun-session</code> crate: open a binary, decompile a function, and read its C with each line's provenance, the instructions it came from. In Python, edits are transactions you can undo.</p>
+    </div>
+    <div class="code-tabs">
+      {%- set examples = [["python", "Python", "py"], ["rust", "Rust", "rs"]] %}
+      {%- for example in examples %}
+      <input type="radio" name="decompiler-language" id="decompiler-{{ example[0] }}"{% if loop.first %} checked{% endif %}>
+      {%- endfor %}
+      <div class="tabs">{% for example in examples %}<label for="decompiler-{{ example[0] }}">{{ example[1] }}</label>{% endfor %}</div>
+      {%- for example in examples %}
+      {%- set code = load_data(path="snippets/decompiler_quick_start." ~ example[2], format="plain") %}
+      {%- set fenced = "```" ~ example[0] ~ "
+" ~ code ~ "```" %}
+      <div class="code {{ example[0] }}">{{ fenced | markdown | safe }}</div>
+      {%- endfor %}
+<pre class="out">/* classify at 0x1190, decompiled by binbun. */
+/* Compile with -fwrapv -fno-strict-aliasing (see binbun_defs.h). */
+#include "binbun_defs.h"
+
+int32_t classify(int64_t a1)
+{
+    return (uint32_t)a1 &gt;= 7 ? -1 : (a1 + 10 + a1 * 10);
+}
+line 7 came from 0x1190 0x1193 0x1196 0x119b 0x119f 0x11a2</pre>
+    </div>
+  </div></section>
+{% endblock main %}
+
+{% block scripts %}
+{#- The download page's release (download.html). #}
+{%- set latest = load_data(path="static/latest.json", required=false) %}
+{%- if latest %}{% set version = latest.version %}{% else %}{% set version = config.extra.version %}{% endif %}
+{%- set assets = config.extra.repository ~ "/releases/download/v" ~ version ~ "/binbun-" ~ version ~ "-" %}
+{% include "partials/download-scripts.html" %}
+<script>
+// The hero's button downloads the visitor's own file on macOS and Windows,
+// with the one-line note on opening an unsigned build under it; on Linux it
+// leads to the download page (which puts the visitor's platform first), whose
+// install command adds the command, desktop entry and icons, and shows that
+// command under it too.
+// Other platforms stay a link away.
+var downloads = {
+  macos: { name: "macOS", arm64: "{{ assets }}aarch64-apple-darwin.dmg", x64: "{{ assets }}x86_64-apple-darwin.dmg",
+    unsigned: "Not yet signed: open it once from System Settings \u2192 Privacy & Security." },
+  windows: { name: "Windows", x64: "{{ assets }}x86_64-pc-windows-msvc.zip", arm64: "{{ assets }}aarch64-pc-windows-msvc.zip",
+    unsigned: "Not yet signed: SmartScreen asks once (More info \u2192 Run anyway)." },
+  linux: { name: "Linux" }
+};
+binbunPlatform(function (os, arch) {
+  var platform = downloads[os], button = document.getElementById("get");
+  if (!platform) return;
+  document.getElementById("get-label").textContent = "Download for " + platform.name;
+  if (platform.unsigned) {
+    button.href = platform[arch];
+    var unsigned = document.getElementById("get-unsigned");
+    unsigned.textContent = platform.unsigned;
+    unsigned.hidden = false;
+  } else {
+    document.getElementById("get-command").hidden = false;
+  }
+  document.getElementById("get-note").hidden = false;
+});
+</script>
+{% endblock scripts %}

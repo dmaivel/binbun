@@ -1,0 +1,96 @@
+[package]
+name = "binbun-capi"
+description = "C and C++ API of binbun (libbinbun): its x86 and AArch64 disassemblers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# include/binbun/disasm_generated.h names XED's iclasses and Arm's
+# encodings, generated from the decoder tables.
+license = "(MIT OR Apache-2.0) AND Apache-2.0 AND BSD-3-Clause"
+repository.workspace = true
+homepage.workspace = true
+keywords = ["disassembler", "x86", "aarch64", "ffi"]
+categories = ["development-tools::ffi", "development-tools::debugging"]
+# Gives crates building C or C++ against the library the header directory
+# as `DEP_BINBUN_INCLUDE` (see build.rs).
+links = "binbun"
+
+[lib]
+# Not `binbun`, the Rust crate `binbun`'s: two lib targets of that name
+# collide in `target/`. The installed C library is still libbinbun
+# (`[package.metadata.capi.library]` below); a plain `cargo build` makes
+# libbinbun_capi.
+name = "binbun_capi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+# `cargo cinstall` (cargo-c; scripts/release/package-capi.sh) installs
+# the library as C projects expect it: the shared library named by its
+# major version alone (libbinbun.so.0: ids are append-only within
+# a major), the static library, the hand-written and generated headers in
+# include/binbun, and binbun.pc.
+[package.metadata.capi.header]
+generation = false
+subdirectory = "binbun"
+
+[package.metadata.capi.install.include]
+asset = [{ from = "include/binbun/*", to = "binbun" }]
+
+[package.metadata.capi.pkg_config]
+name = "binbun"
+filename = "binbun"
+# `#include <binbun/binbun.h>`, as in the repository.
+strip_include_path_components = 1
+
+[package.metadata.capi.library]
+name = "binbun"
+version_suffix_components = 1
+
+[features]
+default = ["x86", "aarch64"]
+# The x86 decoder: `binbun_x86_*`, and x86 through `binbun_decode`.
+x86 = ["dep:binbun-x86", "dep:binbun-disasm", "binbun-disasm/x86"]
+# The AArch64 decoder: `binbun_aarch64_*`, and AArch64 through
+# `binbun_decode`.
+aarch64 = ["dep:binbun-aarch64", "dep:binbun-disasm", "binbun-disasm/aarch64"]
+# Turned on by cargo-c's `cargo cbuild`/`cinstall`, which requires it;
+# changes nothing (the whole crate is the C API).
+capi = []
+
+[dependencies]
+binbun-aarch64 = { workspace = true, optional = true }
+binbun-disasm = { workspace = true, optional = true }
+binbun-isa.workspace = true
+binbun-x86 = { workspace = true, optional = true }
+
+[dev-dependencies]
+# The decoder of either architecture, which the C program's is checked against.
+binbun-disasm = { workspace = true, features = ["x86", "aarch64"] }
+object = { version = "0.40", default-features = false, features = ["read", "std"] }
+
+# The tests build C and C++ programs; on Windows with MSVC's `cl`, found as
+# the `cc` crate finds it (`tests/support/compile.rs`).
+[target.'cfg(windows)'.dev-dependencies]
+find-msvc-tools = "0.1.15"
+
+# The workspace's lints, but for `unsafe_code`: this crate is the FFI
+# boundary, the one place `unsafe` is allowed, and only there.
+[lints.rust]
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+unused_qualifications = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+clone_on_ref_ptr = "warn"
+implicit_clone = "warn"
+redundant_clone = "warn"
+wildcard_enum_match_arm = "warn"
+match_wildcard_for_single_variants = "warn"
+unwrap_used = "warn"
+indexing_slicing = "warn"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+# Every `unsafe` block says why it is sound.
+undocumented_unsafe_blocks = "warn"
+multiple_unsafe_ops_per_block = "warn"

@@ -1,0 +1,60 @@
+# A separate workspace, so the C disassemblers it builds (Zydis, Capstone,
+# bad64, optionally XED) never become part of the main build.
+[workspace]
+
+[package]
+name = "binbun-bench"
+description = "binbun against other tools: decoder throughput (default binary), function recovery (`cfg`), decompilation (`decompile`)."
+default-run = "binbun-bench"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+bad64 = "0.13"
+bddisasm = "0.4"
+binbun = { path = "../crates/binbun" }
+binbun-aarch64 = { path = "../crates/binbun-aarch64" }
+binbun-print = { path = "../crates/binbun-print" }
+binbun-debuginfo = { path = "../crates/binbun-debuginfo" }
+binbun-loader = { path = "../crates/binbun-loader" }
+binbun-semantics = { path = "../crates/binbun-semantics" }
+binbun-x86 = { path = "../crates/binbun-x86" }
+capstone = "0.14"
+disarm64 = "0.2"
+exarmo-aarch64 = "0.4"
+farm64 = { package = "fARM64", version = "0.1", features = ["full"] }
+gimli = { version = "0.34.0", default-features = false, features = ["read"] }
+# `instr_info` for the flow task's `flow_control`.
+iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "intel", "instr_info"] }
+object = { version = "0.40", default-features = false, features = ["read", "std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# `decompile`: every tool's C and the original source parsed alike.
+tree-sitter = "0.25"
+tree-sitter-c = "0.24"
+yaxpeax-arch = "0.3"
+yaxpeax-arm = { version = "0.5", default-features = false, features = ["std", "fmt"] }
+yaxpeax-x86 = "2.2"
+zydis = "4.1.1"
+
+[build-dependencies]
+cc = "1.11.1"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+# No debug info: with it the cmake crate builds Zydis as RelWithDebInfo (-O2)
+# rather than Release (-O3).
+debug = false
+
+[lints.rust]
+unsafe_code = "deny"
+unused_qualifications = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+cast_precision_loss = "allow"
+must_use_candidate = "allow"

@@ -1,0 +1,20 @@
+<aside class="toc">
+{%- if toc %}
+<nav aria-label="On this page">
+  <h5>On this page</h5>
+  <ul>
+  {%- for h2 in toc %}
+    <li><a href="#{{ h2.id }}">{{ h2.title }}</a>
+    {%- if h2.children %}
+      <ul>
+      {%- for h3 in h2.children %}
+        <li><a href="#{{ h3.id }}">{{ h3.title }}</a></li>
+      {%- endfor %}
+      </ul>
+    {%- endif %}
+    </li>
+  {%- endfor %}
+  </ul>
+</nav>
+{%- endif %}
+</aside>

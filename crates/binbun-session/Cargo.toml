@@ -1,0 +1,54 @@
+[package]
+name = "binbun-session"
+description = "binbun's engine for interactive tools, with background analysis, projects and undoable edits."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["disassembler", "decompiler", "reverse-engineering", "binary-analysis"]
+categories = ["development-tools::debugging"]
+
+[dependencies]
+binbun.workspace = true
+binbun-ast.workspace = true
+binbun-bounded.workspace = true
+binbun-print.workspace = true
+binbun-debuginfo = { workspace = true, features = ["symbols"] }
+binbun-decompile.workspace = true
+binbun-loader.workspace = true
+binbun-paths.workspace = true
+binbun-semantics.workspace = true
+binbun-sigpack.workspace = true
+binbun-ssa.workspace = true
+binbun-typedb.workspace = true
+blake3.workspace = true
+ed25519-dalek.workspace = true
+postcard.workspace = true
+regex.workspace = true
+ring.workspace = true
+self_cell.workspace = true
+serde.workspace = true
+toml = { workspace = true, features = ["display"] }
+x25519-dalek.workspace = true
+
+# The build's stamp: a hash of the engine's source (`build.rs`).
+[build-dependencies]
+blake3.workspace = true
+toml.workspace = true
+
+# What reading an exported project allocates, measured (`tests/bounds.rs`).
+[dev-dependencies]
+cap.workspace = true
+
+[[example]]
+name = "provenance"
+path = "../../examples/rust/provenance.rs"
+
+[[example]]
+name = "decompiler_quick_start"
+path = "../../examples/rust/decompiler_quick_start.rs"
+
+[lints]
+workspace = true

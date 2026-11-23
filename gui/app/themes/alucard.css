@@ -1,0 +1,186 @@
+/* Alucard, Dracula's official light variant ("Dracula Theme (Alucard)").
+ *
+ * Source: https://github.com/dracula/cursor
+ *   version 1.0.1 (package.json; the repo has no git tags), commit
+ *   21e4edd687bdd5f38e1607c69f19f30cbde22c36.
+ *   dracula/visual-studio-code ships no Alucard (its issue #287 asks for
+ *   one; the maintainer points to this theme). dracula/cursor is the
+ *   implementation draculatheme.com/spec names as the reference; Cursor
+ *   is VS Code, and the theme is a VS Code colour theme
+ *   ("uiTheme": "vs"). Its JSON is generated from dev/src/alucard.yml by
+ *   dev/scripts/generate.js; the YAML was resolved here the same way
+ *   (anchors expanded, `!alpha [colour, aa]` appended as the alpha byte,
+ *   empty colours dropped). Files read (SHA-256 of the bytes at that
+ *   commit):
+ *     dev/src/alucard.yml       5d5eb6dcac9e668fb1b29220d858cf839f3c65f67500338ccc771afdeee9ca3a
+ *     dev/scripts/generate.js   76e3fe278ca7591349b35ae4afa09a2f531a03187c3c80a19f734a8fa1cfe327
+ * Licence: MIT, Copyright (c) 2023 Dracula Theme.
+ *
+ * Mapping: the UI roles are the theme's workbench colours (title bar,
+ * tab bar (the darkest surface), side bar, panel and side-bar border,
+ * widget border, focus border, list hover and selection, scrollbar
+ * slider, overview-ruler border, descriptionForeground, the input
+ * placeholder, the text link for the accent, line numbers,
+ * errorForeground, the git "added" green, line highlight, selection, find
+ * matches, inlay hints); the code roles are its tokenColors resolved for
+ * the C grammar's scopes as VS Code ranks them (keyword,
+ * entity.name.function, variable.parameter, string, constant.numeric and
+ * constant.language (both its `constant` rule), comment,
+ * punctuation.section.embedded for the special punctuation, variable).
+ * Picks and fallbacks:
+ * - The border is panel.border / sideBar.border (bg-darker): the editor
+ *   group border is purple at alpha 0x20, next to invisible.
+ * - The (named) type colour is cyan, the theme's entity.name.type (and
+ *   storage.type.c) colour. The built-in type colour is pink: with VS
+ *   Code's current C grammar C's `int` (storage.type.built-in.primitive.c)
+ *   falls to its generic `storage` rule.
+ * - The non-control keywords (storage.modifier, its own rule, and
+ *   storage.type.struct, keyword.other.typedef), the control keywords
+ *   (keyword.control) and the operators (keyword.operator) all resolve to
+ *   pink, through its `storage.modifier`, `storage` and `keyword` rules.
+ * - Globals and struct members (variable.other.global,
+ *   variable.other.member) fall to its `variable` rule, the variable
+ *   colour; macro names (entity.name.function.preprocessor) fall to its
+ *   entity.name.function rule, the function colour.
+ * - No comment.block.documentation rule: the doc-comment colour is
+ *   descriptionForeground (the comment colour). No `punctuation` rule:
+ *   punctuation is editor.foreground. No entity.name.label rule: labels
+ *   take the function colour.
+ * The branch arrows take the warning yellow (editorWarning.foreground),
+ * the link tints cyan (Alucard has no blue), purple, yellow and green,
+ * and the lit area the panel colour at half alpha.
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments,
+ * link tints, the lit area, agreed) follow the rule binbun used before
+ * themes were files: mnemonics take the text colour, registers the type
+ * colour; addresses by what the line is (functions the comment colour,
+ * code the parameter colour, data the doc-comment colour, unexplored bytes
+ * the constant colour); code xrefs the special punctuation, data xrefs
+ * the doc-comment colour; the lit area's edge the focus border; agreed
+ * the success green. Listing mnemonics by kind: jumps the control-keyword
+ * colour, calls the function colour, returns the control-keyword colour
+ * (the theme gives keyword.control.return no colour of its own), nops and
+ * padding the muted text (descriptionForeground, the comment colour).
+ * Automatic names are drawn at 0.7 alpha, a cast's parentheses and type
+ * at 0.6. The listing's eight branch-arrow colours are eight distinct
+ * palette colours, each at least 3:1 on the editor, round the hue wheel
+ * in the order blue, orange, purple, green, red, cyan/teal, yellow,
+ * magenta/pink, so neighbours (and 8 with 1) differ by CIE76 ΔE >= 20.
+ * Alucard has no blue, so the first is its bluest accent, the
+ * cyan (#036a96), and the cyan/teal slot, left without a colour, takes
+ * the palette's next most distinct one, the olive comment colour
+ * (#6c664b); the rest are orange, purple, green, red, yellow and pink.
+ * No other deviation: every pick reaches 3:1 on the editor.
+ */
+
+:root {
+  --name: "Alucard";
+  --appearance: light;
+
+  /* Alucard's palette (dev/src/alucard.yml's base colours and UI
+   * elements). */
+  --bg: #fffbeb;
+  --fg: #1f1f1f;
+  --alucard-selection: #cfcfde;
+  --alucard-comment: #6c664b;
+  --cyan: #036a96;
+  --green: #14710a;
+  --orange: #a34d14;
+  --pink: #a3144d;
+  --purple: #644ac9;
+  --red: #cb3a2a;
+  --yellow: #846e15;
+  --line-highlight: #e2deca;
+  --bg-lighter: #ece9df;
+  --bg-light: #dedccf;
+  --bg-dark: #ceccc0;
+  --bg-darker: #bcbab3;
+}
+
+:root {
+  /* Surfaces. */
+  --background: var(--bg);
+  --gap: var(--bg-darker);
+  --tab-bar: var(--bg-darker);
+  --panel: var(--bg-dark);
+  --editor: var(--bg);
+  --border: var(--bg-darker);
+  --border-variant: var(--bg-darker);
+  --border-focused: var(--bg-darker);
+  --element-hover: var(--bg-lighter);
+  --element-selected: var(--bg-light);
+  --scrollbar-thumb: #1f1f1f20;
+  --scrollbar-track-border: var(--purple);
+
+  /* Text. */
+  --text: var(--fg);
+  --text-muted: var(--alucard-comment);
+  --text-placeholder: var(--alucard-comment);
+  --accent: var(--purple);
+  --editor-foreground: var(--fg);
+  --line-number: var(--alucard-comment);
+  --active-line-number: var(--pink);
+  --error: var(--red);
+  --success: var(--green);
+
+  /* Highlights. */
+  --active-line: #e2deca95;
+  --selection: #644ac975;
+  --search-match: #846e1540;
+  --active-match: #846e1540;
+  --arrow: var(--yellow);
+
+  /* Code. */
+  --keyword: var(--pink);
+  --type: var(--cyan);
+  --function: var(--green);
+  --parameter: var(--orange);
+  --string: var(--yellow);
+  --number: var(--purple);
+  --constant: var(--purple);
+  --comment: var(--alucard-comment);
+  --comment-doc: var(--text-muted);
+  --hint: var(--bg-dark);
+  --punctuation: var(--fg);
+  --punctuation-special: var(--pink);
+  --embedded: var(--fg);
+  --variable: var(--fg);
+  --label: var(--green);
+  --keyword-control: var(--pink);
+  --type-builtin: var(--pink);
+  --global: var(--variable);
+  --field: var(--variable);
+  --macro: var(--function);
+  --operator: var(--pink);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: var(--text-muted);
+  --register: var(--type);
+  --address-function: var(--comment);
+  --address-code: var(--parameter);
+  --address-data: var(--comment-doc);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--comment-doc);
+  --tint-1: color-mix(in srgb, var(--cyan) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--purple) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--yellow) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--green) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--cyan);
+  --arrow-2: var(--orange);
+  --arrow-3: var(--purple);
+  --arrow-4: var(--green);
+  --arrow-5: var(--red);
+  --arrow-6: var(--alucard-comment);
+  --arrow-7: var(--yellow);
+  --arrow-8: var(--pink);
+  --auto-name-alpha: 1;
+  --cast-alpha: 1;
+}

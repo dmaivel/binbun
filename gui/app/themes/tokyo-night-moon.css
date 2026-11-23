@@ -1,0 +1,197 @@
+/* Tokyo Night Moon, from Patrick Nasralla's Tokyo Night Moon for VS Code.
+ *
+ * Source: https://github.com/patricknasralla/TokyoNightMoon, version 1.1.4
+ *   (package.json and Marketplace; the repository has no git tags),
+ *   commit 8f2f7d66ac543266e77eba86fb0f9b057c1d1354.
+ *   themes/Tokyo Night Moon-color-theme.json
+ *     sha256 a17af84c91dcdeed305407f8d1bd979fa0938d19e913b7504e3066a0af6dc896
+ * Licence: MIT, Copyright (c) 2023 Patrick Nasralla.
+ *
+ * The port puts the Moon palette of folke's tokyonight.nvim (Apache-2.0)
+ * onto enkia's Tokyo Night for VS Code (MIT). It keeps several colours of
+ * the Night variant unchanged (the UI foregrounds #787c99 and #515670,
+ * line numbers #363b54, the active line #1e202e, the borders, the comment
+ * #565f89, tag punctuation #ba3c97, the git green #449dab); they stay here
+ * as the port has them.
+ *
+ * Mapping: the UI roles are the theme's workbench colours by binbun's role
+ * table; the code roles are its tokenColors resolved for C scopes first
+ * (the most specific selector wins, later rules winning ties, as in VS
+ * Code). The palette variables carry the slot names of folke's
+ * lua/tokyonight/colors/moon.lua (tag v4.14.1, commit 545d72cde640, sha256
+ * 16ea5a874f8833b0204da774153988e576a9d76ee1373e827f03d000c96483a5);
+ * colours that are none of those slots are literals. Choices worth
+ * knowing:
+ * - --type is support.type (#0db9d7, C's size_t, uint32_t, ...): the theme
+ *   colours C's built-in `int` (storage.type) with the keyword-control
+ *   purple, which would make types and registers read as keywords.
+ * - --error is editorError.foreground: the theme's errorForeground is its
+ *   description grey.
+ * - --punctuation-special is punctuation.definition.tag (#ba3c97); the
+ *   branch arrows take it.
+ * - --label is C's labels in a function body (`meta.block
+ *   entity.name.label`, #4fd6be).
+ * - --comment-doc is comment.block.documentation, which has the comment
+ *   colour; --embedded is editor.foreground.
+ * - --keyword is the non-control keywords: storage.modifier (#fca7ea,
+ *   folke's Moon `purple`; C's static/const/extern; C's struct/union/enum
+ *   are storage.type, the purple below, and typedef/sizeof the operator
+ *   cyan). --keyword-control is keyword.control (#c099ff), the old
+ *   --keyword value.
+ * - --type-builtin is storage.type (#c099ff, C's `int`; the same purple
+ *   as --keyword-control). --type keeps support.type: the named types'
+ *   entity.name.type gets no colour of its own (it falls to entity.name,
+ *   the plain foreground), so the theme's class/support cyan stays.
+ * - --global is variable.other.global (#ffc777). --field is
+ *   variable.other.property (#86e1fc), the scope VS Code gives C/C++'s
+ *   `property` semantic token; C's TextMate variable.other.member would
+ *   be the plain variable colour.
+ * - --macro is var(--function): C's entity.name.function.preprocessor
+ *   resolves to entity.name.function (the port's meta.preprocessor teal
+ *   loses to it). --operator is keyword.operator (#89ddff, the
+ *   punctuation colour).
+ * Missing keys: the port sets no editorWidget.border (--border-variant
+ * takes input.border, #0f0f14) and no editorInlayHint.foreground (--hint
+ * takes descriptionForeground, #515670).
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments, link
+ * tints, the lit area, agreed) follow binbun's rule: mnemonics take the
+ * text (embedded) colour, registers the type colour; addresses by what the
+ * line is (functions the comment colour, code the parameter colour, data
+ * the doc-comment colour, unexplored bytes the constant colour); code
+ * xrefs the special punctuation, data xrefs the doc-comment colour; the
+ * link tints are blue, purple (the keyword-control purple, folke's
+ * `magenta`), yellow and green at 19% alpha; the lit area is the panel
+ * colour at half alpha, its edge the focus border; agreed the success
+ * colour.
+ * The listing's branch arrows (--arrow-1..8) take eight distinct palette
+ * accents round the hue wheel so neighbouring lanes differ: blue, orange,
+ * purple (folke's `magenta`), green, red, cyan, yellow, and pink (folke's
+ * Moon `purple`, #fca7ea, a pink despite its name); each is at least 3:1
+ * against the editor (lowest 5.90:1) and at least 20 CIE76 delta-E from
+ * its neighbours, 8 wrapping to 1 (lowest 41.8).
+ * Listing mnemonics: jumps take --keyword-control, calls --function,
+ * returns --keyword-control (keyword.control.return has no colour of its
+ * own), nops and padding the dimmest palette foreground reaching 3:1.
+ * --auto-name-alpha (0.7) and --cast-alpha (0.6) are binbun's fixed
+ * alphas for automatic names and casts.
+ * Deviation: the muted text #515670 (2.12:1) and the comment #565f89
+ * (2.47:1) are under 3:1, so --mnemonic-nop takes #646e9c (the port's
+ * ghost-text colour, 3.10:1).
+ *
+ * Deviation: #565f89 is 2.47:1 against the editor, so --address-function,
+ * --address-data, --data-xref take #646e9c (the port's ghost-text colour,
+ * 3.10:1), the nearest palette colour of that hue reaching 3:1.
+ */
+
+:root {
+  --name: "Tokyo Night Moon";
+  --appearance: dark;
+
+  /* folke's Moon slots, as the port uses them. */
+  --bg: #222436;
+  --bg-dark: #1e2030;
+  --blue: #82aaff;
+  --blue2: #0db9d7;
+  --blue5: #89ddff;
+  --cyan: #86e1fc;
+  --dark5: #737aa2;
+  --fg: #c8d3f5;
+  --fg-dark: #828bb8;
+  --green: #c3e88d;
+  --green1: #4fd6be;
+  --magenta: #c099ff;
+  --orange: #ff966c;
+  --purple: #fca7ea;
+  --red: #ff757f;
+  --red1: #c53b53;
+  --yellow: #ffc777;
+}
+
+:root {
+  /* Surfaces. */
+  --background: var(--bg-dark);
+  --gap: var(--bg-dark);
+  --tab-bar: var(--bg-dark);
+  --panel: var(--bg-dark);
+  --editor: var(--bg);
+  --border: #16161e;
+  --border-variant: #0f0f14;
+  --border-focused: #545c7e33;
+  --element-hover: #13131a;
+  --element-selected: #14141b;
+  --scrollbar-thumb: #868bc415;
+  --scrollbar-track-border: #16161e;
+
+  /* Text. */
+  --text: #787c99;
+  --text-muted: #515670;
+  --text-placeholder: #787c998a;
+  --accent: #6183bb;
+  --editor-foreground: var(--fg-dark);
+  --line-number: #363b54;
+  --active-line-number: var(--dark5);
+  --error: var(--red1);
+  --success: #449dab;
+
+  /* Highlights. */
+  --active-line: #1e202e;
+  --selection: #515c7e4d;
+  --search-match: #3e68d766;
+  --active-match: #3e68d766;
+  --arrow: var(--punctuation-special);
+
+  /* Code. */
+  --keyword: var(--purple);
+  --type: var(--blue2);
+  --function: var(--blue);
+  --parameter: var(--yellow);
+  --string: var(--green);
+  --number: var(--orange);
+  --constant: var(--orange);
+  --comment: #565f89;
+  --comment-doc: #565f89;
+  --hint: #515670;
+  --punctuation: var(--blue5);
+  --punctuation-special: #ba3c97;
+  --embedded: var(--fg-dark);
+  --variable: var(--fg);
+  --label: var(--green1);
+  --keyword-control: var(--magenta);
+  --type-builtin: var(--magenta);
+  --global: var(--yellow);
+  --field: var(--cyan);
+  --macro: var(--function);
+  --operator: var(--blue5);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: #646e9c;
+  --register: var(--type);
+  --address-function: #646e9c;
+  --address-code: var(--parameter);
+  --address-data: #646e9c;
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: #646e9c;
+  --tint-1: color-mix(in srgb, var(--blue) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--magenta) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--yellow) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--green) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--blue);
+  --arrow-2: var(--orange);
+  --arrow-3: var(--magenta);
+  --arrow-4: var(--green);
+  --arrow-5: var(--red);
+  --arrow-6: var(--cyan);
+  --arrow-7: var(--yellow);
+  --arrow-8: var(--purple);
+  --auto-name-alpha: 1;   /* automatic names (v17, sub_a9090, field_38) */
+  --cast-alpha: 1;        /* a cast's parentheses and type */
+}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+
+{% block title %}Not found · binbun{% endblock title %}
+
+{% block main %}
+  <section class="band"><div class="frame pad hero">
+    <h1>Nothing here.</h1>
+    <p class="tagline">No page has this address. The <a href="{{ get_url(path='docs/') }}">docs</a> start from their overview, and binbun itself is on the <a href="{{ get_url(path='download/') }}">download page</a>.</p>
+  </div></section>
+{% endblock main %}

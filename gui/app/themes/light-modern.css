@@ -1,0 +1,174 @@
+/* Light Modern, VS Code's default light theme before 1.113.
+ *
+ * Source: https://github.com/microsoft/vscode at tag 1.112.0,
+ *   commit 07ff9d6178ede9a1bd12ad3399074d726ebe6e43 (the last 1.112.x
+ *   tag; ThemeSettingDefaults.COLOR_THEME_LIGHT is 'Default Light Modern'
+ *   there). light_modern.json includes light_plus.json, which includes
+ *   light_vs.json; colours and tokenColors are resolved through the chain.
+ *   extensions/theme-defaults/themes/light_modern.json
+ *     sha256 03c1863e83b01a44b3b2a1d39d34393a7cd80214b52e583392305250252423e2
+ *   extensions/theme-defaults/themes/light_plus.json
+ *     sha256 26fbb053bec8ce2b65706d5fcb993da8c19174cfdbf35a49b465236b5ed26203
+ *   extensions/theme-defaults/themes/light_vs.json
+ *     sha256 524b228861625755632a545e321476983077f5c8788f70b8c0fe42992b314cdd
+ * Licence: MIT, Copyright (c) 2015 - present Microsoft Corporation.
+ *
+ * Mapping: the UI roles are the theme's workbench colours, the code roles
+ * its tokenColors (C scopes first). Where the theme sets neither a key
+ * nor its listed alternative, the value is VS Code's own registry default
+ * for that key at 1.112.0: scrollbar slider (#646464 at 40%), editor
+ * selection (#ADD6FF), find matches (#A8AC94, others #EA5C0055), the
+ * warning colour taken by the branch arrows (#BF8803) and the added-file
+ * green (the git extension's #587c0c). The theme has no current-line
+ * background; VS Code marks the line with its default border colour,
+ * #eeeeee, used here as the active line. Subtler hairlines are the input
+ * border. Code scopes resolve as VS Code resolves them (a scope with no
+ * rule of its own takes its parent's colour). Keywords are split:
+ * --keyword is storage.modifier (struct, static, const, typedef and
+ * sizeof resolve to the same blue), --keyword-control keyword.control
+ * (keyword.control.return has no colour of its own). Types are split
+ * too: --type is entity.name.type (named types, teal), --type-builtin
+ * storage.type (C's int, blue), which was --type before. Globals and
+ * fields have no colour of their own (variable.other.global,
+ * variable.other.member and variable.other.property resolve to
+ * variable), so both are --variable; macros are
+ * entity.name.function.preprocessor (blue); operators keyword.operator
+ * (#000000). Constants are constant.language, special punctuation
+ * punctuation.section.embedded; the theme has no
+ * punctuation, doc-comment or inlay-hint colour, so punctuation is the
+ * editor foreground and doc comments and hints are descriptionForeground,
+ * which Light Modern sets to its text colour. The link tints' yellow is
+ * the function colour (Light+'s counterpart of Dark+'s yellow).
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments,
+ * link tints, the lit area, agreed) follow binbun's rule: mnemonics
+ * take the text colour, registers the type colour; addresses by what the
+ * line is (functions the comment colour, code the parameter colour, data
+ * the doc-comment colour, unexplored bytes the constant colour); code
+ * xrefs the special punctuation, data xrefs the doc-comment colour; link
+ * tints the blue, purple, yellow and green at 19%; the lit area the
+ * panel at half alpha, its edge the focus border; agreed the success
+ * green. Listing mnemonics by kind: jumps take the control keyword
+ * colour, calls the function colour, returns the control keyword colour
+ * too (keyword.control.return has none of its own), and nops and
+ * padding the dimmest muted foreground that reaches 3:1, the comment
+ * green (5.14:1; descriptionForeground is the text colour, 11.20:1).
+ * Automatic names are drawn at 70% alpha, a cast's parentheses and type
+ * at 60%. The listing's eight branch-arrow lanes are distinct opaque
+ * palette colours, each at least 3:1 against the editor, in hue order
+ * round the wheel (blue, orange, purple, green, red, teal, yellow,
+ * magenta) with neighbours (and lanes 8 and 1) at least 20 apart in
+ * CIE76 Delta E: the keyword blue, control-keyword purple, comment
+ * green, invalid red and type teal. Light Modern has no orange, yellow
+ * or magenta, so lane 2 takes the string's brick red, #a31515, lane 7
+ * the function's brown, #795E26, and lane 8 the regular-expression
+ * maroon, #811f3f: the slots Dark Modern fills with the same tokens.
+ * No other deviation: every pick reaches 3:1 against the editor.
+ */
+
+:root {
+  --name: "Light Modern";
+  --appearance: light;
+
+  /* Light Modern's palette (VS Code names none; these are its colours). */
+  --blue: #0000ff;
+  --purple: #AF00DB;
+  --yellow: #795E26;
+  --green: #008000;
+  --navy: #001080;
+  --brick: #a31515;
+  --red: #cd3131;
+  --teal: #267f99;
+  --maroon: #811f3f;
+  --fg: #3B3B3B;
+  --surface: #F8F8F8;
+  --hairline: #E5E5E5;
+}
+
+:root {
+  /* Surfaces. */
+  --background: var(--surface);
+  --gap: var(--surface);
+  --tab-bar: var(--surface);
+  --panel: var(--surface);
+  --editor: #FFFFFF;
+  --border: var(--hairline);
+  --border-variant: #CECECE;
+  --border-focused: #005FB8;
+  --element-hover: #F2F2F2;
+  --element-selected: #E8E8E8;
+  --scrollbar-thumb: #64646466;
+  --scrollbar-track-border: var(--hairline);
+
+  /* Text. */
+  --text: var(--fg);
+  --text-muted: var(--fg);
+  --text-placeholder: #767676;
+  --accent: #005FB8;
+  --editor-foreground: var(--fg);
+  --line-number: #6E7681;
+  --active-line-number: #171184;
+  --error: #F85149;
+  --success: #587c0c;
+
+  /* Highlights. */
+  --active-line: #eeeeee;
+  --selection: #ADD6FF;
+  --search-match: #EA5C0055;
+  --active-match: #A8AC94;
+  --arrow: #BF8803;
+
+  /* Code. */
+  --keyword: var(--blue);
+  --type: var(--teal);
+  --function: var(--yellow);
+  --parameter: var(--navy);
+  --string: var(--brick);
+  --number: #098658;
+  --constant: var(--blue);
+  --comment: var(--green);
+  --comment-doc: var(--fg);
+  --hint: var(--fg);
+  --punctuation: var(--fg);
+  --punctuation-special: var(--blue);
+  --embedded: var(--fg);
+  --variable: var(--navy);
+  --label: #000000;
+  --keyword-control: var(--purple);
+  --type-builtin: var(--blue);
+  --global: var(--variable);
+  --field: var(--variable);
+  --macro: var(--blue);
+  --operator: #000000;
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: var(--comment);
+  --register: var(--type);
+  --address-function: var(--comment);
+  --address-code: var(--parameter);
+  --address-data: var(--comment-doc);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--comment-doc);
+  --tint-1: color-mix(in srgb, var(--blue) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--purple) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--yellow) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--green) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--blue);
+  --arrow-2: var(--brick);
+  --arrow-3: var(--purple);
+  --arrow-4: var(--green);
+  --arrow-5: var(--red);
+  --arrow-6: var(--teal);
+  --arrow-7: var(--yellow);
+  --arrow-8: var(--maroon);
+  --auto-name-alpha: 1;
+  --cast-alpha: 1;
+}

@@ -1,0 +1,195 @@
+/* GitHub Light, GitHub's "GitHub Light Default" VS Code theme.
+ *
+ * Source: https://github.com/primer/github-vscode-theme
+ *   version 6.3.5 (tag v6.3.5), commit ad3f17519f2f7d7060afffac2b557c69c4534610.
+ *   The repository builds its theme JSON from src/theme.js (with
+ *   @primer/primitives 7.10.0); the built file was taken from the release
+ *   VSIX GitHub.github-vscode-theme-6.3.5.vsix (Open VSX, sha256
+ *   a85236a58ad490b1600ec5a0fd0cea7eec56fb9d33660a1ac82c6da639ad3af4; the
+ *   VS Code Marketplace VSIX holds the same bytes), whose src/ matches the
+ *   commit byte for byte:
+ *   extension/themes/light-default.json
+ *     sha256 cc0cf47f4089eab798a72c600c08eff05246abb0c233d37dabd02afb255fccfb
+ *   This is the "Default" variant, not the classic "GitHub Light" (light.json).
+ * Licence: MIT, Copyright (c) 2020 Primer.
+ *
+ * Mapping: the palette is named after the Primer tokens src/theme.js picks
+ * (fg.default, canvas.inset, scale.red[5], ...). The UI roles are the
+ * theme's workbench colours (title bar, tab bar, sidebar, editor, borders,
+ * list, scrollbar, line numbers, find matches); the code roles are its
+ * tokenColors resolved as VS Code resolves C scopes. The islands' gap is
+ * the most recessed surface, canvas.inset (sidebar and tab bar). GitHub
+ * paints C's `int` (storage.type) in the keyword red, so --type takes the
+ * type-name colour (entity.name.type, orange) to keep types and registers
+ * apart from keywords. Parameters and labels resolve to the same orange
+ * (the theme's `variable` and `entity.name` rules), doc comments to the
+ * comment grey, plain variables and punctuation to the editor foreground
+ * (no own rule). The theme has no input/widget border of its own besides
+ * input.border, which is the main border colour; its overview-ruler border
+ * is white, as upstream. Two keys are missing from the built JSON, so
+ * VS Code's own defaults stand in, as VS Code shows them:
+ * editor.selectionBackground (src/theme.js sets it, then a later duplicate
+ * key meant for the high-contrast variants overwrites it with nothing) is
+ * #add6ff, and editorWarning.foreground, which the branch arrows take, is
+ * #bf8803. The link tints are the accent blue, the function purple, the
+ * attention yellow and the success green at 19% alpha; the lit area is the
+ * panel colour at half alpha.
+ *
+ * Finer code roles, C scopes first as VS Code resolves them. GitHub gives
+ * the non-control keywords no colour of their own: storage.modifier
+ * (static, const, extern, unsigned), storage.type.struct|union|enum and
+ * keyword.other (typedef) fall to the theme's `storage`, `storage.type` and
+ * `keyword` rules, the same red as keyword.control, so --keyword keeps
+ * today's red and --keyword-control (if, for, return, ...) is that red too.
+ * --type stays the named types (entity.name.type, orange; it was never
+ * taken from storage.type); --type-builtin is storage.type
+ * (storage.type.built-in.primitive: int, char, void), the keyword red.
+ * variable.other.global and variable.other.member/property get no colour of
+ * their own (they fall to the `variable.other` rule, the editor
+ * foreground), so --global and --field are var(--variable).
+ * entity.name.function.preprocessor/.macro fall to the
+ * `entity.name.function` rule, so --macro is var(--function).
+ * keyword.operator has no rule of its own but falls to the `keyword` rule,
+ * so --operator is the keyword red, as VS Code shows it.
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments,
+ * link tints, the lit area, agreed) follow the rule binbun used before
+ * themes were files: mnemonics take the text colour, registers the type
+ * colour; addresses by what the line is (functions the comment colour,
+ * code the parameter colour, data the doc-comment grey, unexplored bytes
+ * the constant colour); code xrefs the special punctuation, data xrefs the
+ * doc-comment grey; the lit area's edge the focus border; agreed the
+ * success green. In GitHub the parameter colour is orange (not red) and the
+ * constant colour blue (not yellow); the rule is applied as written, with
+ * no other deviation.
+ * The listing's mnemonic roles: jumps take the control-keyword colour,
+ * calls the function colour, returns the control-keyword colour too
+ * (keyword.control.return has no colour of its own), nops and padding the
+ * dimmest palette foreground that reaches 3:1, scale.gray[4] (the
+ * line-number grey, 3.04:1).
+ *
+ * The listing's eight branch-arrow lanes are eight distinct opaque palette
+ * colours, each at least 3:1 against the editor, in the hue order blue,
+ * orange, purple, green, red, cyan, yellow, pink so neighbouring lanes
+ * differ clearly (CIE76 delta E at least 20, lane 8 against lane 1 too):
+ * the syntax blue, orange and purple, the success green, the syntax red,
+ * the terminal cyan (Primer's scale has no cyan; ansi.cyan is the theme's
+ * terminal.ansiCyan), the attention yellow and the bracket-pair pink
+ * (editorBracketHighlight.foreground5). Every hue is the palette's own.
+ */
+
+:root {
+  --name: "GitHub Light";
+  --appearance: light;
+
+  /* GitHub's (Primer's) palette. */
+  --canvas-default: #ffffff;
+  --canvas-inset: #f6f8fa;
+  --border-default: #d0d7de;
+  --fg-default: #1f2328;
+  --fg-muted: #656d76;
+  --fg-subtle: #6e7781;
+  --accent-fg: #0969da;
+  --accent-emphasis: #0969da;
+  --danger-fg: #cf222e;
+  --success-fg: #1a7f37;
+  --attention-fg: #9a6700;
+  --red-5: #cf222e;
+  --orange-6: #953800;
+  --blue-6: #0550ae;
+  --blue-8: #0a3069;
+  --purple-5: #8250df;
+  --gray-4: #8c959f;
+  --gray-5: #6e7781;
+  --ansi-cyan: #1b7c83;
+  --pink-5: #bf3989;
+}
+
+:root {
+  /* Surfaces. */
+  --background: var(--canvas-default);
+  --gap: var(--canvas-inset);
+  --tab-bar: var(--canvas-inset);
+  --panel: var(--canvas-inset);
+  --editor: var(--canvas-default);
+  --border: var(--border-default);
+  --border-variant: var(--border-default);
+  --border-focused: var(--accent-emphasis);
+  --element-hover: #eaeef280;
+  --element-selected: #afb8c133;
+  --scrollbar-thumb: #8c959f33;
+  --scrollbar-track-border: var(--canvas-default);
+
+  /* Text. */
+  --text: var(--fg-default);
+  --text-muted: var(--fg-muted);
+  --text-placeholder: var(--fg-subtle);
+  --accent: var(--accent-fg);
+  --editor-foreground: var(--fg-default);
+  --line-number: var(--gray-4);
+  --active-line-number: var(--fg-default);
+  --error: var(--danger-fg);
+  --success: var(--success-fg);
+
+  /* Highlights. */
+  --active-line: #eaeef280;
+  --selection: #add6ff;
+  --search-match: #fae17d80;
+  --active-match: #bf8700;
+  --arrow: #bf8803;
+
+  /* Code. */
+  --keyword: var(--red-5);
+  --type: var(--orange-6);
+  --function: var(--purple-5);
+  --parameter: var(--orange-6);
+  --string: var(--blue-8);
+  --number: var(--blue-6);
+  --constant: var(--blue-6);
+  --comment: var(--gray-5);
+  --comment-doc: var(--gray-5);
+  --hint: var(--fg-muted);
+  --punctuation: var(--fg-default);
+  --punctuation-special: var(--red-5);
+  --embedded: var(--fg-default);
+  --variable: var(--fg-default);
+  --label: var(--orange-6);
+  --keyword-control: var(--red-5);
+  --type-builtin: var(--red-5);
+  --global: var(--variable);
+  --field: var(--variable);
+  --macro: var(--function);
+  --operator: var(--red-5);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: var(--gray-4);
+  --map-import: var(--pink-5);
+  --register: var(--type);
+  --address-function: var(--comment);
+  --address-code: var(--parameter);
+  --address-data: var(--comment-doc);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--comment-doc);
+  --tint-1: color-mix(in srgb, var(--accent-fg) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--purple-5) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--attention-fg) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--success-fg) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --auto-name-alpha: 1;   /* automatic names (v17, sub_a9090, field_38) */
+  --cast-alpha: 1;        /* a cast's parentheses and type */
+  --arrow-1: var(--blue-6);
+  --arrow-2: var(--orange-6);
+  --arrow-3: var(--purple-5);
+  --arrow-4: var(--success-fg);
+  --arrow-5: var(--red-5);
+  --arrow-6: var(--ansi-cyan);
+  --arrow-7: var(--attention-fg);
+  --arrow-8: var(--pink-5);
+}

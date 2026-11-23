@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page.title }} · binbun blog{% endblock title %}
+{% block description %}{% if page.description %}{{ page.description }}{% else %}{{ config.description }}{% endif %}{% endblock description %}
+{#- The post's card: assets/blog/SLUG.png from scripts/site/og-image.sh
+    (the build fails without it), or `[extra] image = "assets/…"`. #}
+{% block preview_image %}
+{%- set image = page.extra.image | default(value="assets/blog/" ~ page.slug ~ ".png") %}
+{%- set size = get_image_metadata(path=image) %}
+<meta property="og:image" content="{{ get_url(path=image) }}">
+<meta property="og:image:width" content="{{ size.width }}">
+<meta property="og:image:height" content="{{ size.height }}">
+<meta property="og:image:alt" content="{{ page.title }}, on binbun's blog">
+<meta name="twitter:card" content="summary_large_image">
+{%- endblock preview_image %}
+
+{% block main %}
+  <section class="band"><div class="frame blog">
+    <article class="prose">
+      <div class="post-meta"><time datetime="{{ page.date }}">{{ page.date | date(format="%-d %B %Y") }}</time>{% for author in page.authors %}{% if loop.first %} · {% else %}, {% endif %}<a href="https://github.com/{{ author }}">{{ author }}</a>{% endfor %}</div>
+      <h1>{{ page.title }}</h1>
+      {{ page.content | safe }}
+      <nav class="pager">
+        <a href="{{ get_url(path='blog/') }}">&larr; All posts</a>
+        <a href="{{ get_url(path='blog/atom.xml', trailing_slash=false) }}">Atom feed</a>
+      </nav>
+    </article>
+  </div></section>
+{% endblock main %}

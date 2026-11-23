@@ -1,0 +1,16 @@
+[package]
+name = "binbun-xed"
+description = "Reader for Intel XED's aggregated datafiles, the input of binbun's x86 decoder generator."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+# xtask's alone (the x86 decoder generator's input).
+publish = false
+
+[dependencies]
+binbun-semantics.workspace = true
+
+[lints]
+workspace = true

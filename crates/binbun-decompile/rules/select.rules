@@ -1,0 +1,16 @@
+# Choices between constants and booleans as numbers (`setcc`, `sbb`,
+# `cmov` idioms).
+
+rule select-bit: select(b, 1:1, 0:1) => b
+rule select-not-bit: select(b, 0:1, 1:1) => not(b)
+rule select-same: select(b, x:W, x) => x
+  widths W in 1 8 16 32 64 128
+rule select-one: select(b, 1:W, 0) => zext(b, W)
+rule select-zero: select(b, 0:W, 1) => zext(not(b), W)
+rule select-ones: select(b, -1:W, 0) => sext(b, W)
+rule select-not: select(not(b), x:W, y) => select(b, y, x)
+  widths W in 1 8 16 32 64 128
+
+# Booleans as numbers.
+rule neg-of-bit: neg(zext(b:1, W)) => sext(b, W)
+rule and-1-of-bit: and(zext(b:1, W), 1) => zext(b, W)

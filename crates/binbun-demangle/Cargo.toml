@@ -1,0 +1,21 @@
+[package]
+name = "binbun-demangle"
+description = "Partial Itanium C++ demangler that parses manglings into syntax trees."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["demangle", "demangler", "itanium", "cpp", "mangling"]
+categories = ["development-tools::debugging", "parser-implementations", "no-std"]
+
+[dependencies]
+
+[dev-dependencies]
+cpp_demangle.workspace = true
+object = { version = "0.40", default-features = false, features = ["read", "std"] }
+
+[lints]
+workspace = true

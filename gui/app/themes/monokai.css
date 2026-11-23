@@ -1,0 +1,175 @@
+/* Monokai, as VS Code bundles it.
+ *
+ * Source: https://github.com/microsoft/vscode at tag 1.112.0,
+ *   commit 07ff9d6178ede9a1bd12ad3399074d726ebe6e43.
+ *   extensions/theme-monokai/themes/monokai-color-theme.json
+ *     sha256 4f994ac509c514c8d4919abb7857c47bb47fe7bb1fcb13bf6ff0f52c77447c93
+ * Licence: MIT, Copyright (c) 2015 - present Microsoft Corporation.
+ *
+ * Mapping: the UI roles are the theme's workbench colours, the code roles
+ * its tokenColors (C scopes first). Where the theme sets neither a key
+ * nor its listed alternative, the value is VS Code's own registry default
+ * for that key at 1.112.0, which is what VS Code shows with this theme:
+ * the text (foreground #CCCCCC, descriptionForeground the same at 70%,
+ * the input placeholder at 50%), the scrollbar slider (#797979 at 40%)
+ * and find matches (#515C6A, others #EA5C0055). The accent is
+ * button.background (no link colour), the error colour
+ * inputValidation.errorBorder (no errorForeground). The background, gap,
+ * tab bar and panel are the darkest surface (side bar, title bar and tab
+ * strip, #1e1f1c); hairlines are the panel border, subtler hairlines the
+ * editor group border; the focus border, list hover and selection, line
+ * numbers, the current line and the selection are the theme's own. Code
+ * scopes resolve as VS Code resolves them (a scope with no rule of its
+ * own takes its parent's colour). Keywords are split: --keyword is
+ * storage.modifier, which the theme's storage rule colours pink (as its
+ * keyword rule does typedef and sizeof), --keyword-control
+ * keyword.control, pink through the keyword rule
+ * (keyword.control.return has no colour of its own). Types are split too:
+ * --type is entity.name.type (named types, green), --type-builtin
+ * storage.type (C's int, cyan). Globals and fields have no colour
+ * of their own (variable.other.global and variable.other.member resolve
+ * to variable), so both are --variable, the foreground; macros
+ * (entity.name.function.preprocessor) take the function green; operators
+ * (keyword.operator) the keyword pink; labels (entity.name.label, no rule
+ * up to entity) the foreground. Constants are constant.language, special
+ * punctuation punctuation.section.embedded (pink). The theme has no
+ * punctuation, doc-comment or inlay-hint colour, so punctuation is the
+ * editor foreground and doc comments and hints are
+ * descriptionForeground. There is no git "added" colour: success is
+ * terminal.ansiBrightGreen, the theme's green.
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments,
+ * link tints, the lit area, agreed) follow binbun's rule: mnemonics take
+ * the text colour, registers the type colour; addresses by what the line
+ * is (functions the comment colour, code the parameter colour, data the
+ * doc-comment grey, unexplored bytes the constant colour); code xrefs the
+ * special punctuation, data xrefs the doc-comment grey; link tints the
+ * cyan, purple, yellow and green at 19%; the lit area the panel at half
+ * alpha, its edge the focus border; agreed the success green. Listing
+ * mnemonics by kind: jumps take the control keyword colour, calls the
+ * function colour, returns the control keyword colour too, and nops and
+ * padding the comment colour (3.95:1; the muted text is translucent).
+ * The listing's eight branch-arrow lanes are distinct opaque palette
+ * colours, each at least 3:1 against the editor, in hue order round the
+ * wheel (blue, orange, purple, green, red, cyan, yellow, magenta) with
+ * neighbours (and lanes 8 and 1) at least 20 apart in CIE76 Delta E. The
+ * token colours have no blue, so lane 1 is the theme's bright blue
+ * (terminal.ansiBrightBlue and inputValidation.infoBorder, #819aff); red
+ * is the invalid rule's #F44747, magenta the keyword pink.
+ * The feature map's library code takes the cyan, the theme's own
+ * library-function colour (support.function), and its imports the
+ * orange: the function green and the error pink are its functions' and
+ * code's.
+ * No other deviation: every pick reaches 3:1 against the editor.
+ */
+
+:root {
+  --name: "Monokai";
+  --appearance: dark;
+
+  /* Monokai's palette (VS Code names none; these are its colours). */
+  --bg: #272822;
+  --fg: #f8f8f2;
+  --comment-brown: #88846f;
+  --muted-brown: #75715E;
+  --yellow: #E6DB74;
+  --pink: #F92672;
+  --purple: #AE81FF;
+  --cyan: #66D9EF;
+  --green: #A6E22E;
+  --orange: #FD971F;
+  --red: #F44747;
+  --blue: #819aff;
+  --surface: #1e1f1c;
+  --raised: #414339;
+}
+
+:root {
+  /* Surfaces. */
+  --background: var(--surface);
+  --gap: var(--surface);
+  --tab-bar: var(--surface);
+  --panel: var(--surface);
+  --editor: var(--bg);
+  --border: var(--raised);
+  --border-variant: #34352f;
+  --border-focused: #99947c;
+  --element-hover: #3e3d32;
+  --element-selected: var(--muted-brown);
+  --scrollbar-thumb: #79797966;
+  --scrollbar-track-border: var(--surface);
+
+  /* Text. */
+  --text: #CCCCCC;
+  --text-muted: #CCCCCCB3;
+  --text-placeholder: #CCCCCC80;
+  --accent: var(--muted-brown);
+  --editor-foreground: var(--fg);
+  --line-number: #90908a;
+  --active-line-number: #c2c2bf;
+  --error: var(--pink);
+  --success: var(--green);
+
+  /* Highlights. */
+  --active-line: #3e3d32;
+  --selection: #878b9180;
+  --search-match: #EA5C0055;
+  --active-match: #515C6A;
+  --arrow: var(--pink);
+
+  /* Code. */
+  --keyword: var(--pink);
+  --type: var(--green);
+  --function: var(--green);
+  --parameter: var(--orange);
+  --string: var(--yellow);
+  --number: var(--purple);
+  --constant: var(--purple);
+  --comment: var(--comment-brown);
+  --comment-doc: var(--text-muted);
+  --hint: var(--text-muted);
+  --punctuation: var(--fg);
+  --punctuation-special: var(--pink);
+  --embedded: var(--fg);
+  --variable: var(--fg);
+  --label: var(--fg);
+  --keyword-control: var(--pink);
+  --type-builtin: var(--cyan);
+  --global: var(--variable);
+  --field: var(--variable);
+  --macro: var(--function);
+  --operator: var(--pink);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: var(--comment);
+  --map-library: var(--cyan);
+  --map-import: var(--orange);
+  --register: var(--type);
+  --address-function: var(--comment);
+  --address-code: var(--parameter);
+  --address-data: var(--comment-doc);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--comment-doc);
+  --tint-1: color-mix(in srgb, var(--cyan) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--purple) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--yellow) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--green) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--blue);
+  --arrow-2: var(--orange);
+  --arrow-3: var(--purple);
+  --arrow-4: var(--green);
+  --arrow-5: var(--red);
+  --arrow-6: var(--cyan);
+  --arrow-7: var(--yellow);
+  --arrow-8: var(--pink);
+  --auto-name-alpha: 1;
+  --cast-alpha: 1;
+}

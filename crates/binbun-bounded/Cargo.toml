@@ -1,0 +1,23 @@
+[package]
+name = "binbun-bounded"
+description = "Bounded postcard decoding of bytes another party wrote: collections with declared maxima, encoding within a limit, pages."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["postcard", "serde", "bounded", "decoding"]
+categories = ["encoding"]
+
+[dependencies]
+postcard.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+# Live heap bytes, limited around one call (`tests/alloc.rs`).
+cap.workspace = true
+
+[lints]
+workspace = true

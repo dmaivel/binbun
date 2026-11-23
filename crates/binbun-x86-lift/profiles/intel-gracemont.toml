@@ -1,0 +1,2596 @@
+# What Intel Gracemont (E-cores of 13th- and 14th-generation Core) does where L0 leaves a value undefined:
+# measured by crates/binbun-x86-lift/tests/profile.rs.
+format = 1
+id = "intel-gracemont"
+title = "Intel Gracemont (E-cores of 13th- and 14th-generation Core)"
+architecture = "x86-64"
+revision = 2
+sites = "blake3:92426cf3755b5e4b932b061bb34298fe0298039462cc31f4a2febad1152ecff0"
+
+[[measured]]
+cpu = "Intel(R) Core(TM) i9-14900F"
+vendor = "GenuineIntel"
+family = 6
+model = 0xb7
+stepping = 1
+cpuid_1_eax = 0x000b0671
+core_type = 0x20
+native_model = 0x000001
+microcode = 0x137
+cpus = "16-31"
+kernel = "Linux 7.2.6-zen2-1-zen"
+date = 2026-11-14
+seed = 0x5eed1234abcdef01
+
+[site."and.af"]
+rule = "0"
+observations = 25489
+random = 10199
+systematic = 15290
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(dst)"]
+
+[site."andn.af"]
+rule = "0"
+observations = 7815
+random = 6699
+systematic = 1116
+separating = 4
+beaten = ["1", "old", "msb(a)", "msb(b)"]
+
+[site."andn.pf"]
+rule = "0"
+observations = 7815
+random = 6699
+systematic = 1116
+separating = 4
+beaten = ["1", "old", "msb(a)", "msb(b)"]
+
+[site."bextr.af"]
+rule = "0"
+observations = 7364
+random = 6306
+systematic = 1058
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+
+[site."bextr.cf"]
+rule = "0"
+observations = 7364
+random = 6306
+systematic = 1058
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+
+[site."bextr.of"]
+rule = "0"
+observations = 7364
+random = 6306
+systematic = 1058
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+
+[site."bextr.pf"]
+rule = "0"
+observations = 7364
+random = 6306
+systematic = 1058
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+
+[site."bextr.sf"]
+rule = "0"
+observations = 7364
+random = 6306
+systematic = 1058
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+
+[site."blsi.af"]
+rule = "0"
+observations = 4417
+random = 3781
+systematic = 636
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["(src == 0) ^ (defined.dst == 0)", "bit(src, 0) ^ bit(defined.dst, 0)", "if src == 0 { 0 } else { (defined.dst == 0) }"]
+
+[site."blsi.pf"]
+rule = "0"
+observations = 4417
+random = 3781
+systematic = 636
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["(src == 0) ^ (defined.dst == 0)", "bit(src, 0) ^ bit(defined.dst, 0)", "if src == 0 { 0 } else { (defined.dst == 0) }"]
+
+[site."blsmsk.af"]
+rule = "0"
+observations = 4931
+random = 4218
+systematic = 713
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["(defined.dst == 0)", "bit(defined.dst, 0) ^ 1", "(src == 0) ^ defined.cf", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { (defined.dst == 0) }"]
+
+[site."blsmsk.pf"]
+rule = "0"
+observations = 4931
+random = 4218
+systematic = 713
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["(defined.dst == 0)", "bit(defined.dst, 0) ^ 1", "(src == 0) ^ defined.cf", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { (defined.dst == 0) }"]
+
+[site."blsr.af"]
+rule = "0"
+observations = 3864
+random = 3302
+systematic = 562
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["bit(defined.dst, 0)", "(src == 0) ^ defined.cf", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { bit(defined.dst, 0) }"]
+
+[site."blsr.pf"]
+rule = "0"
+observations = 3864
+random = 3302
+systematic = 562
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["bit(defined.dst, 0)", "(src == 0) ^ defined.cf", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { bit(defined.dst, 0) }"]
+
+[site."bsf.af"]
+rule = "0"
+observations = 9839
+random = 8423
+systematic = 1416
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["if src == 0 { 0 } else { msb(defined.dst) }", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."bsf.cf"]
+rule = "0"
+observations = 9839
+random = 8423
+systematic = 1416
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["if src == 0 { 0 } else { msb(defined.dst) }", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."bsf.of"]
+rule = "0"
+observations = 9839
+random = 8423
+systematic = 1416
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["if src == 0 { 0 } else { msb(defined.dst) }", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."bsf.pf"]
+rule = "if src == 0 { 1 } else { parity8(defined.dst) }"
+observations = 9839
+random = 8423
+systematic = 1416
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+
+[site."bsf.sf"]
+rule = "0"
+observations = 9839
+random = 8423
+systematic = 1416
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["if src == 0 { 0 } else { msb(defined.dst) }", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."bsr.af"]
+rule = "0"
+observations = 9861
+random = 8454
+systematic = 1407
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["if src == 0 { 0 } else { msb(defined.dst) }", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."bsr.cf"]
+rule = "0"
+observations = 9861
+random = 8454
+systematic = 1407
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["if src == 0 { 0 } else { msb(defined.dst) }", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."bsr.of"]
+rule = "0"
+observations = 9861
+random = 8454
+systematic = 1407
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["if src == 0 { 0 } else { msb(defined.dst) }", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."bsr.pf"]
+rule = "if src == 0 { 1 } else { parity8(defined.dst) }"
+observations = 9861
+random = 8454
+systematic = 1407
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+
+[site."bsr.sf"]
+rule = "0"
+observations = 9861
+random = 8454
+systematic = 1407
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["if src == 0 { 0 } else { msb(defined.dst) }", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."bt.af"]
+rule = "old"
+observations = 4231
+random = 1691
+systematic = 2540
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."bt.of"]
+rule = "old"
+observations = 4231
+random = 1691
+systematic = 2540
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."bt.pf"]
+rule = "old"
+observations = 4231
+random = 1691
+systematic = 2540
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."bt.sf"]
+rule = "old"
+observations = 4231
+random = 1691
+systematic = 2540
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."btc.af"]
+rule = "old"
+observations = 4678
+random = 1868
+systematic = 2810
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."btc.of"]
+rule = "old"
+observations = 4678
+random = 1868
+systematic = 2810
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."btc.pf"]
+rule = "old"
+observations = 4678
+random = 1868
+systematic = 2810
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."btc.sf"]
+rule = "old"
+observations = 4678
+random = 1868
+systematic = 2810
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."btr.af"]
+rule = "old"
+observations = 4686
+random = 1870
+systematic = 2816
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."btr.of"]
+rule = "old"
+observations = 4686
+random = 1870
+systematic = 2816
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."btr.pf"]
+rule = "old"
+observations = 4686
+random = 1870
+systematic = 2816
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."btr.sf"]
+rule = "old"
+observations = 4686
+random = 1870
+systematic = 2816
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+
+[site."bts.af"]
+rule = "old"
+observations = 4592
+random = 1832
+systematic = 2760
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+equivalent = ["old ^ (defined.base == 0)"]
+
+[site."bts.of"]
+rule = "old"
+observations = 4592
+random = 1832
+systematic = 2760
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+equivalent = ["old ^ (defined.base == 0)"]
+
+[site."bts.pf"]
+rule = "old"
+observations = 4592
+random = 1832
+systematic = 2760
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+equivalent = ["old ^ (defined.base == 0)"]
+
+[site."bts.sf"]
+rule = "old"
+observations = 4592
+random = 1832
+systematic = 2760
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(base)"]
+equivalent = ["old ^ (defined.base == 0)"]
+
+[site."byte_swap.dst"]
+rule = "0"
+observations = 2017
+random = 1728
+systematic = 289
+separating = 1
+beaten = ["!0"]
+
+[site."bzhi.af"]
+rule = "0"
+observations = 7864
+random = 6745
+systematic = 1119
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+
+[site."bzhi.pf"]
+rule = "0"
+observations = 7864
+random = 6745
+systematic = 1119
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+
+[site."div.af"]
+rule = "old"
+observations = 4851
+random = 4221
+systematic = 630
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."div.cf"]
+rule = "old"
+observations = 4851
+random = 4221
+systematic = 630
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."div.of"]
+rule = "old"
+observations = 4851
+random = 4221
+systematic = 630
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."div.pf"]
+rule = "old"
+observations = 4851
+random = 4221
+systematic = 630
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."div.sf"]
+rule = "old"
+observations = 4851
+random = 4221
+systematic = 630
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."div.zf"]
+rule = "old"
+observations = 4851
+random = 4221
+systematic = 630
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."div8.af"]
+rule = "old"
+observations = 6109
+random = 5318
+systematic = 791
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."div8.cf"]
+rule = "old"
+observations = 6109
+random = 5318
+systematic = 791
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."div8.of"]
+rule = "old"
+observations = 6109
+random = 5318
+systematic = 791
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."div8.pf"]
+rule = "old"
+observations = 6109
+random = 5318
+systematic = 791
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."div8.sf"]
+rule = "old"
+observations = 6109
+random = 5318
+systematic = 791
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."div8.zf"]
+rule = "old"
+observations = 6109
+random = 5318
+systematic = 791
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."f2xm1.c0"]
+rule = "old"
+observations = 1477
+random = 1264
+systematic = 213
+separating = 4
+beaten = ["0", "1", "msb(x)", "old ^ 1"]
+
+[site."f2xm1.c2"]
+rule = "old"
+observations = 1477
+random = 1264
+systematic = 213
+separating = 4
+beaten = ["0", "1", "msb(x)", "old ^ 1"]
+
+[site."f2xm1.c3"]
+rule = "old"
+observations = 1477
+random = 1264
+systematic = 213
+separating = 4
+beaten = ["0", "1", "msb(x)", "old ^ 1"]
+
+[site."fabs.c0"]
+rule = "old"
+observations = 1780
+random = 1632
+systematic = 148
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."fabs.c2"]
+rule = "old"
+observations = 1780
+random = 1632
+systematic = 148
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."fabs.c3"]
+rule = "old"
+observations = 1780
+random = 1632
+systematic = 148
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."fadd.c0"]
+rule = "old"
+observations = 5240
+random = 2097
+systematic = 3143
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fadd.c2"]
+rule = "old"
+observations = 5240
+random = 2097
+systematic = 3143
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fadd.c3"]
+rule = "old"
+observations = 5240
+random = 2097
+systematic = 3143
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."faddp.c0"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."faddp.c2"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."faddp.c3"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fbld.c0"]
+rule = "old"
+observations = 4770
+random = 4095
+systematic = 675
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fbld.c2"]
+rule = "old"
+observations = 4770
+random = 4095
+systematic = 675
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fbld.c3"]
+rule = "old"
+observations = 4770
+random = 4095
+systematic = 675
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fbstp.c0"]
+rule = "old"
+observations = 5207
+random = 4463
+systematic = 744
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fbstp.c2"]
+rule = "old"
+observations = 5207
+random = 4463
+systematic = 744
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fbstp.c3"]
+rule = "old"
+observations = 5207
+random = 4463
+systematic = 744
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fchs.c0"]
+rule = "old"
+observations = 2524
+random = 2160
+systematic = 364
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."fchs.c2"]
+rule = "old"
+observations = 2524
+random = 2160
+systematic = 364
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."fchs.c3"]
+rule = "old"
+observations = 2524
+random = 2160
+systematic = 364
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."fcmov.c0"]
+rule = "old"
+observations = 11524
+random = 4608
+systematic = 6916
+separating = 4
+beaten = ["0", "1", "c1", "c1 ^ 1"]
+
+[site."fcmov.c2"]
+rule = "old"
+observations = 11524
+random = 4608
+systematic = 6916
+separating = 4
+beaten = ["0", "1", "c1", "c1 ^ 1"]
+
+[site."fcmov.c3"]
+rule = "old"
+observations = 11524
+random = 4608
+systematic = 6916
+separating = 4
+beaten = ["0", "1", "c1", "c1 ^ 1"]
+
+[site."fcos.c0"]
+rule = "old"
+observations = 1491
+random = 1274
+systematic = 217
+separating = 4
+beaten = ["0", "1", "msb(x)", "old ^ 1"]
+
+[site."fcos.c3"]
+rule = "old"
+observations = 1491
+random = 1274
+systematic = 217
+separating = 4
+beaten = ["0", "1", "msb(x)", "old ^ 1"]
+
+[site."fdecstp.c0"]
+rule = "old"
+observations = 1515
+random = 1296
+systematic = 219
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."fdecstp.c2"]
+rule = "old"
+observations = 1515
+random = 1296
+systematic = 219
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."fdecstp.c3"]
+rule = "old"
+observations = 1515
+random = 1296
+systematic = 219
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."fdiv.c0"]
+rule = "old"
+observations = 5614
+random = 2235
+systematic = 3379
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fdiv.c2"]
+rule = "old"
+observations = 5614
+random = 2235
+systematic = 3379
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fdiv.c3"]
+rule = "old"
+observations = 5614
+random = 2235
+systematic = 3379
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fdivp.c0"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fdivp.c2"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fdivp.c3"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fdivr.c0"]
+rule = "old"
+observations = 5458
+random = 2181
+systematic = 3277
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fdivr.c2"]
+rule = "old"
+observations = 5458
+random = 2181
+systematic = 3277
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fdivr.c3"]
+rule = "old"
+observations = 5458
+random = 2181
+systematic = 3277
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fdivrp.c0"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fdivrp.c2"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fdivrp.c3"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."ffree.c0"]
+rule = "old"
+observations = 6051
+random = 5184
+systematic = 867
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."ffree.c1"]
+rule = "0"
+observations = 6051
+random = 5184
+systematic = 867
+separating = 3
+beaten = ["1", "old", "old ^ 1"]
+
+[site."ffree.c2"]
+rule = "old"
+observations = 6051
+random = 5184
+systematic = 867
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."ffree.c3"]
+rule = "old"
+observations = 6051
+random = 5184
+systematic = 867
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."ffreep.c0"]
+rule = "old"
+observations = 6051
+random = 5184
+systematic = 867
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."ffreep.c1"]
+rule = "0"
+observations = 6051
+random = 5184
+systematic = 867
+separating = 3
+beaten = ["1", "old", "old ^ 1"]
+
+[site."ffreep.c2"]
+rule = "old"
+observations = 6051
+random = 5184
+systematic = 867
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."ffreep.c3"]
+rule = "old"
+observations = 6051
+random = 5184
+systematic = 867
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."fiadd.c0"]
+rule = "old"
+observations = 2717
+random = 1097
+systematic = 1620
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fiadd.c2"]
+rule = "old"
+observations = 2717
+random = 1097
+systematic = 1620
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fiadd.c3"]
+rule = "old"
+observations = 2717
+random = 1097
+systematic = 1620
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fidiv.c0"]
+rule = "old"
+observations = 2739
+random = 1090
+systematic = 1649
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fidiv.c2"]
+rule = "old"
+observations = 2739
+random = 1090
+systematic = 1649
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fidiv.c3"]
+rule = "old"
+observations = 2739
+random = 1090
+systematic = 1649
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fidivr.c0"]
+rule = "old"
+observations = 2602
+random = 1043
+systematic = 1559
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fidivr.c2"]
+rule = "old"
+observations = 2602
+random = 1043
+systematic = 1559
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fidivr.c3"]
+rule = "old"
+observations = 2602
+random = 1043
+systematic = 1559
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fild.c0"]
+rule = "old"
+observations = 3988
+random = 1586
+systematic = 2402
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fild.c2"]
+rule = "old"
+observations = 3988
+random = 1586
+systematic = 2402
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fild.c3"]
+rule = "old"
+observations = 3988
+random = 1586
+systematic = 2402
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fimul.c0"]
+rule = "old"
+observations = 10430
+random = 8937
+systematic = 1493
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fimul.c2"]
+rule = "old"
+observations = 10430
+random = 8937
+systematic = 1493
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fimul.c3"]
+rule = "old"
+observations = 10430
+random = 8937
+systematic = 1493
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fincstp.c0"]
+rule = "old"
+observations = 2523
+random = 2160
+systematic = 363
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."fincstp.c2"]
+rule = "old"
+observations = 2523
+random = 2160
+systematic = 363
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."fincstp.c3"]
+rule = "old"
+observations = 2523
+random = 2160
+systematic = 363
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."fist.c0"]
+rule = "old"
+observations = 2613
+random = 1050
+systematic = 1563
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fist.c2"]
+rule = "old"
+observations = 2613
+random = 1050
+systematic = 1563
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fist.c3"]
+rule = "old"
+observations = 2613
+random = 1050
+systematic = 1563
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fistp.c0"]
+rule = "old"
+observations = 3769
+random = 1538
+systematic = 2231
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fistp.c2"]
+rule = "old"
+observations = 3769
+random = 1538
+systematic = 2231
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fistp.c3"]
+rule = "old"
+observations = 3769
+random = 1538
+systematic = 2231
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fisttp.c0"]
+rule = "old"
+observations = 3860
+random = 1548
+systematic = 2312
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fisttp.c2"]
+rule = "old"
+observations = 3860
+random = 1548
+systematic = 2312
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fisttp.c3"]
+rule = "old"
+observations = 3860
+random = 1548
+systematic = 2312
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fisub.c0"]
+rule = "old"
+observations = 2706
+random = 1087
+systematic = 1619
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fisub.c2"]
+rule = "old"
+observations = 2706
+random = 1087
+systematic = 1619
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fisub.c3"]
+rule = "old"
+observations = 2706
+random = 1087
+systematic = 1619
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fisubr.c0"]
+rule = "old"
+observations = 2628
+random = 1044
+systematic = 1584
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fisubr.c2"]
+rule = "old"
+observations = 2628
+random = 1044
+systematic = 1584
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fisubr.c3"]
+rule = "old"
+observations = 2628
+random = 1044
+systematic = 1584
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fld.c0"]
+rule = "old"
+observations = 5394
+random = 2159
+systematic = 3235
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fld.c2"]
+rule = "old"
+observations = 5394
+random = 2159
+systematic = 3235
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fld.c3"]
+rule = "old"
+observations = 5394
+random = 2159
+systematic = 3235
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fld1.c0"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fld1.c2"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fld1.c3"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldcw.c0"]
+rule = "old"
+observations = 4274
+random = 3663
+systematic = 611
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fldcw.c1"]
+rule = "old"
+observations = 4274
+random = 3663
+systematic = 611
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fldcw.c2"]
+rule = "old"
+observations = 4274
+random = 3663
+systematic = 611
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fldcw.c3"]
+rule = "old"
+observations = 4274
+random = 3663
+systematic = 611
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fldl2e.c0"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldl2e.c2"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldl2e.c3"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldl2t.c0"]
+rule = "old"
+observations = 1516
+random = 1296
+systematic = 220
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldl2t.c2"]
+rule = "old"
+observations = 1516
+random = 1296
+systematic = 220
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldl2t.c3"]
+rule = "old"
+observations = 1516
+random = 1296
+systematic = 220
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldlg2.c0"]
+rule = "old"
+observations = 1516
+random = 1296
+systematic = 220
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldlg2.c2"]
+rule = "old"
+observations = 1516
+random = 1296
+systematic = 220
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldlg2.c3"]
+rule = "old"
+observations = 1516
+random = 1296
+systematic = 220
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldln2.c0"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldln2.c2"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldln2.c3"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldpi.c0"]
+rule = "old"
+observations = 3532
+random = 3024
+systematic = 508
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldpi.c2"]
+rule = "old"
+observations = 3532
+random = 3024
+systematic = 508
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldpi.c3"]
+rule = "old"
+observations = 3532
+random = 3024
+systematic = 508
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldz.c0"]
+rule = "old"
+observations = 1276
+random = 1200
+systematic = 76
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldz.c2"]
+rule = "old"
+observations = 1276
+random = 1200
+systematic = 76
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fldz.c3"]
+rule = "old"
+observations = 1276
+random = 1200
+systematic = 76
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+
+[site."fmul.c0"]
+rule = "old"
+observations = 5130
+random = 2046
+systematic = 3084
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fmul.c2"]
+rule = "old"
+observations = 5130
+random = 2046
+systematic = 3084
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fmul.c3"]
+rule = "old"
+observations = 5130
+random = 2046
+systematic = 3084
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fmulp.c0"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fmulp.c2"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fmulp.c3"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fnclex.c0"]
+rule = "old"
+observations = 2019
+random = 1728
+systematic = 291
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."fnclex.c1"]
+rule = "old"
+observations = 2019
+random = 1728
+systematic = 291
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."fnclex.c2"]
+rule = "old"
+observations = 2019
+random = 1728
+systematic = 291
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."fnclex.c3"]
+rule = "old"
+observations = 2019
+random = 1728
+systematic = 291
+separating = 3
+beaten = ["0", "1", "old ^ 1"]
+
+[site."fnsave.pointers"]
+rule = "unknown"
+observations = 5665
+random = 4841
+systematic = 824
+separating = 0
+beaten = ["0", "!0", "zext(c0, 128)", "zext(c1, 128)"]
+note = "no candidate fits"
+
+[site."fnstcw.c0"]
+rule = "old"
+observations = 5665
+random = 4861
+systematic = 804
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+equivalent = ["old ^ msb(defined.dst)", "old ^ (defined.dst == 0)"]
+
+[site."fnstcw.c1"]
+rule = "old"
+observations = 5665
+random = 4861
+systematic = 804
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+equivalent = ["old ^ msb(defined.dst)", "old ^ (defined.dst == 0)"]
+
+[site."fnstcw.c2"]
+rule = "old"
+observations = 5665
+random = 4861
+systematic = 804
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+equivalent = ["old ^ msb(defined.dst)", "old ^ (defined.dst == 0)"]
+
+[site."fnstcw.c3"]
+rule = "old"
+observations = 5665
+random = 4861
+systematic = 804
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.dst)"]
+equivalent = ["old ^ msb(defined.dst)", "old ^ (defined.dst == 0)"]
+
+[site."fnstenv.c0"]
+rule = "old"
+observations = 5706
+random = 4888
+systematic = 818
+separating = 4
+beaten = ["0", "1", "c1", "c2"]
+
+[site."fnstenv.c1"]
+rule = "old"
+observations = 5706
+random = 4888
+systematic = 818
+separating = 4
+beaten = ["0", "1", "c0", "c2"]
+
+[site."fnstenv.c2"]
+rule = "old"
+observations = 5706
+random = 4888
+systematic = 818
+separating = 4
+beaten = ["0", "1", "c0", "c1"]
+
+[site."fnstenv.c3"]
+rule = "old"
+observations = 5706
+random = 4888
+systematic = 818
+separating = 4
+beaten = ["0", "1", "c0", "c1"]
+
+[site."fnstenv.pointers"]
+rule = "unknown"
+observations = 5702
+random = 4888
+systematic = 814
+separating = 0
+beaten = ["0", "!0", "zext(c0, 64)", "zext(c1, 64)"]
+note = "no candidate fits"
+
+[site."fnstsw.c0"]
+rule = "old"
+observations = 7277
+random = 6234
+systematic = 1043
+separating = 4
+beaten = ["0", "1", "c1", "c2"]
+equivalent = ["old ^ msb(defined.dst)"]
+
+[site."fnstsw.c1"]
+rule = "old"
+observations = 7277
+random = 6234
+systematic = 1043
+separating = 4
+beaten = ["0", "1", "c0", "c2"]
+equivalent = ["old ^ msb(defined.dst)"]
+
+[site."fnstsw.c2"]
+rule = "old"
+observations = 7277
+random = 6234
+systematic = 1043
+separating = 4
+beaten = ["0", "1", "c0", "c1"]
+equivalent = ["old ^ msb(defined.dst)"]
+
+[site."fnstsw.c3"]
+rule = "old"
+observations = 7277
+random = 6234
+systematic = 1043
+separating = 4
+beaten = ["0", "1", "c0", "c1"]
+equivalent = ["old ^ msb(defined.dst)"]
+
+[site."fpatan.c0"]
+rule = "old"
+observations = 2480
+random = 2121
+systematic = 359
+separating = 4
+beaten = ["0", "1", "msb(a)", "msb(b)"]
+
+[site."fpatan.c2"]
+rule = "old"
+observations = 2480
+random = 2121
+systematic = 359
+separating = 4
+beaten = ["0", "1", "msb(a)", "msb(b)"]
+
+[site."fpatan.c3"]
+rule = "old"
+observations = 2480
+random = 2121
+systematic = 359
+separating = 4
+beaten = ["0", "1", "msb(a)", "msb(b)"]
+
+[site."fptan.c0"]
+rule = "old"
+observations = 2014
+random = 1722
+systematic = 292
+separating = 4
+beaten = ["0", "1", "msb(a)", "old ^ 1"]
+
+[site."fptan.c3"]
+rule = "old"
+observations = 2014
+random = 1722
+systematic = 292
+separating = 4
+beaten = ["0", "1", "msb(a)", "old ^ 1"]
+
+[site."frndint.c0"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."frndint.c2"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."frndint.c3"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."fscale.c0"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "msb(b)", "old ^ 1"]
+
+[site."fscale.c2"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "msb(b)", "old ^ 1"]
+
+[site."fscale.c3"]
+rule = "old"
+observations = 2020
+random = 1728
+systematic = 292
+separating = 4
+beaten = ["0", "1", "msb(b)", "old ^ 1"]
+
+[site."fsin.c0"]
+rule = "old"
+observations = 1483
+random = 1266
+systematic = 217
+separating = 4
+beaten = ["0", "1", "msb(x)", "old ^ 1"]
+
+[site."fsin.c3"]
+rule = "old"
+observations = 1483
+random = 1266
+systematic = 217
+separating = 4
+beaten = ["0", "1", "msb(x)", "old ^ 1"]
+
+[site."fsincos.c0"]
+rule = "old"
+observations = 1508
+random = 1290
+systematic = 218
+separating = 4
+beaten = ["0", "1", "msb(a)", "old ^ 1"]
+
+[site."fsincos.c3"]
+rule = "old"
+observations = 1508
+random = 1290
+systematic = 218
+separating = 4
+beaten = ["0", "1", "msb(a)", "old ^ 1"]
+
+[site."fsqrt_x87.c0"]
+rule = "old"
+observations = 1780
+random = 1632
+systematic = 148
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."fsqrt_x87.c2"]
+rule = "old"
+observations = 1780
+random = 1632
+systematic = 148
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."fsqrt_x87.c3"]
+rule = "old"
+observations = 1780
+random = 1632
+systematic = 148
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.x)"]
+
+[site."fst.c0"]
+rule = "old"
+observations = 3880
+random = 1570
+systematic = 2310
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fst.c2"]
+rule = "old"
+observations = 3880
+random = 1570
+systematic = 2310
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fst.c3"]
+rule = "old"
+observations = 3880
+random = 1570
+systematic = 2310
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fstp.c0"]
+rule = "old"
+observations = 8272
+random = 3312
+systematic = 4960
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fstp.c2"]
+rule = "old"
+observations = 8272
+random = 3312
+systematic = 4960
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fstp.c3"]
+rule = "old"
+observations = 8272
+random = 3312
+systematic = 4960
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fstpnce.c0"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fstpnce.c2"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fstpnce.c3"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(src)"]
+
+[site."fsub.c0"]
+rule = "old"
+observations = 5477
+random = 2184
+systematic = 3293
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fsub.c2"]
+rule = "old"
+observations = 5477
+random = 2184
+systematic = 3293
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fsub.c3"]
+rule = "old"
+observations = 5477
+random = 2184
+systematic = 3293
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fsubp.c0"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fsubp.c2"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fsubp.c3"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fsubr.c0"]
+rule = "old"
+observations = 5472
+random = 2194
+systematic = 3278
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fsubr.c2"]
+rule = "old"
+observations = 5472
+random = 2194
+systematic = 3278
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fsubr.c3"]
+rule = "old"
+observations = 5472
+random = 2194
+systematic = 3278
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fsubrp.c0"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fsubrp.c2"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fsubrp.c3"]
+rule = "old"
+observations = 6052
+random = 5184
+systematic = 868
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(dst)"]
+
+[site."fxch.c0"]
+rule = "old"
+observations = 4324
+random = 1728
+systematic = 2596
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.a)"]
+
+[site."fxch.c2"]
+rule = "old"
+observations = 4324
+random = 1728
+systematic = 2596
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.a)"]
+
+[site."fxch.c3"]
+rule = "old"
+observations = 4324
+random = 1728
+systematic = 2596
+separating = 4
+beaten = ["0", "1", "old ^ 1", "msb(defined.a)"]
+
+[site."fxsave.pointers"]
+rule = "unknown"
+observations = 0
+random = 0
+systematic = 0
+separating = 0
+note = "no state reached it on this processor"
+
+[site."fxtract.c0"]
+rule = "old"
+observations = 1780
+random = 1632
+systematic = 148
+separating = 4
+beaten = ["0", "1", "msb(a)", "old ^ 1"]
+
+[site."fxtract.c2"]
+rule = "old"
+observations = 1780
+random = 1632
+systematic = 148
+separating = 4
+beaten = ["0", "1", "msb(a)", "old ^ 1"]
+
+[site."fxtract.c3"]
+rule = "old"
+observations = 1780
+random = 1632
+systematic = 148
+separating = 4
+beaten = ["0", "1", "msb(a)", "old ^ 1"]
+
+[site."fyl2x.c0"]
+rule = "old"
+observations = 1778
+random = 1630
+systematic = 148
+separating = 4
+beaten = ["0", "1", "msb(a)", "msb(b)"]
+
+[site."fyl2x.c2"]
+rule = "old"
+observations = 1778
+random = 1630
+systematic = 148
+separating = 4
+beaten = ["0", "1", "msb(a)", "msb(b)"]
+
+[site."fyl2x.c3"]
+rule = "old"
+observations = 1778
+random = 1630
+systematic = 148
+separating = 4
+beaten = ["0", "1", "msb(a)", "msb(b)"]
+
+[site."fyl2xp1.c0"]
+rule = "old"
+observations = 1740
+random = 1596
+systematic = 144
+separating = 4
+beaten = ["0", "1", "msb(a)", "msb(b)"]
+
+[site."fyl2xp1.c2"]
+rule = "old"
+observations = 1740
+random = 1596
+systematic = 144
+separating = 4
+beaten = ["0", "1", "msb(a)", "msb(b)"]
+
+[site."fyl2xp1.c3"]
+rule = "old"
+observations = 1740
+random = 1596
+systematic = 144
+separating = 4
+beaten = ["0", "1", "msb(a)", "msb(b)"]
+
+[site."idiv.af"]
+rule = "old"
+observations = 5008
+random = 4313
+systematic = 695
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."idiv.cf"]
+rule = "old"
+observations = 5008
+random = 4313
+systematic = 695
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."idiv.of"]
+rule = "old"
+observations = 5008
+random = 4313
+systematic = 695
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."idiv.pf"]
+rule = "old"
+observations = 5008
+random = 4313
+systematic = 695
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."idiv.sf"]
+rule = "old"
+observations = 5008
+random = 4313
+systematic = 695
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."idiv.zf"]
+rule = "old"
+observations = 5008
+random = 4313
+systematic = 695
+separating = 4
+beaten = ["0", "1", "msb(lo)", "msb(hi)"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."idiv8.af"]
+rule = "old"
+observations = 5748
+random = 4948
+systematic = 800
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."idiv8.cf"]
+rule = "old"
+observations = 5748
+random = 4948
+systematic = 800
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."idiv8.of"]
+rule = "old"
+observations = 5748
+random = 4948
+systematic = 800
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."idiv8.pf"]
+rule = "old"
+observations = 5748
+random = 4948
+systematic = 800
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."idiv8.sf"]
+rule = "old"
+observations = 5748
+random = 4948
+systematic = 800
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."idiv8.zf"]
+rule = "old"
+observations = 5748
+random = 4948
+systematic = 800
+separating = 4
+beaten = ["0", "1", "msb(ax)", "old ^ 1"]
+equivalent = ["(src == 0) ^ old"]
+
+[site."imul1.af"]
+rule = "0"
+observations = 2572
+random = 1026
+systematic = 1546
+separating = 4
+beaten = ["1", "old", "msb(lo)", "old ^ 1"]
+
+[site."imul1.pf"]
+rule = "parity8(defined.lo)"
+observations = 2572
+random = 1026
+systematic = 1546
+separating = 4
+beaten = ["0", "1", "old", "msb(lo)"]
+equivalent = ["if lo == 0 { 1 } else { parity8(defined.lo) }", "if src == 0 { 1 } else { parity8(defined.lo) }"]
+
+[site."imul1.sf"]
+rule = "msb(defined.lo)"
+observations = 2572
+random = 1026
+systematic = 1546
+separating = 4
+beaten = ["0", "1", "old", "msb(lo)"]
+equivalent = ["if lo == 0 { 0 } else { msb(defined.lo) }", "if src == 0 { 0 } else { msb(defined.lo) }"]
+
+[site."imul1.zf"]
+rule = "(defined.lo == 0)"
+observations = 2572
+random = 1026
+systematic = 1546
+separating = 4
+beaten = ["0", "1", "old", "msb(lo)"]
+equivalent = ["if lo == 0 { 1 } else { (defined.lo == 0) }", "if src == 0 { 1 } else { (defined.lo == 0) }"]
+
+[site."imul2.af"]
+rule = "0"
+observations = 9833
+random = 8422
+systematic = 1411
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(dst)"]
+
+[site."imul2.pf"]
+rule = "parity8(defined.dst)"
+observations = 9833
+random = 8422
+systematic = 1411
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+equivalent = ["if dst == 0 { 1 } else { parity8(defined.dst) }", "if src == 0 { 1 } else { parity8(defined.dst) }"]
+
+[site."imul2.sf"]
+rule = "msb(defined.dst)"
+observations = 9833
+random = 8422
+systematic = 1411
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+equivalent = ["if dst == 0 { 0 } else { msb(defined.dst) }", "if src == 0 { 0 } else { msb(defined.dst) }"]
+
+[site."imul2.zf"]
+rule = "(defined.dst == 0)"
+observations = 9833
+random = 8422
+systematic = 1411
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+equivalent = ["if dst == 0 { 1 } else { (defined.dst == 0) }", "if src == 0 { 1 } else { (defined.dst == 0) }"]
+
+[site."imul3.af"]
+rule = "0"
+observations = 5355
+random = 2141
+systematic = 3214
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["(factor == 0)"]
+
+[site."imul3.pf"]
+rule = "parity8(defined.dst)"
+observations = 5355
+random = 2141
+systematic = 3214
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+equivalent = ["(factor == 0) ^ parity8(defined.dst)", "if src == 0 { 1 } else { parity8(defined.dst) }", "if factor == 0 { 0 } else { parity8(defined.dst) }", "if factor == 0 { 1 } else { parity8(defined.dst) }"]
+
+[site."imul3.sf"]
+rule = "msb(defined.dst)"
+observations = 5355
+random = 2141
+systematic = 3214
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+equivalent = ["(factor == 0) ^ msb(defined.dst)", "if src == 0 { 0 } else { msb(defined.dst) }", "if factor == 0 { 0 } else { msb(defined.dst) }", "if factor == 0 { 1 } else { msb(defined.dst) }"]
+
+[site."imul3.zf"]
+rule = "(defined.dst == 0)"
+observations = 5355
+random = 2141
+systematic = 3214
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+equivalent = ["(factor == 0) ^ (defined.dst == 0)", "if src == 0 { 1 } else { (defined.dst == 0) }", "if factor == 0 { 0 } else { (defined.dst == 0) }", "if factor == 0 { 1 } else { (defined.dst == 0) }"]
+
+[site."imul8.af"]
+rule = "0"
+observations = 2789
+random = 1117
+systematic = 1672
+separating = 4
+beaten = ["1", "old", "msb(al)", "old ^ 1"]
+
+[site."imul8.pf"]
+rule = "parity8(defined.ax)"
+observations = 2789
+random = 1117
+systematic = 1672
+separating = 4
+beaten = ["0", "1", "old", "msb(al)"]
+equivalent = ["if al == 0 { 1 } else { parity8(defined.ax) }", "if src == 0 { 1 } else { parity8(defined.ax) }"]
+
+[site."imul8.sf"]
+rule = "bit(defined.ax, osz - 1)"
+observations = 2789
+random = 1117
+systematic = 1672
+separating = 4
+beaten = ["0", "1", "old", "msb(al)"]
+equivalent = ["if al == 0 { 0 } else { bit(defined.ax, osz - 1) }", "if src == 0 { 0 } else { bit(defined.ax, osz - 1) }"]
+
+[site."imul8.zf"]
+rule = "(trunc(defined.ax, osz) == 0)"
+observations = 2789
+random = 1117
+systematic = 1672
+separating = 4
+beaten = ["0", "1", "old", "msb(al)"]
+equivalent = ["if al == 0 { 1 } else { (trunc(defined.ax, osz) == 0) }", "if src == 0 { 1 } else { (trunc(defined.ax, osz) == 0) }"]
+
+[site."lzcnt.af"]
+rule = "0"
+observations = 2702
+random = 1083
+systematic = 1619
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["msb(defined.dst)", "(src == 0) ^ defined.cf", "bit(defined.dst, osz - 2)", "msb(src) ^ (defined.dst == 0)", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { msb(defined.dst) }", "msb(defined.dst) ^ bit(defined.dst, osz - 2)", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."lzcnt.of"]
+rule = "0"
+observations = 2702
+random = 1083
+systematic = 1619
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["msb(defined.dst)", "(src == 0) ^ defined.cf", "bit(defined.dst, osz - 2)", "msb(src) ^ (defined.dst == 0)", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { msb(defined.dst) }", "msb(defined.dst) ^ bit(defined.dst, osz - 2)", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."lzcnt.pf"]
+rule = "0"
+observations = 2702
+random = 1083
+systematic = 1619
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["msb(defined.dst)", "(src == 0) ^ defined.cf", "bit(defined.dst, osz - 2)", "msb(src) ^ (defined.dst == 0)", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { msb(defined.dst) }", "msb(defined.dst) ^ bit(defined.dst, osz - 2)", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."lzcnt.sf"]
+rule = "0"
+observations = 2702
+random = 1083
+systematic = 1619
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["msb(defined.dst)", "(src == 0) ^ defined.cf", "bit(defined.dst, osz - 2)", "msb(src) ^ (defined.dst == 0)", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { msb(defined.dst) }", "msb(defined.dst) ^ bit(defined.dst, osz - 2)", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."mul.af"]
+rule = "0"
+observations = 2690
+random = 1078
+systematic = 1612
+separating = 4
+beaten = ["1", "old", "msb(lo)", "old ^ 1"]
+
+[site."mul.pf"]
+rule = "parity8(defined.lo)"
+observations = 2690
+random = 1078
+systematic = 1612
+separating = 4
+beaten = ["0", "1", "old", "msb(lo)"]
+equivalent = ["if lo == 0 { 1 } else { parity8(defined.lo) }", "if src == 0 { 1 } else { parity8(defined.lo) }"]
+
+[site."mul.sf"]
+rule = "msb(defined.lo)"
+observations = 2690
+random = 1078
+systematic = 1612
+separating = 4
+beaten = ["0", "1", "old", "msb(lo)"]
+equivalent = ["if lo == 0 { 0 } else { msb(defined.lo) }", "if src == 0 { 0 } else { msb(defined.lo) }"]
+
+[site."mul.zf"]
+rule = "(defined.lo == 0)"
+observations = 2690
+random = 1078
+systematic = 1612
+separating = 4
+beaten = ["0", "1", "old", "msb(lo)"]
+equivalent = ["if lo == 0 { 1 } else { (defined.lo == 0) }", "if src == 0 { 1 } else { (defined.lo == 0) }"]
+
+[site."mul8.af"]
+rule = "0"
+observations = 2675
+random = 1074
+systematic = 1601
+separating = 4
+beaten = ["1", "old", "msb(al)", "old ^ 1"]
+
+[site."mul8.pf"]
+rule = "parity8(defined.ax)"
+observations = 2675
+random = 1074
+systematic = 1601
+separating = 4
+beaten = ["0", "1", "old", "msb(al)"]
+equivalent = ["if al == 0 { 1 } else { parity8(defined.ax) }", "if src == 0 { 1 } else { parity8(defined.ax) }"]
+
+[site."mul8.sf"]
+rule = "bit(defined.ax, osz - 1)"
+observations = 2675
+random = 1074
+systematic = 1601
+separating = 4
+beaten = ["0", "1", "old", "msb(al)"]
+equivalent = ["if al == 0 { 0 } else { bit(defined.ax, osz - 1) }", "if src == 0 { 0 } else { bit(defined.ax, osz - 1) }"]
+
+[site."mul8.zf"]
+rule = "(trunc(defined.ax, osz) == 0)"
+observations = 2675
+random = 1074
+systematic = 1601
+separating = 4
+beaten = ["0", "1", "old", "msb(al)"]
+equivalent = ["if al == 0 { 1 } else { (trunc(defined.ax, osz) == 0) }", "if src == 0 { 1 } else { (trunc(defined.ax, osz) == 0) }"]
+
+[site."or.af"]
+rule = "0"
+observations = 25399
+random = 10218
+systematic = 15181
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(dst)"]
+equivalent = ["if dst == 0 { 0 } else { (defined.dst == 0) }", "if src == 0 { 0 } else { (defined.dst == 0) }"]
+
+[site."rep_lods.rcx"]
+rule = "bits(old, 32, 32)"
+observations = 377
+random = 372
+systematic = 5
+separating = 4
+beaten = ["0", "!0", "count", "defined.dst"]
+credible = false
+note = "only 372 random observations"
+
+[site."rotate_carry_left.of"]
+rule = "if ((count & 31) == osz + 1) | ((count & 31) == osz + 1 + osz + 1) | ((count & 31) == osz + 1 + osz + 1 + osz + 1) { old } else { msb(defined.dst) ^ defined.cf }"
+observations = 9345
+random = 3336
+systematic = 6009
+separating = 4
+beaten = ["0", "1", "cf", "old"]
+
+[site."rotate_carry_right.of"]
+rule = "if ((count & 31) == osz + 1) | ((count & 31) == osz + 1 + osz + 1) | ((count & 31) == osz + 1 + osz + 1 + osz + 1) { old } else { msb(defined.dst) ^ bit(defined.dst, osz - 2) }"
+observations = 9388
+random = 3338
+systematic = 6050
+separating = 4
+beaten = ["0", "1", "cf", "old"]
+
+[site."rotate_left.of"]
+rule = "msb(defined.dst) ^ defined.cf"
+observations = 9479
+random = 3424
+systematic = 6055
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+equivalent = ["msb(defined.dst) ^ bit(defined.dst, 0)"]
+
+[site."rotate_right.of"]
+rule = "bit(defined.dst, osz - 2) ^ defined.cf"
+observations = 9510
+random = 3377
+systematic = 6133
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+equivalent = ["msb(defined.dst) ^ bit(defined.dst, osz - 2)"]
+
+[site."sar.af"]
+rule = "0"
+observations = 15426
+random = 5831
+systematic = 9595
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(dst)"]
+equivalent = ["(count == 0)", "msb(dst) ^ msb(defined.dst)", "msb(dst) ^ bit(defined.dst, osz - 2)", "msb(defined.dst) ^ bit(defined.dst, osz - 2)"]
+
+[site."sar.of"]
+rule = "0"
+observations = 9371
+random = 3325
+systematic = 6046
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(dst)"]
+equivalent = ["(count == 0)", "msb(dst) ^ msb(defined.dst)", "msb(dst) ^ bit(defined.dst, osz - 2)", "msb(defined.dst) ^ bit(defined.dst, osz - 2)"]
+
+[site."shl.af"]
+rule = "0"
+observations = 30970
+random = 11702
+systematic = 19268
+separating = 40
+beaten = ["1", "old", "old ^ 1", "msb(dst)"]
+equivalent = ["(count == 0)", "bit(defined.dst, 0)", "(count == 0) ^ bit(defined.dst, 0)", "if dst == 0 { 0 } else { bit(defined.dst, 0) }"]
+
+[site."shl.cf"]
+rule = "if (count & 31) == osz { bit(dst, 0) } else { 0 }"
+observations = 9023
+random = 3419
+systematic = 5604
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+
+[site."shl.of"]
+rule = "msb(defined.dst) ^ defined.cf"
+observations = 18529
+random = 6563
+systematic = 11966
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+
+[site."shld.af"]
+rule = "0"
+observations = 16811
+random = 14115
+systematic = 2696
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(dst)"]
+equivalent = ["(count == 0)"]
+
+[site."shld.cf"]
+rule = "if src == 0 { 0 } else { msb(defined.dst) }"
+observations = 3582
+random = 3040
+systematic = 542
+separating = 44
+beaten = ["0", "1", "old", "old ^ 1"]
+
+[site."shld.dst"]
+rule = "trunc((zext(dst, 64) << 32 | zext(src, 64) << 16 | zext(dst, 64)) >> (32 - (count & 31)), 16)"
+observations = 3542
+random = 3040
+systematic = 502
+separating = 4
+beaten = ["0", "!0", "dst", "src"]
+equivalent = ["trunc((zext(src, 64) << 32 | zext(src, 64) << 16 | zext(dst, 64)) >> (32 - (count & 31)), 16)"]
+
+[site."shld.of"]
+rule = "msb(defined.dst) ^ defined.cf"
+observations = 15858
+random = 13211
+systematic = 2647
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+
+[site."shr.af"]
+rule = "0"
+observations = 15510
+random = 5872
+systematic = 9638
+separating = 40
+beaten = ["1", "old", "old ^ 1", "msb(dst)"]
+equivalent = ["(count == 0)", "msb(defined.dst)", "(count == 0) ^ msb(defined.dst)", "if dst == 0 { 0 } else { msb(defined.dst) }"]
+
+[site."shr.cf"]
+rule = "if (count & 31) == osz { msb(dst) } else { 0 }"
+observations = 4387
+random = 1670
+systematic = 2717
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+
+[site."shr.of"]
+rule = "0"
+observations = 9529
+random = 3383
+systematic = 6146
+separating = 37
+beaten = ["1", "old", "old ^ 1", "msb(dst)"]
+equivalent = ["(count == 0)", "msb(defined.dst)", "bit(defined.dst, osz - 2)", "(count == 0) ^ msb(defined.dst)", "(count == 0) ^ bit(defined.dst, osz - 2)", "if dst == 0 { 0 } else { msb(defined.dst) }", "msb(defined.dst) ^ bit(defined.dst, osz - 2)"]
+
+[site."shrd.af"]
+rule = "0"
+observations = 16263
+random = 13650
+systematic = 2613
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(dst)"]
+equivalent = ["(count == 0)"]
+
+[site."shrd.cf"]
+rule = "if src == 0 { 0 } else { msb(defined.dst) }"
+observations = 3632
+random = 3090
+systematic = 542
+separating = 44
+beaten = ["0", "1", "old", "old ^ 1"]
+
+[site."shrd.dst"]
+rule = "trunc((zext(dst, 64) << 32 | zext(src, 64) << 16 | zext(dst, 64)) >> (count & 31), 16)"
+observations = 3592
+random = 3090
+systematic = 502
+separating = 4
+beaten = ["0", "!0", "dst", "src"]
+equivalent = ["trunc((zext(dst, 64) << 32 | zext(src, 64) << 16 | zext(src, 64)) >> (count & 31), 16)"]
+
+[site."shrd.of"]
+rule = "msb(defined.dst) ^ bit(defined.dst, osz - 2)"
+observations = 14871
+random = 12377
+systematic = 2494
+separating = 4
+beaten = ["0", "1", "old", "old ^ 1"]
+
+[site."syscall.saved_flags"]
+rule = "unknown"
+observations = 0
+random = 0
+systematic = 0
+separating = 0
+note = "no state reached it on this processor"
+
+[site."test.af"]
+rule = "0"
+observations = 18736
+random = 7499
+systematic = 11237
+separating = 4
+beaten = ["1", "old", "msb(a)", "msb(b)"]
+
+[site."tzcnt.af"]
+rule = "0"
+observations = 2800
+random = 1113
+systematic = 1687
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["msb(defined.dst)", "(src == 0) ^ defined.cf", "bit(defined.dst, osz - 2)", "bit(src, 0) ^ (defined.dst == 0)", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { msb(defined.dst) }", "msb(defined.dst) ^ bit(defined.dst, osz - 2)", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."tzcnt.of"]
+rule = "0"
+observations = 2800
+random = 1113
+systematic = 1687
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["msb(defined.dst)", "(src == 0) ^ defined.cf", "bit(defined.dst, osz - 2)", "bit(src, 0) ^ (defined.dst == 0)", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { msb(defined.dst) }", "msb(defined.dst) ^ bit(defined.dst, osz - 2)", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."tzcnt.pf"]
+rule = "0"
+observations = 2800
+random = 1113
+systematic = 1687
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["msb(defined.dst)", "(src == 0) ^ defined.cf", "bit(defined.dst, osz - 2)", "bit(src, 0) ^ (defined.dst == 0)", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { msb(defined.dst) }", "msb(defined.dst) ^ bit(defined.dst, osz - 2)", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."tzcnt.sf"]
+rule = "0"
+observations = 2800
+random = 1113
+systematic = 1687
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(src)"]
+equivalent = ["msb(defined.dst)", "(src == 0) ^ defined.cf", "bit(defined.dst, osz - 2)", "bit(src, 0) ^ (defined.dst == 0)", "if src == 0 { 0 } else { defined.cf }", "if src == 0 { 0 } else { msb(defined.dst) }", "msb(defined.dst) ^ bit(defined.dst, osz - 2)", "if src == 0 { 0 } else { bit(defined.dst, osz - 2) }"]
+
+[site."xor.af"]
+rule = "0"
+observations = 26330
+random = 10567
+systematic = 15763
+separating = 4
+beaten = ["1", "old", "old ^ 1", "msb(dst)"]

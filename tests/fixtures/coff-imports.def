@@ -1,0 +1,5 @@
+; The import library coff-imports.lib: short import objects only.
+LIBRARY coffimports.dll
+EXPORTS
+    imported
+    other_import

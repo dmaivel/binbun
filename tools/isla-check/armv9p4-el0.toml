@@ -1,0 +1,250 @@
+# isla configuration for sail-arm v9.4 (armv9p4.ir) under binbun's AArch64
+# execution context: EL0, AArch64, little-endian, Linux's SCTLR_EL1/TCR_EL1
+# bits that matter at EL0. Derived from isla's configs/armv9p4.toml at
+# e9b5d945, so this file is under isla's BSD-2-Clause licence, not
+# binbun's: its copyright notice, conditions and disclaimer are in
+# LICENSE-ISLA beside it. Differences from it are marked "binbun:".
+
+pc = "_PC"
+
+comment_prefixes = ["@", "//"]
+
+translation_function = "AArch64_TranslateAddress"
+
+interrupt_status_bit = "ISR_EL1.I"
+
+in_program_order = ["sail_barrier", "sail_cache_op", "sail_take_exception", "sail_return_exception", "sail_tlbi", "sail_system_register_write"]
+
+default_sizeof = 4
+
+# binbun: nothing is assembled; isla only wants the tools to exist.
+[[toolchain]]
+name = "default"
+assembler = "true"
+objdump = "true"
+nm = "true"
+linker = "true"
+
+[mmu]
+page_table_base = "0x300000"
+page_size = "4096"
+s2_page_table_base = "0x200000"
+s2_page_size = "4096"
+
+[threads]
+base = "0x400000"
+top = "0x500000"
+stride = "0x1000"
+
+[symbolic_addrs]
+base = "0x600000"
+top = "0x700000"
+stride = "0x10"
+
+[registers]
+ignore = [
+  "_PC",
+  "SEE",
+  "InGuardedPage",
+  "__trickbox_enabled",
+  "v8Ap1_IMPLEMENTED",
+  "v8Ap2_IMPLEMENTED",
+  "v8Ap3_IMPLEMENTED",
+  "v8Ap4_IMPLEMENTED",
+  "v8Ap5_IMPLEMENTED",
+  "v8Ap6_IMPLEMENTED",
+  "v8Ap7_IMPLEMENTED",
+  "v8Ap8_IMPLEMENTED",
+  "v8Ap9_IMPLEMENTED",
+  "v9Ap0_IMPLEMENTED",
+  "v9Ap1_IMPLEMENTED",
+  "v9Ap2_IMPLEMENTED",
+  "v9Ap3_IMPLEMENTED",
+  "v9Ap4_IMPLEMENTED",
+  "__isla_vector_gpr",
+  "__monomorphize_writes",
+  "__monomorphize_reads",
+]
+
+[registers.defaults]
+"__isla_vector_gpr" = false
+"__monomorphize_reads" = false
+"__monomorphize_writes" = false
+"VBAR_EL1" = "0x0000000000000000"
+"VBAR_EL2" = "0x0000000000000000"
+"CNTCR" = "{ bits = 0x00000001 }"
+"MDSCR_EL1" = "{ bits = 0x0000000000000000 }"
+"InGuardedPage" = false
+"__highest_el_aarch32" = false
+"__CNTControlBase" = "0x00000000000000"
+"__supported_pa_size" = 52
+"__supported_va_size" = 52
+"__max_implemented_smeveclen" = 512
+# binbun: HCR_EL2.API and APK (bits 41, 40) as Linux's
+# hypervisors set them: pointer authentication and its keys do not trap.
+"HCR_EL2" = "{ bits = 0x0000030080000000 }"
+# binbun: TCR_EL1.TBI0 (bit 37), TBI1 (38) and TBID1 (52) as Linux sets
+# them (arch/arm64/mm/proc.S, __cpu_setup: TBI0 always, TBI1 | TBID1 in
+# TCR_MTE_FLAGS under CONFIG_ARM64_MTE since 6.1): top-byte-ignore for
+# addresses with bit 55 clear, and for data addresses with it set;
+# TBID0 = 0. (TCMA1 only matters to tag checks, which are off.)
+# binbun: T0SZ = T1SZ = 16 (bits 5:0, 21:16): 48-bit virtual
+# addresses in both halves, which place the PAC field.
+"TCR_EL1" = "{ bits = 0x0010006000100010 }"
+"TCR_EL2" = "{ bits = 0x0000000000000000 }"
+"TCR_EL3" = "{ bits = 0x0000000000000000 }"
+# binbun: SCR_EL3.API and APK (bits 17, 16) set, as for
+# HCR_EL2.
+"SCR_EL3" = "{ bits = 0x0000000000030401 }"
+"SCTLR_EL3" = "{ bits = 0x0000000000000000 }"
+"SMCR_EL3" = "{ bits = 0x0000000000000000 }"
+"ZCR_EL3" = "{ bits = 0x0000000000000000 }"
+"CPTR_EL3" = "{ bits = 0x0000000000000000 }"
+"CNTP_CTL_EL0" = "{ bits = 0x0000000000000000 }"
+"CNTV_CTL_EL0" = "{ bits = 0x0000000000000000 }"
+"CNTHP_CTL_EL2" = "{ bits = 0x0000000000000000 }"
+"CNTHV_CTL_EL2" = "{ bits = 0x0000000000000000 }"
+"CNTHPS_CTL_EL2" = "{ bits = 0x0000000000000000 }"
+"CNTHVS_CTL_EL2" = "{ bits = 0x0000000000000000 }"
+"CNTPS_CTL_EL1" = "{ bits = 0x0000000000000000 }"
+"CNTHCTL_EL2" = "{ bits = 0x0000000000000000 }"
+# binbun: CNTKCTL_EL1.EL0VCTEN (bit 1) as Linux sets it: EL0
+# reads the virtual counter and the frequency, not the physical counter.
+"CNTKCTL_EL1" = "{ bits = 0x0000000000000002 }"
+# binbun: PMUSERENR_EL0 = 0 as Linux leaves it (no
+# `perf_user_access`): EL0 accesses to the PMU registers trap.
+"PMUSERENR_EL0" = "{ bits = 0x0000000000000000 }"
+# binbun: the pointer authentication keys, each a distinct
+# number (IA 0, IB 1, DA 2, DB 3, GA 4) so that the ComputePAC override
+# tells the key it is given (the keys' values are the system's; binbun's
+# compute_pac is uninterpreted).
+"APIAKeyHi_EL1" = "0x0000000000000000"
+"APIAKeyLo_EL1" = "0x0000000000000000"
+"APIBKeyHi_EL1" = "0x0000000000000001"
+"APIBKeyLo_EL1" = "0x0000000000000001"
+"APDAKeyHi_EL1" = "0x0000000000000002"
+"APDAKeyLo_EL1" = "0x0000000000000002"
+"APDBKeyHi_EL1" = "0x0000000000000003"
+"APDBKeyLo_EL1" = "0x0000000000000003"
+"APGAKeyHi_EL1" = "0x0000000000000004"
+"APGAKeyLo_EL1" = "0x0000000000000004"
+"MPAMIDR_EL1" = "{ bits = 0x0000000000000000 }"
+"GPCCR_EL3" = "{ bits = 0x0000000000000000 }"
+"CPACR_EL1" = "{ bits = 0x0000000000000000 }"
+"CTIDEVCTL" = "{ bits = 0x0000000000000000 }"
+"MDCR_EL2" = "{ bits = 0x0000000000000000 }"
+"PMCR_EL0" = "{ bits = 0x0000000000000000 }"
+"_HDCR" = "{ bits = 0x0000000000000000 }"
+"_PMCR" = "{ bits = 0x0000000000000000 }"
+"CFG_RMR_AA64" = "0b1"
+"CFG_RVBAR" = "0x0000000010300000"
+"CFG_ID_AA64PFR0_EL1_EL3" = "0x1"
+"CFG_ID_AA64PFR0_EL1_EL2" = "0x1"
+"CFG_ID_AA64PFR0_EL1_EL1" = "0x1"
+"CFG_ID_AA64PFR0_EL1_EL0" = "0x1"
+"v8Ap1_IMPLEMENTED" = true
+"v8Ap2_IMPLEMENTED" = false
+"v8Ap3_IMPLEMENTED" = false
+"v8Ap4_IMPLEMENTED" = false
+"v8Ap5_IMPLEMENTED" = false
+"v8Ap6_IMPLEMENTED" = false
+"v8Ap7_IMPLEMENTED" = false
+"v8Ap8_IMPLEMENTED" = false
+"v8Ap9_IMPLEMENTED" = false
+"v9Ap0_IMPLEMENTED" = false
+"v9Ap1_IMPLEMENTED" = false
+"v9Ap2_IMPLEMENTED" = false
+"v9Ap3_IMPLEMENTED" = false
+"v9Ap4_IMPLEMENTED" = false
+"__unpred_tsize_aborts" = true
+"__trickbox_enabled" = false
+"__tlb_enabled" = false
+"__syncAbortOnTTWNonCache" = true
+"__syncAbortOnTTWCache" = true
+"__syncAbortOnSoWrite" = true
+"__syncAbortOnSoRead" = true
+"__syncAbortOnReadNormNonCache" = true
+"__syncAbortOnReadNormCache" = true
+"__syncAbortOnPrefetch" = true
+"__syncAbortOnDeviceRead" = true
+"__mte_implemented" = "0b0000"
+"FEAT_BRBEv1p1_IMPLEMENTED" = false
+"FEAT_RME_IMPLEMENTED" = false
+"FEAT_BRBE_IMPLEMENTED" = false
+"__empam_force_ns_implemented" = false
+"__empam_sdeflt_implemented" = false
+"__empam_tidr_implemented" = false
+"FEAT_CONSTPACFIELD_IMPLEMENTED" = false
+"FEAT_PACQARMA3_IMPLEMENTED" = false
+"FEAT_SME_IMPLEMENTED" = false
+"__mpam_has_hcr" = true
+"__mpam_has_altsp" = true
+"FEAT_PAN_IMPLEMENTED" = true
+"FEAT_FP16_IMPLEMENTED" = true
+"FEAT_DotProd_IMPLEMENTED" = true
+"FEAT_CRC32_IMPLEMENTED" = true
+"FEAT_AA32HPD_IMPLEMENTED" = true
+"FEAT_AES_IMPLEMENTED" = true
+"FEAT_PMULL_IMPLEMENTED" = true
+"FEAT_SHA256_IMPLEMENTED" = true
+"FEAT_SHA1_IMPLEMENTED" = true
+"__syncAbortOnWriteNormNonCache" = false
+"__syncAbortOnWriteNormCache" = false
+"__syncAbortOnDeviceWrite" = false
+"FEAT_MPAM_IMPLEMENTED" = false
+"FEAT_SM4_IMPLEMENTED" = false
+"FEAT_SM3_IMPLEMENTED" = false
+"FEAT_SHA512_IMPLEMENTED" = false
+"FEAT_SHA3_IMPLEMENTED" = false
+"FEAT_LS64_V_IMPLEMENTED" = true
+"FEAT_LS64_ACCDATA_IMPLEMENTED" = true
+"FEAT_DoPD_IMPLEMENTED" = false
+"EDESR" = "{ bits = 0x00000000 }"
+"EDECR" = "{ bits = 0x00000000 }"
+"FEAT_TME_IMPLEMENTED" = false
+"FEAT_SPE_IMPLEMENTED" = false
+"FEAT_SPEv1p1_IMPLEMENTED" = false
+"FEAT_SPEv1p2_IMPLEMENTED" = false
+"FEAT_SPEv1p3_IMPLEMENTED" = false
+"FEAT_SPEv1p4_IMPLEMENTED" = false
+"FEAT_PMUv3_IMPLEMENTED" = false
+# binbun: LSE2 implemented (as qemu -cpu max and the Apple M3): exclusive,
+# atomic and acquire/release accesses fault only when they cross an
+# aligned 16-byte block (Linux leaves SCTLR_EL1.nAA clear). It also merges
+# a pair's accesses into one; binbun compares byte footprints, so that
+# changes nothing.
+"FEAT_LSE2_IMPLEMENTED" = true
+# binbun: BTI implemented (as qemu -cpu max and Linux with guarded pages):
+# branches write BTypeNext, which becomes PSTATE.BTYPE.
+"FEAT_BTI_IMPLEMENTED" = true
+# binbun: the guarded control stack is off for Linux processes unless they
+# ask; modelled as not implemented.
+"FEAT_GCS_IMPLEMENTED" = false
+"FEAT_MTE_IMPLEMENTED" = false
+"FEAT_MTE2_IMPLEMENTED" = false
+"SPESampleInFlight" = false
+"__g1_activity_monitor_implemented" = "0x0000"
+"__g1_activity_monitor_offset_implemented" = "0x0000"
+
+[registers.reset]
+# binbun: Linux's EL0-relevant SCTLR_EL1 bits: SA0 (bit 4, SP alignment
+# checking at EL0) set; A (bit 1, alignment checking) clear; bit 9 (UMA)
+# and bit 26 (UCI) as isla's configuration had them.
+# binbun: and the rest of Linux's: UMA (bit 9) clear (DAIF
+# is not EL0's); EnDB, DZE, UCT, nTWI, nTWE, TSCXT, UCI, EnDA, EnIB, EnIA
+# (bits 13, 14, 15, 16, 18, 20, 26, 27, 30, 31) set.
+"SCTLR_EL1" = "{ bits = 0x00000000cc15e010 }"
+"TCR_EL1" = "{ bits = 0x0010006000100010 }"
+"CNTCR" = "{ bits = 0x00000000 }"
+"CNTHP_CTL_EL2" = "{ bits = 0x0000000000000000 }"
+"MDCR_EL2" = "{ bits = 0x00000000 }"
+"PSTATE.nRW" = "0b0"
+"SCR_EL3" = "{ bits = 0x0000000000030401 }"
+"HCR_EL2" = "{ bits = 0x0000030080000000 }"
+"VTCR_EL2" = "{ bits = 0x0000000000000000 }"
+# binbun: DCZID_EL0 = 4: DZP clear, DC ZVA blocks of 64
+# bytes (as most cores have; qemu -cpu max has 7, 512 bytes). Set after
+# isla's register reset, which leaves it unknown (a symbolic block size
+# isla cannot zero); binbun reads DCZID_EL0 through `system_register`,
+# linked to Sail's read.
+"DCZID_EL0" = "{ bits = 0x0000000000000004 }"

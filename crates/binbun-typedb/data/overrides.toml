@@ -1,0 +1,415 @@
+# Facts about library functions that no type database binbun embeds states
+# for every target, written by hand, each with the reason it holds: the
+# standard, documentation or source that says so (Origin::Override). A fact a
+# database's declaration states (Origin::Header, Winmd) is stronger and wins.
+#
+#   name       the function, as imported (C++ names mangled)
+#   library    the library it is matched in (omitted: any; an ELF import's
+#              library is its symbol version's or none, and Windows imports
+#              the C runtime from several DLLs)
+#   no_return  whether it never returns to its caller (omitted: says nothing)
+#   format     the format string it takes, as GCC's format attribute says
+#              it: { archetype, string, first }, indices from 1
+#   signature  its prototype, for a function no header declares, in the
+#              databases' form ({ return, params = [{ type }], variadic }),
+#              of primitive types only
+#   reason     why
+
+# The C standard (ISO/IEC 9899:2018), for every C runtime. glibc's headers
+# declare these noreturn too, which the linux-x86_64 database records.
+
+[[function]]
+name = "abort"
+no_return = true
+reason = "ISO C17 7.22.4.1: the abort function does not return to its caller (_Noreturn)"
+
+[[function]]
+name = "exit"
+no_return = true
+reason = "ISO C17 7.22.4.4: the exit function cannot return to its caller (_Noreturn)"
+
+[[function]]
+name = "_Exit"
+no_return = true
+reason = "ISO C17 7.22.4.5: the _Exit function cannot return to its caller (_Noreturn)"
+
+[[function]]
+name = "quick_exit"
+no_return = true
+reason = "ISO C17 7.22.4.7: the quick_exit function cannot return to its caller (_Noreturn)"
+
+[[function]]
+name = "longjmp"
+no_return = true
+reason = "ISO C17 7.13.2.1: declared _Noreturn; execution continues at the matching setjmp"
+
+# POSIX.1-2024, for every POSIX C library.
+
+[[function]]
+name = "_exit"
+no_return = true
+reason = "POSIX.1-2024 _exit(): terminates the process and does not return (glibc's <unistd.h>: __attribute__((__noreturn__)))"
+
+[[function]]
+name = "siglongjmp"
+no_return = true
+reason = "POSIX.1-2024 siglongjmp(): as longjmp(), continues at the matching sigsetjmp (glibc's <setjmp.h>: __attribute__((__noreturn__)))"
+
+[[function]]
+name = "pthread_exit"
+no_return = true
+reason = "POSIX.1-2024 pthread_exit(): cannot return to its caller (glibc's <pthread.h>: __attribute__((__noreturn__)))"
+
+# The BSD err(3) family, in glibc, musl and the BSDs.
+
+[[function]]
+name = "err"
+no_return = true
+reason = "err(3) (BSD, glibc, musl): exits the program; glibc's <err.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "errx"
+no_return = true
+reason = "err(3) (BSD, glibc, musl): exits the program; glibc's <err.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "verr"
+no_return = true
+reason = "err(3) (BSD, glibc, musl): exits the program; glibc's <err.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "verrx"
+no_return = true
+reason = "err(3) (BSD, glibc, musl): exits the program; glibc's <err.h> declares it __attribute__((__noreturn__))"
+
+# glibc's (and musl's) assert(3) helpers.
+
+[[function]]
+name = "__assert_fail"
+no_return = true
+reason = "glibc <assert.h> declares it __attribute__((__noreturn__)); musl's <assert.h> _Noreturn"
+
+[[function]]
+name = "__assert_perror_fail"
+no_return = true
+reason = "glibc <assert.h> declares it __attribute__((__noreturn__))"
+
+# glibc internals that compilers call (-fstack-protector, _FORTIFY_SOURCE),
+# declared in no installed header.
+
+[[function]]
+name = "__stack_chk_fail"
+no_return = true
+signature = { return = "void", params = [] }
+reason = "glibc debug/stack_chk_fail.c defines it void __attribute__((noreturn)) __stack_chk_fail (void) (calls __fortify_fail); the -fstack-protector failure handler, which GCC's gcc/targhooks.cc default_external_stack_protect_fail declares void (void), TREE_THIS_VOLATILE (noreturn) and TREE_NOTHROW (gcc/target.def TARGET_STACK_PROTECT_FAIL: 'taking no arguments')"
+
+[[function]]
+name = "__chk_fail"
+no_return = true
+signature = { return = "void", params = [] }
+reason = "glibc debug/chk_fail.c defines it void __attribute__((noreturn)) __chk_fail (void) (calls __fortify_fail); the _FORTIFY_SOURCE failure handler"
+
+[[function]]
+name = "__fortify_fail"
+no_return = true
+reason = "glibc include/stdio.h and debug/fortify_fail.c declare it __attribute__((__noreturn__)) (aborts with a message)"
+
+[[function]]
+name = "__libc_fatal"
+no_return = true
+reason = "glibc include/stdio.h declares it __attribute__((__noreturn__)) (aborts with a message)"
+
+# The C++ ABI and libstdc++ (C++ headers, which binbun does not generate a
+# database from).
+
+[[function]]
+name = "_Unwind_Resume"
+no_return = true
+reason = "Itanium C++ ABI, Exception Handling 1.6.3: _Unwind_Resume will never return"
+
+[[function]]
+name = "__cxa_throw"
+no_return = true
+reason = "libstdc++ <cxxabi.h> declares it __attribute__((__noreturn__)) (Itanium C++ ABI 2.4.3: throws)"
+
+[[function]]
+name = "__cxa_rethrow"
+no_return = true
+reason = "libstdc++ <cxxabi.h> declares it __attribute__((__noreturn__)) (Itanium C++ ABI 2.5.4: rethrows)"
+
+[[function]]
+name = "__cxa_bad_cast"
+no_return = true
+reason = "libstdc++ <cxxabi.h> declares it __attribute__((__noreturn__)) (throws std::bad_cast)"
+
+[[function]]
+name = "__cxa_bad_typeid"
+no_return = true
+reason = "libstdc++ <cxxabi.h> declares it __attribute__((__noreturn__)) (throws std::bad_typeid)"
+
+[[function]]
+name = "_ZSt9terminatev"
+no_return = true
+reason = "std::terminate(): libstdc++ <exception> declares it __attribute__((__noreturn__)); C++ [except.terminate]"
+
+[[function]]
+name = "_ZSt21__glibcxx_assert_failPKciS0_S0_"
+no_return = true
+reason = "std::__glibcxx_assert_fail: libstdc++ <bits/c++config.h> declares it _GLIBCXX_NORETURN"
+
+[[function]]
+name = "_ZSt21__throw_bad_exceptionv"
+no_return = true
+reason = "std::__throw_bad_exception: libstdc++ <bits/functexcept.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt16__throw_bad_castv"
+no_return = true
+reason = "std::__throw_bad_cast: libstdc++ <bits/functexcept.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt18__throw_bad_typeidv"
+no_return = true
+reason = "std::__throw_bad_typeid: libstdc++ <bits/functexcept.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt19__throw_range_errorPKc"
+no_return = true
+reason = "std::__throw_range_error: libstdc++ <bits/functexcept.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt19__throw_ios_failurePKc"
+no_return = true
+reason = "std::__throw_ios_failure(const char*): libstdc++ <bits/functexcept.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt19__throw_ios_failurePKci"
+no_return = true
+reason = "std::__throw_ios_failure(const char*, int): libstdc++ <bits/functexcept.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt20__throw_system_errori"
+no_return = true
+reason = "std::__throw_system_error: libstdc++ <bits/functexcept.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt20__throw_future_errori"
+no_return = true
+reason = "std::__throw_future_error: libstdc++ <bits/functexcept.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt25__throw_bad_function_callv"
+no_return = true
+reason = "std::__throw_bad_function_call: libstdc++ <bits/functexcept.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt17__throw_bad_allocv"
+no_return = true
+reason = "std::__throw_bad_alloc: libstdc++ <bits/new_throw.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt28__throw_bad_array_new_lengthv"
+no_return = true
+reason = "std::__throw_bad_array_new_length: libstdc++ <bits/new_throw.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt19__throw_regex_errorNSt15regex_constants10error_typeE"
+no_return = true
+reason = "std::__throw_regex_error: libstdc++ <bits/regex_error.h> declares it [[__noreturn__]]"
+
+[[function]]
+name = "_ZSt19__throw_logic_errorPKc"
+no_return = true
+reason = "std::__throw_logic_error: libstdc++ <bits/stdexcept_throwfwd.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt20__throw_domain_errorPKc"
+no_return = true
+reason = "std::__throw_domain_error: libstdc++ <bits/stdexcept_throwfwd.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt24__throw_invalid_argumentPKc"
+no_return = true
+reason = "std::__throw_invalid_argument: libstdc++ <bits/stdexcept_throwfwd.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt20__throw_length_errorPKc"
+no_return = true
+reason = "std::__throw_length_error: libstdc++ <bits/stdexcept_throwfwd.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt20__throw_out_of_rangePKc"
+no_return = true
+reason = "std::__throw_out_of_range: libstdc++ <bits/stdexcept_throwfwd.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt24__throw_out_of_range_fmtPKcz"
+no_return = true
+reason = "std::__throw_out_of_range_fmt(const char*, ...): libstdc++ <bits/stdexcept_throwfwd.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt21__throw_runtime_errorPKc"
+no_return = true
+reason = "std::__throw_runtime_error: libstdc++ <bits/stdexcept_throwfwd.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt22__throw_overflow_errorPKc"
+no_return = true
+reason = "std::__throw_overflow_error: libstdc++ <bits/stdexcept_throwfwd.h> declares it __attribute__((__noreturn__))"
+
+[[function]]
+name = "_ZSt23__throw_underflow_errorPKc"
+no_return = true
+reason = "std::__throw_underflow_error: libstdc++ <bits/stdexcept_throwfwd.h> declares it __attribute__((__noreturn__))"
+
+# Windows. The Win32 metadata marks these [DoesNotReturn]; its database is
+# not embedded.
+
+[[function]]
+name = "ExitProcess"
+library = "kernel32.dll"
+no_return = true
+reason = "Win32 metadata (Microsoft.Windows.SDK.Win32Metadata 71.0.45-preview): [DoesNotReturn]; mingw-w64 <processthreadsapi.h>: DECLSPEC_NORETURN"
+
+[[function]]
+name = "ExitThread"
+library = "kernel32.dll"
+no_return = true
+reason = "Win32 metadata (Microsoft.Windows.SDK.Win32Metadata 71.0.45-preview): [DoesNotReturn]; mingw-w64 <processthreadsapi.h>: DECLSPEC_NORETURN"
+
+[[function]]
+name = "FatalExit"
+library = "kernel32.dll"
+no_return = true
+reason = "Win32 metadata (Microsoft.Windows.SDK.Win32Metadata 71.0.45-preview): [DoesNotReturn]"
+
+# Format strings of the C standard's printf and scanf functions and glibc's
+# fortified variants. glibc's headers declare them without a format
+# attribute (GCC and Clang add one implicitly to the builtins they know,
+# which libclang does not show); GCC's gcc/builtins.def gives each its
+# format, and glibc's debug/*_chk.c define the _chk variants as the plain
+# function with a flag (and sizes) before the format.
+
+[[function]]
+name = "printf"
+format = { archetype = "printf", string = 1, first = 2 }
+reason = "ISO/IEC 9899:2018 7.21.6.3; GCC gcc/builtins.def BUILT_IN_PRINTF: ATTR_FORMAT_PRINTF_1_2"
+
+[[function]]
+name = "fprintf"
+format = { archetype = "printf", string = 2, first = 3 }
+reason = "ISO/IEC 9899:2018 7.21.6.1; GCC gcc/builtins.def BUILT_IN_FPRINTF: ATTR_NONNULL_1_FORMAT_PRINTF_2_3"
+
+[[function]]
+name = "sprintf"
+format = { archetype = "printf", string = 2, first = 3 }
+reason = "ISO/IEC 9899:2018 7.21.6.6; GCC gcc/builtins.def BUILT_IN_SPRINTF: ATTR_NOTHROW_NONNULL_1_FORMAT_PRINTF_2_3"
+
+[[function]]
+name = "scanf"
+format = { archetype = "scanf", string = 1, first = 2 }
+reason = "ISO/IEC 9899:2018 7.21.6.4; GCC gcc/builtins.def BUILT_IN_SCANF: ATTR_FORMAT_SCANF_1_2"
+
+[[function]]
+name = "fscanf"
+format = { archetype = "scanf", string = 2, first = 3 }
+reason = "ISO/IEC 9899:2018 7.21.6.2; GCC gcc/builtins.def BUILT_IN_FSCANF: ATTR_FORMAT_SCANF_2_3"
+
+[[function]]
+name = "sscanf"
+format = { archetype = "scanf", string = 2, first = 3 }
+reason = "ISO/IEC 9899:2018 7.21.6.7; GCC gcc/builtins.def BUILT_IN_SSCANF: ATTR_FORMAT_SCANF_NOTHROW_2_3"
+
+[[function]]
+name = "__printf_chk"
+format = { archetype = "printf", string = 2, first = 3 }
+reason = "glibc debug/printf_chk.c: printf with a flag first; GCC gcc/builtins.def BUILT_IN_PRINTF_CHK: ATTR_FORMAT_PRINTF_2_3"
+
+[[function]]
+name = "__fprintf_chk"
+format = { archetype = "printf", string = 3, first = 4 }
+reason = "glibc debug/fprintf_chk.c: fprintf with a flag after the stream; GCC gcc/builtins.def BUILT_IN_FPRINTF_CHK: ATTR_NONNULL_1_FORMAT_PRINTF_3_4"
+
+[[function]]
+name = "__sprintf_chk"
+format = { archetype = "printf", string = 4, first = 5 }
+reason = "glibc debug/sprintf_chk.c: sprintf with a flag and the buffer's size; GCC gcc/builtins.def BUILT_IN_SPRINTF_CHK: ATTR_NOTHROW_NONNULL_1_FORMAT_PRINTF_4_5"
+
+[[function]]
+name = "__snprintf_chk"
+format = { archetype = "printf", string = 5, first = 6 }
+reason = "glibc debug/snprintf_chk.c: snprintf with a flag and the buffer's size; GCC gcc/builtins.def BUILT_IN_SNPRINTF_CHK: ATTR_FORMAT_PRINTF_NOTHROW_5_6"
+
+# Their va_list forms: the format describes the va_list after it (first
+# argument 0), as GCC's builtins declare them (glibc's headers state it
+# on vscanf, vfscanf and vsscanf themselves).
+
+[[function]]
+name = "vprintf"
+format = { archetype = "printf", string = 1, first = 0 }
+reason = "ISO/IEC 9899:2018 7.21.6.10; GCC gcc/builtins.def BUILT_IN_VPRINTF: ATTR_FORMAT_PRINTF_1_0"
+
+[[function]]
+name = "vfprintf"
+format = { archetype = "printf", string = 2, first = 0 }
+reason = "ISO/IEC 9899:2018 7.21.6.8; GCC gcc/builtins.def BUILT_IN_VFPRINTF: ATTR_NONNULL_1_FORMAT_PRINTF_2_0"
+
+[[function]]
+name = "vsprintf"
+format = { archetype = "printf", string = 2, first = 0 }
+reason = "ISO/IEC 9899:2018 7.21.6.13; GCC gcc/builtins.def BUILT_IN_VSPRINTF: ATTR_NOTHROW_NONNULL_1_FORMAT_PRINTF_2_0"
+
+[[function]]
+name = "__vprintf_chk"
+format = { archetype = "printf", string = 2, first = 0 }
+reason = "glibc debug/vprintf_chk.c: vprintf with a flag first; GCC gcc/builtins.def BUILT_IN_VPRINTF_CHK: ATTR_FORMAT_PRINTF_2_0"
+
+[[function]]
+name = "__vfprintf_chk"
+format = { archetype = "printf", string = 3, first = 0 }
+reason = "glibc debug/vfprintf_chk.c: vfprintf with a flag after the stream; GCC gcc/builtins.def BUILT_IN_VFPRINTF_CHK: ATTR_NONNULL_1_FORMAT_PRINTF_3_0"
+
+[[function]]
+name = "__vsprintf_chk"
+format = { archetype = "printf", string = 4, first = 0 }
+reason = "glibc debug/vsprintf_chk.c: vsprintf with a flag and the buffer's size; GCC gcc/builtins.def BUILT_IN_VSPRINTF_CHK: ATTR_NOTHROW_NONNULL_1_FORMAT_PRINTF_4_0"
+
+[[function]]
+name = "__vsnprintf_chk"
+format = { archetype = "printf", string = 5, first = 0 }
+reason = "glibc debug/vsnprintf_chk.c: vsnprintf with a flag and the buffer's size; GCC gcc/builtins.def BUILT_IN_VSNPRINTF_CHK: ATTR_FORMAT_PRINTF_NOTHROW_5_0"
+
+# glibc's <stdio.h> redirects fscanf, scanf and sscanf (__REDIRECT, or
+# #define where it cannot) to these in C99 mode (__isoc99_, glibc 2.7 to
+# 2.37) and C23 mode (__isoc23_, glibc 2.38 on): the same functions, with
+# the standard's scanf conversions.
+
+[[function]]
+name = "__isoc99_scanf"
+format = { archetype = "scanf", string = 1, first = 2 }
+reason = "glibc <stdio.h>: scanf redirected to __isoc99_scanf (ISO C99 scanf, ISO/IEC 9899:2018 7.21.6.4)"
+
+[[function]]
+name = "__isoc99_fscanf"
+format = { archetype = "scanf", string = 2, first = 3 }
+reason = "glibc <stdio.h>: fscanf redirected to __isoc99_fscanf (ISO C99 fscanf, ISO/IEC 9899:2018 7.21.6.2)"
+
+[[function]]
+name = "__isoc99_sscanf"
+format = { archetype = "scanf", string = 2, first = 3 }
+reason = "glibc <stdio.h>: sscanf redirected to __isoc99_sscanf (ISO C99 sscanf, ISO/IEC 9899:2018 7.21.6.7)"
+
+[[function]]
+name = "__isoc23_scanf"
+format = { archetype = "scanf", string = 1, first = 2 }
+reason = "glibc <stdio.h>: scanf redirected to __isoc23_scanf (ISO C23 scanf, ISO/IEC 9899:2018 7.21.6.4 with %b)"
+
+[[function]]
+name = "__isoc23_fscanf"
+format = { archetype = "scanf", string = 2, first = 3 }
+reason = "glibc <stdio.h>: fscanf redirected to __isoc23_fscanf (ISO C23 fscanf, ISO/IEC 9899:2018 7.21.6.2 with %b)"
+
+[[function]]
+name = "__isoc23_sscanf"
+format = { archetype = "scanf", string = 2, first = 3 }
+reason = "glibc <stdio.h>: sscanf redirected to __isoc23_sscanf (ISO C23 sscanf, ISO/IEC 9899:2018 7.21.6.7 with %b)"

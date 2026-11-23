@@ -1,0 +1,5 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
+# Architecture terms that are not code identifiers.
+doc-valid-idents = ["ModRM", "AArch64", "AArch32", "RISC-V", ".."]

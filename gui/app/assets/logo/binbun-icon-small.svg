@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>binbun</title>
+  <!-- binbun-icon.svg drawn for 21 to 48 px: no stroke and the second
+       ear's tip moved right (22, 7), so the notch between the ears stays
+       open; the bunny larger, the corners tighter; a larger face, the
+       eyes centred on pixel corners at 24, 32, 40 and 48 px (multiples
+       of 64). -->
+  <rect width="512" height="512" rx="96" fill="#1D1F24"/>
+  <g transform="translate(256 250) scale(1) translate(-212 -196)" fill="#F5F3EB">
+    <path d="m368 236c-15.5 0-28-12.5-28-28 0-15.5 12.5-28 28-28 15.5 0 28 12.5 28 28 0 15.5-12.5 28-28 28z"/>
+    <path d="M114 351C64 342 25 291 29 251 36 186 74 131 134 106 134 81 134 61 152 46 176 27 196 53 184 89 179 103 174 113 169 123C174 91 218 66 246 53C274 40 274 69 249 97C234 111 226 121 219 131 284 121 339 156 356 216 370 266 360 321 319 341 269 366 174 361 114 351Z"/>
+  </g>
+  <path d="m69 279c-6.1 0-11-4-11-9 0-5 4.9-9 11-9 6.1 0 11 4 11 9 0 5-4.9 9-11 9z" fill="#1D1F24" transform="translate(128 320) scale(2.091 2.222) translate(-69 -270)"/>
+  <path d="m185 282c-6.6 0-12-4.5-12-10 0-5.5 5.4-10 12-10 6.6 0 12 4.5 12 10 0 5.5-5.4 10-12 10z" fill="#1D1F24" transform="translate(256 320) scale(1.917 2.1) translate(-185 -272)"/>
+  <path d="m118 293c4-9 12-10 17-2 4 6-3 11-9 8-5 3-12-1-8-6z" fill="#1D1F24" transform="translate(181.33 352) scale(1.6) translate(-126 -292)"/>
+</svg>

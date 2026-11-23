@@ -1,0 +1,140 @@
+/* One Dark, binbun's values from before themes were files, unchanged.
+ *
+ * Source: Zed's One Dark, https://github.com/zed-industries/zed, tag
+ *   v1.21.0, commit 33c95853ed2b6956f339733c63a8220964ecbeb6
+ *   assets/themes/one/one.json sha256
+ *   ed6cf88015f2f9b39691315840cf0615f35cdc1be4a61f9f0dba8183fa427695
+ *   (the tokens exactly).
+ * Licence: MIT (assets/themes/one/LICENSE), Copyright (c) 2014 GitHub Inc.
+ *
+ * Mapping: the UI roles are One's own tokens of the same names; the code
+ * roles are One's syntax tokens. Three values are not single One tokens:
+ * the islands' gap and the tab bar (One Dark has no surface darker than
+ * the editor, so Atom One Dark UI's base, #21252b), the link tints (four
+ * of One's player colours at 19% alpha, as One makes its selection from
+ * the first) and the lit area (One's panel colour at half alpha).
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments,
+ * link tints, the lit area, agreed) follow the rule binbun used before
+ * themes were files: mnemonics take the text colour, registers the type
+ * colour; addresses by what the line is (functions the comment colour,
+ * code the parameter red, data the doc-comment grey, unexplored bytes the
+ * constant yellow); code xrefs the special punctuation, data xrefs the
+ * doc-comment grey; the lit area's edge the focus border; agreed the
+ * success green.
+ *
+ * The branch arrows' eight colours (--arrow-1 to --arrow-8) are One's
+ * own, distinct, each at least 3:1 on the editor, round the wheel so
+ * neighbours differ: blue, the number orange, purple, green, red, cyan,
+ * yellow, and, One having no pink (its rust is 2.95:1), the text white.
+ *
+ * The finer code roles are One's own syntax tokens: control keywords and
+ * the rest share One's `keyword`, builtin and named types its `type`,
+ * fields its `property` red, macros its `preproc` purple, operators its
+ * `operator` cyan (binbun drew operators so before); globals are plain
+ * variables (One has no token for them). The listing's jumps, calls and
+ * returns stay the plain mnemonic colour, as binbun drew them; no-ops
+ * take the doc-comment grey (One's comment grey is 2.32:1).
+ */
+
+:root {
+  --name: "One Dark";
+  --appearance: dark;
+
+  /* One's palette. */
+  --blue: #74ade8;
+  --purple: #b477cf;
+  --yellow: #dec184;
+  --green: #a1c181;
+  --red: #d07277;
+  --rust: #b1574b;
+  --doc-grey: #878e98;
+}
+
+:root {
+  /* Surfaces. */
+  --background: #3b414d;
+  --gap: #21252b;
+  --tab-bar: #21252b;
+  --panel: #2f343e;
+  --editor: #282c33;
+  --border: #464b57;
+  --border-variant: #363c46;
+  --border-focused: #47679e;
+  --element-hover: #363c46;
+  --element-selected: #454a56;
+  --scrollbar-thumb: #c8ccd44c;
+  --scrollbar-track-border: #2e333c;
+
+  /* Text. */
+  --text: #dce0e5;
+  --text-muted: #a9afbc;
+  --text-placeholder: #878a98;
+  --accent: var(--blue);
+  --editor-foreground: #acb2be;
+  --line-number: #4e5a5f;
+  --active-line-number: #d0d4da;
+  --error: var(--red);
+  --success: var(--green);
+
+  /* Highlights. */
+  --active-line: #2f343ebf;
+  --selection: #74ade83d;
+  --search-match: #74ade866;
+  --active-match: #e8af7466;
+  --arrow: var(--rust);
+
+  /* Code. */
+  --keyword: var(--purple);
+  --type: #6eb4bf;
+  --function: #73ade9;
+  --parameter: var(--red);
+  --string: var(--green);
+  --number: #bf956a;
+  --constant: #dfc184;
+  --comment: #5d636f;
+  --comment-doc: var(--doc-grey);
+  --hint: #788ca6;
+  --punctuation: #b2b9c6;
+  --punctuation-special: var(--rust);
+  --embedded: #dce0e5;
+  --variable: #acb2be;
+  --label: var(--blue);
+  --keyword-control: var(--keyword);
+  --type-builtin: var(--type);
+  --global: var(--variable);
+  --field: var(--red);
+  --macro: var(--purple);
+  --operator: var(--type);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --register: var(--type);
+  --address-function: var(--comment);
+  --address-code: var(--parameter);
+  --address-data: var(--comment-doc);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--comment-doc);
+  --tint-1: color-mix(in srgb, var(--blue) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--purple) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--yellow) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--green) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--blue);
+  --arrow-2: var(--number);
+  --arrow-3: var(--purple);
+  --arrow-4: var(--green);
+  --arrow-5: var(--red);
+  --arrow-6: var(--type);
+  --arrow-7: var(--yellow);
+  --arrow-8: var(--text);
+  --mnemonic-jump: var(--mnemonic);
+  --mnemonic-call: var(--mnemonic);
+  --mnemonic-return: var(--mnemonic);
+  --mnemonic-nop: var(--doc-grey);
+  --auto-name-alpha: 1;
+  --cast-alpha: 1;
+}

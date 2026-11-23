@@ -1,0 +1,22 @@
+[package]
+name = "binbun-loader"
+description = "Loads ELF, PE and Mach-O executables with their sections, symbols and imports."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["elf", "pe", "mach-o", "executable", "loader"]
+categories = ["parser-implementations", "development-tools::debugging"]
+
+[dependencies]
+binbun-semantics.workspace = true
+cpp_demangle.workspace = true
+gimli = { version = "0.34.0", default-features = false, features = ["read"] }
+msvc-demangler.workspace = true
+object = { version = "0.40", default-features = false, features = ["read", "std"] }
+
+[lints]
+workspace = true

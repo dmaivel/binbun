@@ -1,0 +1,188 @@
+/* Nord, the Nord theme for Visual Studio Code.
+ *
+ * Source: https://github.com/nordtheme/visual-studio-code (formerly
+ *   arcticicestudio/nord-visual-studio-code)
+ *   tag v0.19.0, commit 69b80f5196b8c3feb6df7f67e4225adb3040e3fb.
+ *   File read (SHA-256 of the bytes at that commit):
+ *     themes/nord-color-theme.json 7e307e98bc3a90785a2630bdb8c2c94352e22f744c6629cdbf3e82329e04a236
+ * Licence: MIT, Copyright (C) 2017-present Arctic Ice Studio
+ *   <development@arcticicestudio.com> (https://www.arcticicestudio.com),
+ *   Copyright (C) 2017-present Sven Greb <development@svengreb.de>
+ *   (https://www.svengreb.de).
+ *
+ * Mapping: the UI roles are the theme's workbench colours (title bar,
+ * tab bar, side bar, panel border (the editor group border is #3b425201,
+ * invisible), widget border, focus border, list hover, scrollbar slider,
+ * overview-ruler border, descriptionForeground, the input placeholder,
+ * the text link for the accent, line numbers, errorForeground, line
+ * highlight, selection, find matches, inlay hints); the code roles are its
+ * tokenColors resolved for the C grammar's scopes as VS Code ranks them
+ * (keyword, entity.name.function, variable.parameter, string,
+ * constant.numeric, constant.language, comment, punctuation,
+ * punctuation.definition.tag for the special punctuation, variable.other,
+ * keyword.operator for operators). The non-control keywords
+ * (storage.modifier, storage.type.struct, keyword.other.typedef) and the
+ * control keywords (keyword.control) all resolve to nord9, through its
+ * `storage` and `keyword` rules, so both keyword roles are nord9; so are
+ * the built-in types (storage.type.built-in.primitive, its `storage`
+ * rule). Globals and struct members (variable.other.global,
+ * variable.other.member) fall to its `variable.other` rule, the variable
+ * colour; macro names (entity.name.function.preprocessor) fall to its
+ * entity.name.function rule, the function colour.
+ * Picks among the listed keys: the type colour is nord7, Nord's
+ * support.type / entity.name.class / entity.name.type.class colour,
+ * because C's `int` falls to the theme's `storage` rule, which is nord9,
+ * the keyword colour. The selected element is
+ * list.inactiveSelectionBackground (nord2): the active one is nord8 meant
+ * under nord0 text, and binbun draws the normal text on it. The theme
+ * sets no git "added" colour, so success is terminal.ansiGreen (nord14),
+ * which is also its untracked-file colour; it has no
+ * comment.block.documentation rule, so the doc-comment colour is
+ * descriptionForeground; it has no entity.name.label rule, so labels take
+ * the function colour. The comment colour #616e88 is not one of the
+ * sixteen Nord colours; the theme uses it as a brightened nord3. The
+ * branch arrows take the special punctuation colour, the link tints
+ * nord8, nord15, nord13 and nord14, and the lit area the panel colour at
+ * half alpha.
+ *
+ * binbun's own roles (mnemonics, registers, addresses, xref comments,
+ * link tints, the lit area, agreed) follow the rule binbun used before
+ * themes were files: mnemonics take the text colour, registers the type
+ * colour; addresses by what the line is (functions the comment colour,
+ * code the parameter colour, data the doc-comment colour, unexplored bytes
+ * the constant colour); code xrefs the special punctuation, data xrefs
+ * the doc-comment colour; the lit area's edge the focus border; agreed
+ * the success green. Listing mnemonics by kind: jumps the control-keyword
+ * colour, calls the function colour, returns the control-keyword colour
+ * (the theme gives keyword.control.return no colour of its own), nops and
+ * padding the comment colour. Automatic names are drawn at 0.7 alpha, a
+ * cast's parentheses and type at 0.6. The listing's eight branch-arrow
+ * colours are eight distinct palette colours, each at least 3:1 on the
+ * editor, round the hue wheel in the order blue, orange, purple, green,
+ * red, cyan/teal, yellow, magenta/pink, so neighbours (and 8 with 1)
+ * differ by CIE76 ΔE >= 20: nord10, nord12, nord15, nord14, nord11,
+ * nord8, nord13 and, as Nord has no pink (nord15 is its only purple), the
+ * frost teal nord7. One other deviation: the comment colour (#616e88) is
+ * 2.43:1 on the editor, so function addresses take nord10 (#5e81ac,
+ * 3.10:1), the nearest Nord blue-grey that reaches 3:1, and so do nops
+ * (the muted text, #d8dee9e6, is translucent and near the full text
+ * colour).
+ * The feature map's library code takes nord10: the type colour, nord7,
+ * is too near its functions' code's.
+ */
+
+:root {
+  --name: "Nord";
+  --appearance: dark;
+
+  /* Nord's palette: Polar Night, Snow Storm, Frost, Aurora. */
+  --nord0: #2e3440;
+  --nord1: #3b4252;
+  --nord2: #434c5e;
+  --nord3: #4c566a;
+  --nord4: #d8dee9;
+  --nord5: #e5e9f0;
+  --nord6: #eceff4;
+  --nord7: #8fbcbb;
+  --nord8: #88c0d0;
+  --nord9: #81a1c1;
+  --nord10: #5e81ac;
+  --nord11: #bf616a;
+  --nord12: #d08770;
+  --nord13: #ebcb8b;
+  --nord14: #a3be8c;
+  --nord15: #b48ead;
+  /* The theme's comment colour, nord3 brightened. */
+  --nord3-bright: #616e88;
+}
+
+:root {
+  /* Surfaces. */
+  --background: var(--nord0);
+  --gap: var(--nord0);
+  --tab-bar: var(--nord0);
+  --panel: var(--nord0);
+  --editor: var(--nord0);
+  --border: var(--nord1);
+  --border-variant: var(--nord1);
+  --border-focused: var(--nord1);
+  --element-hover: var(--nord1);
+  --element-selected: var(--nord2);
+  --scrollbar-thumb: #434c5e99;
+  --scrollbar-track-border: var(--nord1);
+
+  /* Text. */
+  --text: var(--nord4);
+  --text-muted: #d8dee9e6;
+  --text-placeholder: #d8dee999;
+  --accent: var(--nord8);
+  --editor-foreground: var(--nord4);
+  --line-number: var(--nord3);
+  --active-line-number: var(--nord4);
+  --error: var(--nord11);
+  --success: var(--nord14);
+
+  /* Highlights. */
+  --active-line: var(--nord1);
+  --selection: #434c5ecc;
+  --search-match: #88c0d033;
+  --active-match: #88c0d066;
+  --arrow: var(--nord9);
+
+  /* Code. */
+  --keyword: var(--nord9);
+  --type: var(--nord7);
+  --function: var(--nord8);
+  --parameter: var(--nord4);
+  --string: var(--nord14);
+  --number: var(--nord15);
+  --constant: var(--nord9);
+  --comment: var(--nord3-bright);
+  --comment-doc: var(--text-muted);
+  --hint: var(--nord4);
+  --punctuation: var(--nord6);
+  --punctuation-special: var(--nord9);
+  --embedded: var(--nord4);
+  --variable: var(--nord4);
+  --label: var(--nord8);
+  --keyword-control: var(--nord9);
+  --type-builtin: var(--nord9);
+  --global: var(--variable);
+  --field: var(--variable);
+  --macro: var(--function);
+  --operator: var(--nord9);
+
+  /* binbun's own. */
+  --mnemonic: var(--embedded);
+  --mnemonic-jump: var(--keyword-control);
+  --mnemonic-call: var(--function);
+  --mnemonic-return: var(--keyword-control);
+  --mnemonic-nop: var(--nord10);
+  --map-import: var(--nord15);
+  --map-unexplored: var(--nord12);
+  --map-library: var(--nord10);
+  --register: var(--type);
+  --address-function: var(--nord10);
+  --address-code: var(--parameter);
+  --address-data: var(--comment-doc);
+  --address-unexplored: var(--constant);
+  --code-xref: var(--punctuation-special);
+  --data-xref: var(--comment-doc);
+  --tint-1: color-mix(in srgb, var(--nord8) 19%, transparent);
+  --tint-2: color-mix(in srgb, var(--nord15) 19%, transparent);
+  --tint-3: color-mix(in srgb, var(--nord13) 19%, transparent);
+  --tint-4: color-mix(in srgb, var(--nord14) 19%, transparent);
+  --lit: color-mix(in srgb, var(--panel) 50%, transparent);
+  --lit-edge: var(--border-focused);
+  --agreed: var(--success);
+  --arrow-1: var(--nord10);
+  --arrow-2: var(--nord12);
+  --arrow-3: var(--nord15);
+  --arrow-4: var(--nord14);
+  --arrow-5: var(--nord11);
+  --arrow-6: var(--nord8);
+  --arrow-7: var(--nord13);
+  --arrow-8: var(--nord7);
+  --auto-name-alpha: 1;
+  --cast-alpha: 1;
+}

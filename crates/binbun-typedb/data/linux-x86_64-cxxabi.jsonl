@@ -1,0 +1,102 @@
+{"binbun_typedb":2,"source":"header","target":{"arch":"x86_64","os":"linux","env":"gnu","pointer_size":8},"generator":"binbun-typegen 0.0.0, clang version 22.1.8","inputs":["gcc@16.2.1+r23+gd564253eb6c8-1","clang args: -x c++ -std=c++17"]}
+{"function":{"name":"_Unwind_Backtrace","signature":{"return":{"named":"_Unwind_Reason_Code"},"params":[{"type":{"named":"_Unwind_Trace_Fn"}},{"type":{"pointer":"void"}}]}}}
+{"function":{"name":"_Unwind_DeleteException","signature":{"return":"void","params":[{"type":{"pointer":{"named":"struct _Unwind_Exception"}}}]}}}
+{"function":{"name":"_Unwind_FindEnclosingFunction","signature":{"return":{"pointer":"void"},"params":[{"name":"pc","type":{"pointer":"void"}}]}}}
+{"function":{"name":"_Unwind_ForcedUnwind","signature":{"return":{"named":"_Unwind_Reason_Code"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Exception"}}},{"type":{"named":"_Unwind_Stop_Fn"}},{"type":{"pointer":"void"}}]}}}
+{"function":{"name":"_Unwind_GetCFA","signature":{"return":{"named":"_Unwind_Word"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Context"}}}]}}}
+{"function":{"name":"_Unwind_GetDataRelBase","signature":{"return":{"named":"_Unwind_Ptr"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Context"}}}]}}}
+{"function":{"name":"_Unwind_GetGR","signature":{"return":{"named":"_Unwind_Word"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Context"}}},{"type":{"int":{"signed":true,"size":4}}}]}}}
+{"function":{"name":"_Unwind_GetIP","signature":{"return":{"named":"_Unwind_Ptr"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Context"}}}]}}}
+{"function":{"name":"_Unwind_GetIPInfo","signature":{"return":{"named":"_Unwind_Ptr"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Context"}}},{"type":{"pointer":{"int":{"signed":true,"size":4}}}}]}}}
+{"function":{"name":"_Unwind_GetLanguageSpecificData","signature":{"return":{"pointer":"void"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Context"}}}]}}}
+{"function":{"name":"_Unwind_GetRegionStart","signature":{"return":{"named":"_Unwind_Ptr"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Context"}}}]}}}
+{"function":{"name":"_Unwind_GetTextRelBase","signature":{"return":{"named":"_Unwind_Ptr"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Context"}}}]}}}
+{"function":{"name":"_Unwind_RaiseException","signature":{"return":{"named":"_Unwind_Reason_Code"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Exception"}}}]}}}
+{"function":{"name":"_Unwind_Resume","signature":{"return":"void","params":[{"type":{"pointer":{"named":"struct _Unwind_Exception"}}}]}}}
+{"function":{"name":"_Unwind_Resume_or_Rethrow","signature":{"return":{"named":"_Unwind_Reason_Code"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Exception"}}}]}}}
+{"function":{"name":"_Unwind_SetGR","signature":{"return":"void","params":[{"type":{"pointer":{"named":"struct _Unwind_Context"}}},{"type":{"int":{"signed":true,"size":4}}},{"type":{"named":"_Unwind_Word"}}]}}}
+{"function":{"name":"_Unwind_SetIP","signature":{"return":"void","params":[{"type":{"pointer":{"named":"struct _Unwind_Context"}}},{"type":{"named":"_Unwind_Ptr"}}]}}}
+{"function":{"name":"_Unwind_SjLj_ForcedUnwind","signature":{"return":{"named":"_Unwind_Reason_Code"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Exception"}}},{"type":{"named":"_Unwind_Stop_Fn"}},{"type":{"pointer":"void"}}]}}}
+{"function":{"name":"_Unwind_SjLj_RaiseException","signature":{"return":{"named":"_Unwind_Reason_Code"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Exception"}}}]}}}
+{"function":{"name":"_Unwind_SjLj_Register","signature":{"return":"void","params":[{"type":{"pointer":{"named":"struct SjLj_Function_Context"}}}]}}}
+{"function":{"name":"_Unwind_SjLj_Resume","signature":{"return":"void","params":[{"type":{"pointer":{"named":"struct _Unwind_Exception"}}}]}}}
+{"function":{"name":"_Unwind_SjLj_Resume_or_Rethrow","signature":{"return":{"named":"_Unwind_Reason_Code"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Exception"}}}]}}}
+{"function":{"name":"_Unwind_SjLj_Unregister","signature":{"return":"void","params":[{"type":{"pointer":{"named":"struct SjLj_Function_Context"}}}]}}}
+{"function":{"name":"__cxa_allocate_dependent_exception","signature":{"return":{"pointer":{"named":"struct __cxa_dependent_exception"}},"params":[]},"no_throw":true}}
+{"function":{"name":"__cxa_allocate_exception","signature":{"return":{"pointer":"void"},"params":[{"type":{"named":"size_t"}}]},"no_throw":true}}
+{"function":{"name":"__cxa_atexit","signature":{"return":{"int":{"signed":true,"size":4}},"params":[{"type":{"pointer":{"function":{"return":"void","params":[{"type":{"pointer":"void"}}]}}}},{"type":{"pointer":"void"}},{"type":{"pointer":"void"}}]},"no_throw":true}}
+{"function":{"name":"__cxa_bad_cast","signature":{"return":"void","params":[]},"no_return":true}}
+{"function":{"name":"__cxa_bad_typeid","signature":{"return":"void","params":[]},"no_return":true}}
+{"function":{"name":"__cxa_begin_catch","signature":{"return":{"pointer":"void"},"params":[{"type":{"pointer":"void"}}]},"no_throw":true}}
+{"function":{"name":"__cxa_current_exception_type","signature":{"return":{"pointer":{"named":"struct type_info"}},"params":[]},"no_throw":true}}
+{"function":{"name":"__cxa_deleted_virtual","signature":{"return":"void","params":[]},"no_return":true}}
+{"function":{"name":"__cxa_demangle","signature":{"return":{"pointer":{"char":{"signed":true}}},"params":[{"name":"__mangled_name","type":{"pointer":{"char":{"signed":true}}}},{"name":"__output_buffer","type":{"pointer":{"char":{"signed":true}}}},{"name":"__length","type":{"pointer":{"named":"size_t"}}},{"name":"__status","type":{"pointer":{"int":{"signed":true,"size":4}}}}]}}}
+{"function":{"name":"__cxa_end_catch","signature":{"return":"void","params":[]}}}
+{"function":{"name":"__cxa_finalize","signature":{"return":"void","params":[{"type":{"pointer":"void"}}]}}}
+{"function":{"name":"__cxa_free_dependent_exception","signature":{"return":"void","params":[{"type":{"pointer":{"named":"struct __cxa_dependent_exception"}}}]},"no_throw":true}}
+{"function":{"name":"__cxa_free_exception","signature":{"return":"void","params":[{"type":{"pointer":"void"}}]},"no_throw":true}}
+{"function":{"name":"__cxa_get_exception_ptr","signature":{"return":{"pointer":"void"},"params":[{"type":{"pointer":"void"}}]},"no_throw":true}}
+{"function":{"name":"__cxa_get_globals","signature":{"return":{"pointer":{"named":"struct __cxa_eh_globals"}},"params":[]},"no_throw":true}}
+{"function":{"name":"__cxa_get_globals_fast","signature":{"return":{"pointer":{"named":"struct __cxa_eh_globals"}},"params":[]},"no_throw":true}}
+{"function":{"name":"__cxa_guard_abort","signature":{"return":"void","params":[{"type":{"pointer":{"named":"__guard"}}}]},"no_throw":true}}
+{"function":{"name":"__cxa_guard_acquire","signature":{"return":{"int":{"signed":true,"size":4}},"params":[{"type":{"pointer":{"named":"__guard"}}}]}}}
+{"function":{"name":"__cxa_guard_release","signature":{"return":"void","params":[{"type":{"pointer":{"named":"__guard"}}}]},"no_throw":true}}
+{"function":{"name":"__cxa_init_primary_exception","signature":{"return":{"pointer":{"named":"struct __cxa_refcounted_exception"}},"params":[{"name":"__object","type":{"pointer":"void"}},{"name":"__tinfo","type":{"pointer":{"named":"struct type_info"}}},{"name":"__dest","type":{"pointer":{"function":{"return":"void","params":[{"type":{"pointer":"void"}}]}}}}]},"no_throw":true}}
+{"function":{"name":"__cxa_pure_virtual","signature":{"return":"void","params":[]},"no_return":true}}
+{"function":{"name":"__cxa_rethrow","signature":{"return":"void","params":[]},"no_return":true}}
+{"function":{"name":"__cxa_thread_atexit","signature":{"return":{"int":{"signed":true,"size":4}},"params":[{"type":{"pointer":{"function":{"return":"void","params":[{"type":{"pointer":"void"}}]}}}},{"type":{"pointer":"void"}},{"type":{"pointer":"void"}}]},"no_throw":true}}
+{"function":{"name":"__cxa_throw","signature":{"return":"void","params":[{"type":{"pointer":"void"}},{"type":{"pointer":{"named":"struct type_info"}}},{"type":{"pointer":{"function":{"return":"void","params":[{"type":{"pointer":"void"}}]}}}}]},"no_return":true}}
+{"function":{"name":"__cxa_throw_bad_array_new_length","signature":{"return":"void","params":[]},"no_return":true}}
+{"function":{"name":"__cxa_vec_cctor","signature":{"return":{"named":"__cxa_vec_ctor_return_type"},"params":[{"name":"__dest_array","type":{"pointer":"void"}},{"name":"__src_array","type":{"pointer":"void"}},{"name":"__element_count","type":{"named":"size_t"}},{"name":"__element_size","type":{"named":"size_t"}},{"name":"__constructor","type":{"pointer":{"function":{"return":{"named":"__cxa_cdtor_return_type"},"params":[{"type":{"pointer":"void"}},{"type":{"pointer":"void"}}]}}}},{"name":"__destructor","type":{"named":"__cxa_cdtor_type"}}]}}}
+{"function":{"name":"__cxa_vec_cleanup","signature":{"return":"void","params":[{"name":"__array_address","type":{"pointer":"void"}},{"name":"__element_count","type":{"named":"size_t"}},{"name":"__s","type":{"named":"size_t"}},{"name":"__destructor","type":{"named":"__cxa_cdtor_type"}}]},"no_throw":true}}
+{"function":{"name":"__cxa_vec_ctor","signature":{"return":{"named":"__cxa_vec_ctor_return_type"},"params":[{"name":"__array_address","type":{"pointer":"void"}},{"name":"__element_count","type":{"named":"size_t"}},{"name":"__element_size","type":{"named":"size_t"}},{"name":"__constructor","type":{"named":"__cxa_cdtor_type"}},{"name":"__destructor","type":{"named":"__cxa_cdtor_type"}}]}}}
+{"function":{"name":"__cxa_vec_delete","signature":{"return":"void","params":[{"name":"__array_address","type":{"pointer":"void"}},{"name":"__element_size","type":{"named":"size_t"}},{"name":"__padding_size","type":{"named":"size_t"}},{"name":"__destructor","type":{"named":"__cxa_cdtor_type"}}]}}}
+{"function":{"name":"__cxa_vec_delete2","signature":{"return":"void","params":[{"name":"__array_address","type":{"pointer":"void"}},{"name":"__element_size","type":{"named":"size_t"}},{"name":"__padding_size","type":{"named":"size_t"}},{"name":"__destructor","type":{"named":"__cxa_cdtor_type"}},{"name":"__dealloc","type":{"pointer":{"function":{"return":"void","params":[{"type":{"pointer":"void"}}]}}}}]}}}
+{"function":{"name":"__cxa_vec_delete3","signature":{"return":"void","params":[{"name":"__array_address","type":{"pointer":"void"}},{"name":"__element_size","type":{"named":"size_t"}},{"name":"__padding_size","type":{"named":"size_t"}},{"name":"__destructor","type":{"named":"__cxa_cdtor_type"}},{"name":"__dealloc","type":{"pointer":{"function":{"return":"void","params":[{"type":{"pointer":"void"}},{"type":{"named":"size_t"}}]}}}}]}}}
+{"function":{"name":"__cxa_vec_dtor","signature":{"return":"void","params":[{"name":"__array_address","type":{"pointer":"void"}},{"name":"__element_count","type":{"named":"size_t"}},{"name":"__element_size","type":{"named":"size_t"}},{"name":"__destructor","type":{"named":"__cxa_cdtor_type"}}]}}}
+{"function":{"name":"__cxa_vec_new","signature":{"return":{"pointer":"void"},"params":[{"name":"__element_count","type":{"named":"size_t"}},{"name":"__element_size","type":{"named":"size_t"}},{"name":"__padding_size","type":{"named":"size_t"}},{"name":"__constructor","type":{"named":"__cxa_cdtor_type"}},{"name":"__destructor","type":{"named":"__cxa_cdtor_type"}}]}}}
+{"function":{"name":"__cxa_vec_new2","signature":{"return":{"pointer":"void"},"params":[{"name":"__element_count","type":{"named":"size_t"}},{"name":"__element_size","type":{"named":"size_t"}},{"name":"__padding_size","type":{"named":"size_t"}},{"name":"__constructor","type":{"named":"__cxa_cdtor_type"}},{"name":"__destructor","type":{"named":"__cxa_cdtor_type"}},{"name":"__alloc","type":{"pointer":{"function":{"return":{"pointer":"void"},"params":[{"type":{"named":"size_t"}}]}}}},{"name":"__dealloc","type":{"pointer":{"function":{"return":"void","params":[{"type":{"pointer":"void"}}]}}}}]}}}
+{"function":{"name":"__cxa_vec_new3","signature":{"return":{"pointer":"void"},"params":[{"name":"__element_count","type":{"named":"size_t"}},{"name":"__element_size","type":{"named":"size_t"}},{"name":"__padding_size","type":{"named":"size_t"}},{"name":"__constructor","type":{"named":"__cxa_cdtor_type"}},{"name":"__destructor","type":{"named":"__cxa_cdtor_type"}},{"name":"__alloc","type":{"pointer":{"function":{"return":{"pointer":"void"},"params":[{"type":{"named":"size_t"}}]}}}},{"name":"__dealloc","type":{"pointer":{"function":{"return":"void","params":[{"type":{"pointer":"void"}},{"type":{"named":"size_t"}}]}}}}]}}}
+{"function":{"name":"__dynamic_cast","signature":{"return":{"pointer":"void"},"params":[{"name":"__src_ptr","type":{"pointer":"void"}},{"name":"__src_type","type":{"pointer":{"named":"struct __class_type_info"}}},{"name":"__dst_type","type":{"pointer":{"named":"struct __class_type_info"}}},{"name":"__src2dst","type":{"named":"ptrdiff_t"}}]}}}
+{"enum":{"key":"enum _Unwind_Reason_Code","name":"_Unwind_Reason_Code","size":4,"variants":[{"name":"_URC_NO_REASON","value":0},{"name":"_URC_FOREIGN_EXCEPTION_CAUGHT","value":1},{"name":"_URC_FATAL_PHASE2_ERROR","value":2},{"name":"_URC_FATAL_PHASE1_ERROR","value":3},{"name":"_URC_NORMAL_STOP","value":4},{"name":"_URC_END_OF_STACK","value":5},{"name":"_URC_HANDLER_FOUND","value":6},{"name":"_URC_INSTALL_CONTEXT","value":7},{"name":"_URC_CONTINUE_UNWIND","value":8}]}}
+{"record":{"key":"struct SjLj_Function_Context","name":"SjLj_Function_Context"}}
+{"record":{"key":"struct _Unwind_Context","name":"_Unwind_Context"}}
+{"record":{"key":"struct _Unwind_Exception","name":"_Unwind_Exception","size":32,"align":16,"fields":[{"name":"exception_class","type":{"named":"_Unwind_Exception_Class"},"bit_offset":0},{"name":"exception_cleanup","type":{"named":"_Unwind_Exception_Cleanup_Fn"},"bit_offset":64},{"name":"private_1","type":{"named":"_Unwind_Word"},"bit_offset":128},{"name":"private_2","type":{"named":"_Unwind_Word"},"bit_offset":192}]}}
+{"record":{"key":"struct __array_type_info","name":"__array_type_info","size":16,"align":8,"fields":[]}}
+{"record":{"key":"struct __base_class_type_info","name":"__base_class_type_info","size":16,"align":8,"fields":[{"name":"__base_type","type":{"pointer":{"named":"struct __class_type_info"}},"bit_offset":0},{"name":"__offset_flags","type":{"int":{"signed":true,"size":8}},"bit_offset":64}]}}
+{"record":{"key":"struct __class_type_info","name":"__class_type_info","size":16,"align":8,"fields":[]}}
+{"record":{"key":"struct __cxa_dependent_exception","name":"__cxa_dependent_exception"}}
+{"record":{"key":"struct __cxa_eh_globals","name":"__cxa_eh_globals"}}
+{"record":{"key":"struct __cxa_exception","name":"__cxa_exception"}}
+{"record":{"key":"struct __cxa_refcounted_exception","name":"__cxa_refcounted_exception"}}
+{"record":{"key":"struct __enum_type_info","name":"__enum_type_info","size":16,"align":8,"fields":[]}}
+{"record":{"key":"struct __forced_unwind","name":"__forced_unwind","size":8,"align":8,"fields":[]}}
+{"record":{"key":"struct __foreign_exception","name":"__foreign_exception","size":8,"align":8,"fields":[]}}
+{"record":{"key":"struct __function_type_info","name":"__function_type_info","size":16,"align":8,"fields":[]}}
+{"record":{"key":"struct __fundamental_type_info","name":"__fundamental_type_info","size":16,"align":8,"fields":[]}}
+{"record":{"key":"struct __pbase_type_info","name":"__pbase_type_info","size":32,"align":8,"fields":[{"name":"__flags","type":{"int":{"signed":false,"size":4}},"bit_offset":128},{"name":"__pointee","type":{"pointer":{"named":"struct type_info"}},"bit_offset":192}]}}
+{"record":{"key":"struct __pointer_to_member_type_info","name":"__pointer_to_member_type_info","size":40,"align":8,"fields":[{"name":"__context","type":{"pointer":{"named":"struct __class_type_info"}},"bit_offset":256}]}}
+{"record":{"key":"struct __pointer_type_info","name":"__pointer_type_info","size":32,"align":8,"fields":[]}}
+{"record":{"key":"struct __si_class_type_info","name":"__si_class_type_info","size":24,"align":8,"fields":[{"name":"__base_type","type":{"pointer":{"named":"struct __class_type_info"}},"bit_offset":128}]}}
+{"record":{"key":"struct __vmi_class_type_info","name":"__vmi_class_type_info","size":40,"align":8,"fields":[{"name":"__flags","type":{"int":{"signed":false,"size":4}},"bit_offset":128},{"name":"__base_count","type":{"int":{"signed":false,"size":4}},"bit_offset":160},{"name":"__base_info","type":{"array":{"element":{"named":"struct __base_class_type_info"},"count":1}},"bit_offset":192}]}}
+{"record":{"key":"struct recursive_init_error","name":"recursive_init_error","size":8,"align":8,"fields":[]}}
+{"record":{"key":"struct type_info","name":"type_info","size":16,"align":8,"fields":[{"name":"__name","type":{"pointer":{"char":{"signed":true}}},"bit_offset":64}]}}
+{"typedef":{"key":"_Unwind_Action","name":"_Unwind_Action","target":{"int":{"signed":true,"size":4}}}}
+{"typedef":{"key":"_Unwind_Exception_Class","name":"_Unwind_Exception_Class","target":{"int":{"signed":false,"size":8}}}}
+{"typedef":{"key":"_Unwind_Exception_Cleanup_Fn","name":"_Unwind_Exception_Cleanup_Fn","target":{"pointer":{"function":{"return":"void","params":[{"type":{"named":"_Unwind_Reason_Code"}},{"type":{"pointer":{"named":"struct _Unwind_Exception"}}}]}}}}}
+{"typedef":{"key":"_Unwind_Internal_Ptr","name":"_Unwind_Internal_Ptr","target":{"int":{"signed":false,"size":8}}}}
+{"typedef":{"key":"_Unwind_Personality_Fn","name":"_Unwind_Personality_Fn","target":{"pointer":{"function":{"return":{"named":"_Unwind_Reason_Code"},"params":[{"type":{"int":{"signed":true,"size":4}}},{"type":{"named":"_Unwind_Action"}},{"type":{"named":"_Unwind_Exception_Class"}},{"type":{"pointer":{"named":"struct _Unwind_Exception"}}},{"type":{"pointer":{"named":"struct _Unwind_Context"}}}]}}}}}
+{"typedef":{"key":"_Unwind_Ptr","name":"_Unwind_Ptr","target":{"int":{"signed":false,"size":8}}}}
+{"typedef":{"key":"_Unwind_Reason_Code","name":"_Unwind_Reason_Code","target":{"named":"enum _Unwind_Reason_Code"}}}
+{"typedef":{"key":"_Unwind_Stop_Fn","name":"_Unwind_Stop_Fn","target":{"pointer":{"function":{"return":{"named":"_Unwind_Reason_Code"},"params":[{"type":{"int":{"signed":true,"size":4}}},{"type":{"named":"_Unwind_Action"}},{"type":{"named":"_Unwind_Exception_Class"}},{"type":{"pointer":{"named":"struct _Unwind_Exception"}}},{"type":{"pointer":{"named":"struct _Unwind_Context"}}},{"type":{"pointer":"void"}}]}}}}}
+{"typedef":{"key":"_Unwind_Sword","name":"_Unwind_Sword","target":{"int":{"signed":true,"size":8}}}}
+{"typedef":{"key":"_Unwind_Trace_Fn","name":"_Unwind_Trace_Fn","target":{"pointer":{"function":{"return":{"named":"_Unwind_Reason_Code"},"params":[{"type":{"pointer":{"named":"struct _Unwind_Context"}}},{"type":{"pointer":"void"}}]}}}}}
+{"typedef":{"key":"_Unwind_Word","name":"_Unwind_Word","target":{"int":{"signed":false,"size":8}}}}
+{"typedef":{"key":"__cxa_cdtor_return_type","name":"__cxa_cdtor_return_type","target":"void"}}
+{"typedef":{"key":"__cxa_cdtor_type","name":"__cxa_cdtor_type","target":{"pointer":{"function":{"return":{"named":"__cxa_cdtor_return_type"},"params":[{"type":{"pointer":"void"}}]}}}}}
+{"typedef":{"key":"__cxa_vec_ctor_return_type","name":"__cxa_vec_ctor_return_type","target":"void"}}
+{"typedef":{"key":"__guard","name":"__guard","target":{"int":{"signed":true,"size":8}}}}
+{"typedef":{"key":"_sleb128_t","name":"_sleb128_t","target":{"int":{"signed":true,"size":8}}}}
+{"typedef":{"key":"_uleb128_t","name":"_uleb128_t","target":{"int":{"signed":false,"size":8}}}}
+{"typedef":{"key":"ptrdiff_t","name":"ptrdiff_t","target":{"int":{"signed":true,"size":8}}}}
+{"typedef":{"key":"size_t","name":"size_t","target":{"int":{"signed":false,"size":8}}}}

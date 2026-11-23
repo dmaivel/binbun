@@ -1,0 +1,223 @@
+# Every push to main and every pull request: formatting, lints, the
+# generated sources, the tests on Linux, macOS (arm64) and Windows (x64),
+# the GUI's lints and view tests on all three, the engine built for wasm,
+# and the Python wheel with its tests on Linux. Longer suites run nightly
+# (nightly.yml).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_BUILD_JOBS: 4
+  RUST_BACKTRACE: 1
+
+jobs:
+  lint:
+    name: Format, lints, generated sources
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain (rust-toolchain.toml)
+        run: cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # fuzz/ and bench/ join once `cargo fmt` has been run in them.
+      - name: Formatting
+        run: |
+          cargo fmt --all --check
+          for dir in gui tools/exarmo-oracle tools/isla-check tools/typegen; do
+            (cd "$dir" && cargo fmt --all --check)
+          done
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Clippy, release
+        run: cargo clippy --workspace --all-targets --locked --release -- -D warnings
+      - name: Clippy, the CLI without collaboration
+        run: cargo clippy -p binbun-cli --no-default-features --all-targets --locked -- -D warnings
+      - name: Generated sources are up to date
+        run: |
+          cargo xtask codegen --check
+          cargo xtask header --check
+      - name: Release and relay scripts
+        run: shellcheck -x scripts/release/*.sh scripts/ci/*.sh scripts/relay/*.sh
+
+  wasm:
+    name: The engine builds for wasm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # The web build (binbun in a browser) runs the engine in a worker:
+    # every crate up to `binbun` keeps compiling for
+    # wasm32-unknown-unknown. Not yet: binbun-debuginfo's symbol servers
+    # (feature `symbols`) and binbun-session (getrandom without its
+    # browser backend).
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain (rust-toolchain.toml) and the wasm target
+        run: |
+          cargo --version
+          rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Check
+        run: >-
+          cargo check --locked --release --target wasm32-unknown-unknown
+          -p binbun -p binbun-isa -p binbun-x86 -p binbun-aarch64 -p binbun-disasm
+          -p binbun-demangle -p binbun-typeinfer -p binbun-semantics
+          -p binbun-x86-lift -p binbun-aarch64-lift -p binbun-loader
+          -p binbun-ssa -p binbun-ast -p binbun-decompile -p binbun-print
+          -p binbun-typedb -p binbun-debuginfo
+
+  workflows:
+    name: Workflows (zizmor)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          advanced-security: false
+
+  test-linux:
+    name: Tests (Linux x64, Arch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    # The tests read the system's bash, libc and libstdc++ and use z3,
+    # gcc, clang and llvm-dwarfdump when present: a pinned Arch image and
+    # package snapshot (scripts/ci/arch-setup.sh) keep them fixed.
+    container: archlinux:base-devel@sha256:fa2d4ce3310ddd90a4208e5168be8ad367da5129af1245f38fd2d803bcbe3239
+    steps:
+      - name: git, for checkout
+        run: pacman -Sy --noconfirm --needed git
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Packages and toolchain
+        run: |
+          scripts/ci/arch-setup.sh
+          cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Tests
+        run: cargo test --workspace --release --locked
+      - name: Tests, the CLI without collaboration
+        run: cargo test -p binbun-cli --no-default-features --release --locked
+
+  test-macos:
+    name: Tests (macOS arm64)
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain (rust-toolchain.toml)
+        run: cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Tests
+        run: cargo test --workspace --release --locked
+
+  test-windows:
+    name: Tests (Windows x64)
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain (rust-toolchain.toml)
+        run: cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Tests
+        run: cargo test --workspace --release --locked
+
+  gui:
+    name: GUI (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux, os: ubuntu-24.04, tests: --workspace }
+          - { name: macOS, os: macos-15, tests: -p binbun-gui-view }
+          - { name: Windows, os: windows-2025, tests: -p binbun-gui-view }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: gui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Window-system headers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -q -y --no-install-recommends \
+            pkg-config libfontconfig-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev
+      - name: Toolchain (rust-toolchain.toml)
+        run: cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: gui -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Clippy, without collaboration
+        run: cargo clippy --workspace --all-targets --locked --no-default-features -- -D warnings
+      - name: Tests
+        run: cargo test ${{ matrix.tests }} --locked
+
+  python:
+    name: Python ${{ matrix.python }} (Linux)
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest supported and the newest.
+        python: ["3.11", "3.x"]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Toolchain (rust-toolchain.toml)
+        run: cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # python/tests include mypy's stubtest of the extension's stubs.
+      - name: Wheel and tests (scripts/python-tests.sh)
+        env:
+          BINBUN_PY_VENV: ${{ runner.temp }}/venv
+        run: scripts/python-tests.sh

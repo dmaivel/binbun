@@ -1,0 +1,41 @@
+[package]
+name = "binbun-disasm"
+description = "Decode and inspect x86 and AArch64 instructions through one API."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["disassembler", "x86", "aarch64", "decoder", "instruction"]
+categories = ["parser-implementations", "development-tools::debugging", "no-std"]
+
+[features]
+default = ["x86", "aarch64"]
+# The x86 decoder: `Arch::X86`, `Insn::as_x86`, `binbun_disasm::x86`.
+x86 = ["dep:binbun-x86"]
+# The AArch64 decoder: `Arch::AArch64`, `Insn::as_aarch64`,
+# `binbun_disasm::aarch64`.
+aarch64 = ["dep:binbun-aarch64"]
+
+[dependencies]
+binbun-aarch64 = { workspace = true, optional = true }
+binbun-isa.workspace = true
+binbun-x86 = { workspace = true, optional = true }
+
+[dev-dependencies]
+# The fixtures' code sections, for the parity test.
+object = { version = "0.40", default-features = false, features = ["read", "std"] }
+
+[[example]]
+name = "quick_start"
+path = "../../examples/rust/quick_start.rs"
+required-features = ["x86"]
+
+[[example]]
+name = "decode_any"
+path = "../../examples/rust/decode_any.rs"
+required-features = ["x86", "aarch64"]
+
+[lints]
+workspace = true

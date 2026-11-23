@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}{{ section.title }} · binbun{% endblock title %}
+{% block description %}{% if section.description %}{{ section.description }}{% else %}{{ config.description }}{% endif %}{% endblock description %}
+
+{% block main %}
+  <section class="band"><div class="frame blog">
+    <article class="prose">
+      <h1>{{ section.title }}</h1>
+      <p class="post-meta">{{ section.description }} <a href="{{ get_url(path='blog/atom.xml', trailing_slash=false) }}">Atom feed</a></p>
+      {%- if section.pages %}
+      <ul class="posts">
+        {%- for p in section.pages %}
+        <li>
+          <time class="post-meta" datetime="{{ p.date }}">{{ p.date | date(format="%-d %B %Y") }}</time>
+          <a href="{{ p.permalink }}">{{ p.title }}</a>
+          {#- The post's opening (above its <!-- more -->), else its description. #}
+          {%- if p.summary %}{{ p.summary | safe }}{% elif p.description %}<p>{{ p.description }}</p>{% endif %}
+        </li>
+        {%- endfor %}
+      </ul>
+      {%- else %}
+      <p>No posts yet.</p>
+      {%- endif %}
+    </article>
+  </div></section>
+{% endblock main %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}{{ section.title }} · binbun docs{% endblock title %}
+{% block description %}{% if section.description %}{{ section.description }}{% else %}{{ config.description }}{% endif %}{% endblock description %}
+{#- A docs link answers a question: its card is text only. #}
+{% block preview_image %}
+<meta name="twitter:card" content="summary">
+{%- endblock preview_image %}
+
+{% block main %}
+  <section class="band"><div class="frame docs">
+    {% include "partials/sidebar.html" %}
+    <article class="prose">
+      <h1>{{ section.title }}</h1>
+      {{ section.content | safe }}
+      {%- if section.pages %}
+      <ul class="index">
+        {%- for p in section.pages %}
+        <li><a href="{{ p.permalink }}">{{ p.title }}</a>{% if p.description %}<span>{{ p.description }}</span>{% endif %}</li>
+        {%- endfor %}
+      </ul>
+      {%- endif %}
+      {%- for path in section.subsections %}
+      {%- set sub = get_section(path=path) %}
+      <h2 id="{{ sub.title | slugify }}"><a href="{{ sub.permalink }}">{{ sub.title }}</a></h2>
+      {%- if sub.description %}<p>{{ sub.description }}</p>{% endif %}
+      <ul class="index">
+        {%- for p in sub.pages %}
+        <li><a href="{{ p.permalink }}">{{ p.title }}</a>{% if p.description %}<span>{{ p.description }}</span>{% endif %}</li>
+        {%- endfor %}
+      </ul>
+      {%- endfor %}
+    </article>
+    {% set toc = section.toc %}{% include "partials/toc.html" %}
+  </div></section>
+{% endblock main %}

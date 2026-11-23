@@ -1,0 +1,105 @@
+# Linux system calls syzkaller's descriptions leave out (calls that block,
+# change the fuzzer's own process, or that it does not fuzz), read with
+# its sys.txt (whose fd, pid and timespec these use), so that every call a
+# program makes has the arguments the kernel reads: without a
+# description, decompilation takes a call to read all six argument
+# registers. Each takes the parameters of its SYSCALL_DEFINEn on x86-64,
+# in order, with types no finer than its prototype's; calls the kernel
+# no longer implements (sys_ni_syscall) are left out.
+#
+# futex's arguments depend on its operation; decompilation counts them
+# from a constant one (binbun-decompile's lowering of system calls).
+
+access(file ptr[in, filename], mode int32)
+shmget(key int32, size intptr, flag int32)
+shmat(shmid int32, addr buffer[in], flag int32) intptr
+shmctl(shmid int32, cmd int32, buf buffer[inout])
+fork() pid
+vfork() pid
+execve(file ptr[in, filename], argv ptr[in, ptr[in, filename]], envp ptr[in, ptr[in, filename]])
+semget(key int32, nsems int32, flag int32)
+semop(semid int32, sops buffer[inout], nsops intptr)
+semctl(semid int32, semnum int32, cmd int32, arg intptr)
+shmdt(addr buffer[in])
+msgget(key int32, flag int32)
+msgsnd(msqid int32, msgp buffer[in], msgsz intptr, flag int32)
+msgrcv(msqid int32, msgp buffer[out], msgsz intptr, msgtyp intptr, flag int32)
+msgctl(msqid int32, cmd int32, buf buffer[inout])
+umask(mask int32)
+getppid() pid
+setsid() pid
+getsid(pid pid) pid
+sched_get_priority_max(policy int32)
+sched_get_priority_min(policy int32)
+vhangup()
+prctl(option int32, arg2 intptr, arg3 intptr, arg4 intptr, arg5 intptr)
+arch_prctl(code int32, addr intptr)
+mount(dev ptr[in, filename], dir ptr[in, filename], type ptr[in, filename], flags intptr, data buffer[in])
+umount2(name ptr[in, filename], flags int32)
+quotactl(cmd int32, special ptr[in, filename], id int32, addr buffer[inout])
+setxattr(path ptr[in, filename], name ptr[in, filename], value buffer[in], size intptr, flags int32)
+lsetxattr(path ptr[in, filename], name ptr[in, filename], value buffer[in], size intptr, flags int32)
+fsetxattr(fd fd, name ptr[in, filename], value buffer[in], size intptr, flags int32)
+getxattr(path ptr[in, filename], name ptr[in, filename], value buffer[out], size intptr)
+lgetxattr(path ptr[in, filename], name ptr[in, filename], value buffer[out], size intptr)
+fgetxattr(fd fd, name ptr[in, filename], value buffer[out], size intptr)
+listxattr(path ptr[in, filename], list buffer[out], size intptr)
+llistxattr(path ptr[in, filename], list buffer[out], size intptr)
+flistxattr(fd fd, list buffer[out], size intptr)
+removexattr(path ptr[in, filename], name ptr[in, filename])
+lremovexattr(path ptr[in, filename], name ptr[in, filename])
+fremovexattr(fd fd, name ptr[in, filename])
+futex(uaddr ptr[inout, int32], op int32, val int32, timeout ptr[in, timespec], uaddr2 ptr[inout, int32], val3 int32)
+semtimedop(semid int32, sops buffer[inout], nsops intptr, timeout ptr[in, timespec])
+add_key(type ptr[in, filename], description ptr[in, filename], payload buffer[in], plen intptr, ringid int32)
+request_key(type ptr[in, filename], description ptr[in, filename], callout ptr[in, filename], ringid int32)
+keyctl(cmd int32, arg2 intptr, arg3 intptr, arg4 intptr, arg5 intptr)
+inotify_init() fd
+inotify_add_watch(fd fd, path ptr[in, filename], mask int32)
+inotify_rm_watch(fd fd, wd int32)
+unshare(flags intptr)
+set_robust_list(head buffer[in], len intptr)
+get_robust_list(pid pid, head ptr[out, intptr], len ptr[out, intptr])
+inotify_init1(flags int32) fd
+fanotify_init(flags int32, event_flags int32) fd
+# On x86-64 the mask is one register (32-bit kernels split it in two).
+fanotify_mark(fd fd, flags int32, mask int64, dfd fd, path ptr[in, filename])
+setns(fd fd, nstype int32)
+getcpu(cpu ptr[out, int32], node ptr[out, int32], cache buffer[out])
+seccomp(op int32, flags int32, args buffer[in])
+kexec_file_load(kernel fd, initrd fd, cmdline_len intptr, cmdline ptr[in, filename], flags intptr)
+execveat(dfd fd, file ptr[in, filename], argv ptr[in, ptr[in, filename]], envp ptr[in, ptr[in, filename]], flags int32)
+userfaultfd(flags int32) fd
+uretprobe()
+uprobe()
+open_tree(dfd fd, path ptr[in, filename], flags int32) fd
+move_mount(from_dfd fd, from_path ptr[in, filename], to_dfd fd, to_path ptr[in, filename], flags int32)
+fsopen(name ptr[in, filename], flags int32) fd
+fsconfig(fd fd, cmd int32, key ptr[in, filename], value buffer[in], aux int32)
+fsmount(fd fd, flags int32, attr_flags int32) fd
+fspick(dfd fd, path ptr[in, filename], flags int32) fd
+mount_setattr(dfd fd, path ptr[in, filename], flags int32, attr buffer[in], size intptr)
+quotactl_fd(fd fd, cmd int32, id int32, addr buffer[inout])
+landlock_create_ruleset(attr buffer[in], size intptr, flags int32) fd
+landlock_add_rule(ruleset fd, rule_type int32, rule_attr buffer[in], flags int32)
+landlock_restrict_self(ruleset fd, flags int32)
+futex_waitv(waiters buffer[in], nr intptr, flags int32, timeout ptr[in, timespec], clockid int32)
+fchmodat2(dfd fd, file ptr[in, filename], mode int32, flags int32)
+futex_wake(uaddr buffer[inout], mask intptr, nr int32, flags int32)
+futex_wait(uaddr buffer[inout], val intptr, mask intptr, flags int32, timeout ptr[in, timespec], clockid int32)
+futex_requeue(waiters buffer[in], flags int32, nr_wake int32, nr_requeue int32)
+statmount(req buffer[in], buf buffer[out], size intptr, flags int32)
+listmount(req buffer[in], ids ptr[out, int64], nr intptr, flags int32)
+lsm_get_self_attr(attr int32, ctx buffer[out], size ptr[inout, int32], flags int32)
+lsm_set_self_attr(attr int32, ctx buffer[in], size int32, flags int32)
+lsm_list_modules(ids ptr[out, int64], size ptr[inout, int32], flags int32)
+mseal(start intptr, len intptr, flags intptr)
+setxattrat(dfd fd, path ptr[in, filename], at_flags int32, name ptr[in, filename], args buffer[in], size intptr)
+getxattrat(dfd fd, path ptr[in, filename], at_flags int32, name ptr[in, filename], args buffer[inout], size intptr)
+listxattrat(dfd fd, path ptr[in, filename], at_flags int32, list buffer[out], size intptr)
+removexattrat(dfd fd, path ptr[in, filename], at_flags int32, name ptr[in, filename])
+open_tree_attr(dfd fd, path ptr[in, filename], flags int32, attr buffer[in], size intptr) fd
+file_getattr(dfd fd, file ptr[in, filename], attr buffer[out], size intptr, at_flags int32)
+file_setattr(dfd fd, file ptr[in, filename], attr buffer[in], size intptr, at_flags int32)
+listns(req buffer[in], ids ptr[out, int64], nr intptr, flags int32)
+rseq_slice_yield()

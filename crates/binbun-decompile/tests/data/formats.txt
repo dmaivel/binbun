@@ -1,0 +1,99 @@
+# Format strings for tests/format.rs: a family, a tab, the format as the
+# contents of a C string literal. Every distinct constant format a call to a
+# printf- or scanf-like import passes in the fixture, bash, libc and
+# libstdc++ as binbun decompiles them (2026-11-09; libc calls none).
+printf	 &
+printf	 (errno=%d)\n
+printf	#: %s:%d\nmsgid %s%s\nmsgstr \"\"\n
+printf	%%.%d%c
+printf	%*c
+printf	%*d%s%s
+printf	%*s
+printf	%*s%s - 
+printf	%*s%s\n
+printf	%*s%s\n\n
+printf	%*sbash(1)\n\n
+printf	%-15s\t%s\n
+printf	%-20s %20s
+printf	%-20s\t%s\n
+printf	%.*s
+printf	%04lo\n
+printf	%2d  %s
+printf	%2d) %s
+printf	%4d\t%s\n
+printf	%5d%c %s%s\n
+printf	%5ld
+printf	%c%s\n
+printf	%d
+printf	%d\n
+printf	%ld
+printf	%ldm%d%c%03lds
+printf	%ls
+printf	%ls\n
+printf	%p
+printf	%p 
+printf	%s
+printf	%s 
+printf	%s %d
+printf	%s %d %s
+printf	%s %s
+printf	%s %s 
+printf	%s %s %s\n
+printf	%s %s\n
+printf	%s - 
+printf	%s%s
+printf	%s%s%s
+printf	%s%s\n
+printf	%s.%d
+printf	%s.%d(%d)-%s
+printf	%s/%s.XXXXXX
+printf	%s: 
+printf	%s: %s: %s: %s\n
+printf	%s: %s\n
+printf	%s: Undefined behavior detected.\n
+printf	%s=%s
+printf	%s=%s\n
+printf	%s=(%s)\n
+printf	%s[%s]
+printf	%s\n
+printf	%s\t
+printf	%s_PID
+printf	%u
+printf	%u%c%06u
+printf	''%s
+printf	(%s, -%c) 
+printf	(-%c) 
+printf	+o %s 
+printf	-%c 
+printf	-A %s 
+printf	-o %s 
+printf	:%u\n
+printf	@ %p {\n
+printf	@ %p\n
+printf	[%d] %ld\n
+printf	[%d]%c 
+printf	[%d]%s
+printf	\"%s\"%s
+printf	\"%s\"\n
+printf	\\U%08X
+printf	\\u%04X
+printf	\n%2d  %s
+printf	\t(wd: %s)
+printf	alias %s
+printf	builtin hash -p %s %s\n
+printf	complete 
+printf	compopt 
+printf	declare %s
+printf	declare %s=%s
+printf	declare -%s %s
+printf	declare -%s %s=%s
+printf	enable %s\n
+printf	enable -n %s\n
+printf	for %s in 
+printf	select %s in 
+printf	set %co %s\n
+printf	shopt %s %s\n
+printf	trap -- %s %d\n
+printf	trap -- %s %s\n
+printf	u=%s,g=%s,o=%s\n
+printf	umask%s 

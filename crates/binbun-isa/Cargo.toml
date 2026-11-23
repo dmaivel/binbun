@@ -1,0 +1,15 @@
+[package]
+name = "binbun-isa"
+description = "The instruction model and decoder trait shared by binbun's architectures."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../README.md"
+keywords = ["disassembler", "instruction", "isa"]
+categories = ["development-tools::debugging", "no-std"]
+
+[lints]
+workspace = true

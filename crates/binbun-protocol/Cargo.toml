@@ -1,0 +1,32 @@
+[package]
+name = "binbun-protocol"
+description = "binbun's client protocol: the writes and transactions of a session host, the request, response and event types, length-prefixed JSON-RPC framing and the handshake, shared by the Python wheel and the GUI's server."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+# Only the Python wheel's and the GUI's, neither on crates.io.
+publish = false
+
+[dependencies]
+binbun.workspace = true
+binbun-paths.workspace = true
+binbun-session.workspace = true
+postcard.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# Whether a discovery file's server still runs: `kill(pid, 0)`.
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
+# Windows' transport, a named pipe (`src/socket/pipe.rs`).
+[target.'cfg(windows)'.dependencies]
+getrandom.workspace = true
+interprocess.workspace = true
+tokio = { workspace = true, features = ["net"] }
+widestring.workspace = true
+
+[lints]
+workspace = true

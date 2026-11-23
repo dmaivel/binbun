@@ -1,0 +1,32 @@
+[package]
+name = "binbun-x86"
+description = "x86 and x86-64 instruction decoder generated from Intel XED's datafiles."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# Its generated code derives from Intel XED (LICENSE-XED).
+license = "(MIT OR Apache-2.0) AND Apache-2.0"
+repository.workspace = true
+homepage.workspace = true
+keywords = ["x86", "x86-64", "disassembler", "decoder", "xed"]
+categories = ["parser-implementations", "development-tools::debugging", "no-std"]
+
+[dependencies]
+binbun-isa.workspace = true
+
+[features]
+# `decode_reference`: the reference decoder alone, without the 64-bit fast
+# path, so that differential fuzzing (`fuzz/`) can compare the two. Not
+# public API.
+internal-reference = []
+
+[[example]]
+name = "disassemble"
+path = "../../examples/rust/disassemble.rs"
+
+[[example]]
+name = "instruction_info"
+path = "../../examples/rust/instruction_info.rs"
+
+[lints]
+workspace = true
