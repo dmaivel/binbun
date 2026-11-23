@@ -136,7 +136,13 @@ jobs:
         run: |
           mkdir smoke
           tar -xzf dist/binbun-cli-*.tar.gz -C smoke --strip-components=1
-          file smoke/bin/binbun | grep -E 'static(-pie)? linked'
+          # Static (plain or PIE, as each target links by default): no
+          # program interpreter, the dynamic loader, to ask for.
+          file smoke/bin/binbun
+          if readelf -l smoke/bin/binbun | grep -q INTERP; then
+            echo "smoke/bin/binbun asks for a dynamic loader: not static" >&2
+            exit 1
+          fi
           smoke/bin/binbun --version
       - if: inputs.attest
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
