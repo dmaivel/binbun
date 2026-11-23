@@ -135,7 +135,7 @@ fn canonical_checks_are_one_statement_and_trap_as_the_machine_does() {
     assert_eq!(counts.casts, 0, "{text}");
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("skipped compiling: neither gcc nor clang found");
+        eprintln!("skipped compiling: no C compiler to check with");
         return;
     }
     let scratch = Scratch::new("canonical");

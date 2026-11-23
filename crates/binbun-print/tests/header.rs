@@ -193,7 +193,7 @@ int main(void) {
 fn header_compiles_cleanly_and_its_helpers_give_l0s_values() {
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("skipped: neither gcc nor clang found");
+        eprintln!("skipped: no C compiler to check with");
         return;
     }
     let scratch = Scratch::new("header");
@@ -347,7 +347,7 @@ int main(void) {
 fn vector_types_and_helpers_compile_cleanly_and_give_l0s_values() {
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("skipped: neither gcc nor clang found");
+        eprintln!("skipped: no C compiler to check with");
         return;
     }
     let scratch = Scratch::new("vectors");
@@ -429,7 +429,7 @@ int main(void) {
 fn exception_macros_compile_cleanly_and_run_only_the_body() {
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("skipped: neither gcc nor clang found");
+        eprintln!("skipped: no C compiler to check with");
         return;
     }
     let scratch = Scratch::new("exceptions");
@@ -878,7 +878,7 @@ int main(void) {
 fn unlifted_helpers_compile_cleanly() {
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("skipped: neither gcc nor clang found");
+        eprintln!("skipped: no C compiler to check with");
         return;
     }
     let scratch = Scratch::new("unlifted");

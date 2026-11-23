@@ -281,8 +281,16 @@ impl Image for Platform {
     }
 }
 
-/// The compilers present.
+/// The compilers present to check binbun's C with; none on Windows. The
+/// checks compile C written for an LP64 program (`long` 64 bits, as
+/// Linux's and macOS's are), LLP64 output included, on a host of the
+/// same model: Windows' `long` is 32 bits, so there they would measure
+/// the host's mismatch, not the C.
 pub fn compilers() -> Vec<&'static str> {
+    if cfg!(windows) {
+        eprintln!("binbun's C is checked on LP64 hosts (Linux, macOS), not Windows");
+        return Vec::new();
+    }
     ["gcc", "clang"]
         .into_iter()
         .filter(|compiler| {

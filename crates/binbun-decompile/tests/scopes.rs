@@ -256,8 +256,12 @@ fn placed(before: &Function) -> Function {
 /// The scratch directories made so far (one per compilation).
 static FILES: AtomicUsize = AtomicUsize::new(0);
 
-/// Compiles `text` with each compiler present (C11, binbun's flags).
+/// Compiles `text` with each compiler present (C11, binbun's flags), on
+/// LP64 hosts (Linux, macOS): the C is written for an LP64 program.
 fn compiles(text: &str) {
+    if cfg!(windows) {
+        return;
+    }
     let dir = std::env::home_dir()
         .expect("a home directory")
         .join(".cache/binbun-print-check")

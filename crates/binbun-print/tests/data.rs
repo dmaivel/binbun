@@ -164,7 +164,7 @@ fn read_only_data_reads_as_constants_strings_and_functions() {
 fn read_only_data_compiles_without_warnings() {
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("skipped: neither gcc nor clang found");
+        eprintln!("skipped: no C compiler to check with");
         return;
     }
     let scratch = Scratch::new("data");

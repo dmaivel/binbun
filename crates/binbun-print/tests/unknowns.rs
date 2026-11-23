@@ -362,7 +362,7 @@ fn the_reading_view_leaves_a_merged_local_unassigned_where_nothing_reaches() {
 fn named_unknowns_compile_without_warnings() {
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("skipped: neither gcc nor clang found");
+        eprintln!("skipped: no C compiler to check with");
         return;
     }
     let scratch = Scratch::new("unknowns");

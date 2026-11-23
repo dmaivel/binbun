@@ -217,6 +217,10 @@ fn run_against_source(sources: &[(&str, String)]) {
         eprintln!("skipped: compiling -mavx2 code needs an x86-64 host");
         return;
     }
+    if cfg!(windows) {
+        eprintln!("skipped: binbun's C is checked on LP64 hosts (Linux, macOS), not Windows");
+        return;
+    }
     let dir = env::home_dir()
         .unwrap()
         .join(".cache/binbun-print-check")

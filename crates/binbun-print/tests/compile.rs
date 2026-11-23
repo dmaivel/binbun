@@ -23,7 +23,7 @@ use common::{Builder, LLP64, LP64, Platform, Scratch, compilers, print_with, war
 fn hand_built_functions_compile_without_warnings() {
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("skipped: neither gcc nor clang found");
+        eprintln!("skipped: no C compiler to check with");
         return;
     }
     let scratch = Scratch::new("compile");

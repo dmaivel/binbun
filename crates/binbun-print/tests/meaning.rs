@@ -1657,7 +1657,7 @@ fn interpret(case: &Case, row: &[u64]) -> u64 {
 fn printed_c_means_what_l2_means() {
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("skipped: neither gcc nor clang found");
+        eprintln!("skipped: no C compiler to check with");
         return;
     }
     let cases = cases();

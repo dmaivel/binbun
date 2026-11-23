@@ -256,7 +256,7 @@ fn windows_arm64_reaches_memory_through_x18s_pointer() {
 fn both_spellings_compile_without_warnings() {
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("skipped: neither gcc nor clang found");
+        eprintln!("skipped: no C compiler to check with");
         return;
     }
     let scratch = Scratch::new("thread");

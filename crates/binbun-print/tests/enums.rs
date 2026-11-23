@@ -119,7 +119,7 @@ fn macro_constants_are_defined_as_macros_where_no_header_has() {
     assert!(!text.contains("enum"), "{text}");
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("no C compiler found; skipping the compile");
+        eprintln!("no C compiler to check with; skipping the compile");
         return;
     }
     let scratch = Scratch::new("macro-constants");
@@ -242,7 +242,7 @@ fn constants_print_by_name_where_c_gives_the_name_the_same_value() {
 fn named_constants_compile_without_warnings() {
     let compilers = compilers();
     if compilers.is_empty() {
-        eprintln!("no C compiler found; skipping");
+        eprintln!("no C compiler to check with; skipping");
         return;
     }
     let scratch = Scratch::new("enums");

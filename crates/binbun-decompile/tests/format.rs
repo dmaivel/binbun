@@ -294,6 +294,12 @@ fn compilers_accept_the_derived_types() {
         .map(|(refusal, count)| format!("{} {count}", refusal.name()))
         .collect();
     eprintln!("accepted {accepted}; refused {}", names.join(", "));
+    if cfg!(windows) {
+        // The calls are glibc's printf and scanf, with POSIX types
+        // (ssize_t, <sys/types.h>): compiled where those are the host's.
+        eprintln!("skipped compiling: glibc's formats are checked on POSIX hosts");
+        return;
+    }
     let directory = format!("{}/format-oracle", env!("CARGO_TARGET_TMPDIR"));
     fs::create_dir_all(&directory).unwrap();
     let file = format!("{directory}/formats.c");

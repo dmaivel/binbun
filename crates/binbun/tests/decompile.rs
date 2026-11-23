@@ -2068,6 +2068,10 @@ fn a_va_list_parameter_decays_to_the_tag_report_passes_on() {
         ] {
             assert!(text.contains(line), "{name}: no {line} in\n{text}");
         }
+        if cfg!(windows) {
+            // Compiled on LP64 hosts (Linux, macOS): System V's va_list.
+            continue;
+        }
         let directory = std::env::home_dir()
             .unwrap()
             .join(".cache/binbun-print-check")

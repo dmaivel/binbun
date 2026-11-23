@@ -72,8 +72,12 @@ fn processor_dependent(stats: &str) -> usize {
 }
 
 /// Every function compiles (where a compiler is installed): no errors,
-/// no warnings.
+/// no warnings. Not judged on Windows: the C is a Linux program's,
+/// written for LP64, and Windows' `long` is 32 bits.
 fn compiled(functions: &BTreeMap<String, (String, String)>) {
+    if cfg!(windows) {
+        return;
+    }
     for (name, (stats, _)) in functions {
         for compiler in ["gcc", "clang"] {
             if let Some(at) = stats.find(&format!(", {compiler} ")) {
