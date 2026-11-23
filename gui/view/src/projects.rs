@@ -199,7 +199,28 @@ mod tests {
     /// reads it: the directory's own time).
     fn used(dir: &Path, when: SystemTime) {
         std::fs::create_dir_all(dir).unwrap();
-        File::open(dir).unwrap().set_modified(when).unwrap();
+        open_dir(dir).set_modified(when).unwrap();
+    }
+
+    /// The directory `dir`, opened so its time can be set.
+    #[cfg(not(windows))]
+    fn open_dir(dir: &Path) -> File {
+        File::open(dir).unwrap()
+    }
+
+    /// The directory `dir`, opened so its time can be set: Windows opens
+    /// a directory only with `FILE_FLAG_BACKUP_SEMANTICS`, and setting
+    /// its time needs `FILE_WRITE_ATTRIBUTES`.
+    #[cfg(windows)]
+    fn open_dir(dir: &Path) -> File {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        std::fs::OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(dir)
+            .unwrap()
     }
 
     /// One project for the bytes opens with no question; a second (a
