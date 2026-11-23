@@ -113,10 +113,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Packages from the cache
+        id: packages
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /var/cache/pacman/pkg
+          key: arch-packages-${{ hashFiles('scripts/ci/arch-setup.sh') }}
       - name: Packages and toolchain
         run: |
           scripts/ci/arch-setup.sh
           cargo --version
+      # Saved now, not when the job ends: a failing test keeps them too.
+      - name: Packages into the cache
+        if: steps.packages.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /var/cache/pacman/pkg
+          key: ${{ steps.packages.outputs.cache-primary-key }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
