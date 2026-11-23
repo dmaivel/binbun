@@ -1241,7 +1241,7 @@ fn writer(dir: &Path) -> fs::File {
         .create(true)
         .write(true)
         .truncate(false)
-        .open(dir.join("collab").join("lock"))
+        .open(Project::new(dir).lock())
         .unwrap()
 }
 

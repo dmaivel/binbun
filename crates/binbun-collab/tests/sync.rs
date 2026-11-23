@@ -2030,8 +2030,7 @@ async fn a_shared_project_exports_without_its_share_and_imports_unshared() {
 }
 
 /// Ann, her identity in `home` and her project kept in `root` as binbun
-/// keeps projects (by the binary's contents), sharing it over `net`; the
-/// lock taken as the CLI and the GUI take it.
+/// keeps projects (by the binary's contents), sharing it over `net`.
 async fn sharing_in(home: &Path, root: &Path, net: &MemNet) -> (Person, Peer, JoinTicket) {
     let ann = Person::open(
         "ann",
@@ -2043,8 +2042,6 @@ async fn sharing_in(home: &Path, root: &Path, net: &MemNet) -> (Person, Peer, Jo
     );
     let asked = Arc::new(AtomicUsize::new(0));
     let (a, ticket) = ann.share(net, approver(Role::Editor, &asked)).await;
-    let collab = ann.session.project().unwrap().dir().join("collab");
-    fs::write(collab.join("lock"), "").unwrap();
     (ann, a, ticket)
 }
 
@@ -2100,7 +2097,7 @@ async fn a_shared_project_replaced_by_its_own_export_keeps_its_share() {
         fs::read(share.join("blobs").join("offers.bin")).unwrap(),
         offers
     );
-    assert!(collab.join("lock").is_file());
+    assert!(mine.lock().is_file());
 
     // Shared again: the same share, Ann its owner, Bob still a member
     // (the old ticket links him again).
@@ -2142,7 +2139,7 @@ async fn a_shared_project_replaced_by_another_projects_export_drops_that_share()
     // Ann's share was of the log replaced: gone with it; the lock stays.
     let collab = mine.dir().join("collab");
     assert!(!collab.join(ticket.project.to_string()).exists());
-    assert!(collab.join("lock").is_file());
+    assert!(mine.lock().is_file());
 
     // Opened, it has Cat's edits.
     let opened = Person::open(

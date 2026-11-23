@@ -237,12 +237,15 @@ fn importing_never_replaces_a_project_with_edits_unless_asked() {
     );
     let after = fs::read_to_string(mine.edits()).unwrap();
     assert!(after.contains("\"theirs\""), "{after}");
-    // Nothing left beside it from the swap.
-    let names: Vec<String> = fs::read_dir(&root)
+    // Nothing left beside it from the swap: the project and its lock.
+    let mut names: Vec<String> = fs::read_dir(&root)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(names, [key.dir_name()]);
+    names.sort();
+    let lock = mine.lock();
+    let lock = lock.file_name().unwrap().to_string_lossy();
+    assert_eq!(names, [lock.as_ref(), key.dir_name().as_str()]);
 }
 
 #[test]

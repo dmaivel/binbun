@@ -212,7 +212,9 @@ fn a_joiner_without_the_binary_fetches_the_one_sent_and_joins_with_it() {
     let projects = dir.join("bob").join("data").join("binbun").join("projects");
     let names: Vec<String> = std::fs::read_dir(&projects)
         .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .map(Result::unwrap)
+        .filter(|entry| entry.file_type().unwrap().is_dir())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .collect();
     assert!(
         names.len() == 1 && names[0].contains("-program-x86_64.elf@"),
@@ -383,7 +385,9 @@ fn share_and_join_sync_edits_both_ways() {
     let projects = dir.join("bob").join("data").join("binbun").join("projects");
     let names: Vec<String> = std::fs::read_dir(&projects)
         .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .map(Result::unwrap)
+        .filter(|entry| entry.file_type().unwrap().is_dir())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .collect();
     assert!(
         names.len() == 1 && names[0].contains("-program-x86_64.elf@"),

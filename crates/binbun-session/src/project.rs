@@ -405,6 +405,19 @@ impl Project {
         self.dir.join(PRIVATE)
     }
 
+    /// Its lock file ([`Self::hold`]): beside its directory, hidden
+    /// (`.<name>.lock`), not in it, so an import can swap the directory
+    /// while holding it (Windows renames no directory with a file in it
+    /// open).
+    pub fn lock(&self) -> PathBuf {
+        let name = self
+            .dir
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.dir.with_file_name(format!(".{name}.lock"))
+    }
+
     /// Whether it holds the user's work, what an import asks before
     /// replacing: edits (a project file that is not empty, or one that
     /// cannot be read), overlays, example states, private bookmarks (or
@@ -450,7 +463,7 @@ impl Project {
     }
 
     /// The project held for writing by this process until what is
-    /// returned is dropped: its lock file (`collab/lock`) locked, so that
+    /// returned is dropped: its lock file ([`Self::lock`]) locked, so that
     /// no second process (and no second session of this one) writes its
     /// journal meanwhile. The lock is the operating system's, on the open
     /// file, not anything written in it: it goes with the process however
@@ -484,7 +497,7 @@ impl Project {
         };
         let dir = self.dir.join(COLLAB);
         fs::create_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
-        let path = dir.join("lock");
+        let path = self.lock();
         let file = fs::OpenOptions::new()
             .create(true)
             .write(true)

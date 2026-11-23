@@ -7,7 +7,7 @@
 //! The identity is this install's (the one that signs the journal's
 //! changes), held by one process at a time (`collab.lock` beside it, as
 //! the CLI's `share` and `join` hold it), and the project by one peer
-//! (`<project>/collab/lock`).
+//! (its lock file, `.<project>.lock` beside it).
 //!
 //! Files by hash: a sharer may send the binary and its debug file to
 //! those who join ([`Sends`], [`Net::send`]); a joiner visits the host

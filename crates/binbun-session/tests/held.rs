@@ -54,12 +54,12 @@ fn refused(session: &Session) -> Option<String> {
 
 /// The project's lock file opened as another process would open it.
 fn another(project: &Path) -> File {
-    fs::create_dir_all(project.join("collab")).unwrap();
+    fs::create_dir_all(project.parent().unwrap()).unwrap();
     OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(false)
-        .open(project.join("collab").join("lock"))
+        .open(Project::new(project).lock())
         .unwrap()
 }
 
