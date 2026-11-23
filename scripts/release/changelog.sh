@@ -4,7 +4,9 @@
 #
 #   scripts/release/changelog.sh notes VERSION     the section's text (the
 #                                                  release notes), without
-#                                                  its heading
+#                                                  its heading, each
+#                                                  paragraph and list item
+#                                                  on one line
 #   scripts/release/changelog.sh date VERSION      its date
 #   scripts/release/changelog.sh security VERSION  exit 0 if it has a
 #                                                  "### Security" group
@@ -61,13 +63,39 @@ esac
 date=$(printf '%s\n' "$section" | sed -n '1s/^date //p')
 notes=$(printf '%s\n' "$section" | sed '1d')
 
+# The notes with each paragraph and list item on one line, as GitHub
+# shows them best: a line that starts no block (a heading, list item,
+# quote, table row or code fence) continues the one before, unless that
+# is a heading or table row; code blocks are left as they are.
+unwrapped() {
+    awk '
+        function flush() { if (held) { print current; held = 0 } }
+        /^[ \t]*```/ { flush(); print; fenced = !fenced; next }
+        fenced { print; next }
+        /^[ \t]*$/ { flush(); print; next }
+        {
+            text = $0
+            sub(/^[ \t]+/, "", text)
+            starts = text ~ /^(#|[-*+] |[0-9]+[.)] |>|\|)/
+            if (held && !starts && current !~ /^[ \t]*(#|\|)/) {
+                current = current " " text
+                next
+            }
+            flush()
+            current = $0
+            held = 1
+        }
+        END { flush() }
+    '
+}
+
 case $command in
     notes)
         [ -n "$notes" ] || {
             echo "changelog.sh: v$version's section in $file is empty" >&2
             exit 1
         }
-        printf '%s\n' "$notes"
+        printf '%s\n' "$notes" | unwrapped
         ;;
     date)
         printf '%s\n' "$date" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || {
