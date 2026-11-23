@@ -775,8 +775,9 @@ static inline _Noreturn void binbun_escape_jump(int kind, size_t count, const ui
  * reads: stack_guard at 0x28, the stack protector's canary). Defined
  * where the compiler has the builtin, an AArch64 host's too (a Mac's):
  * there an x86-64 program's C compiles, though the host's thread pointer
- * is not the program's. */
-#if defined(__x86_64__) || defined(__aarch64__)
+ * is not the program's. Not on Windows, whose compilers have no such
+ * builtin and whose threads have no tcbhead_t (their TEB is below). */
+#if (defined(__x86_64__) || defined(__aarch64__)) && !defined(_WIN32)
 struct tcbhead_t;
 static inline struct tcbhead_t *binbun_tcb(void) {
     return (struct tcbhead_t *)__builtin_thread_pointer();
