@@ -351,6 +351,9 @@ fn share_and_join_sync_edits_both_ways() {
             "rename checked guard",
             "wait changes 2 60",
             "state",
+            // Ann quits first, so her quit is acknowledged by Bob, who
+            // is still linked; Bob's, alone, by no one.
+            "wait unlinked 60",
             "quit",
         ],
     );
@@ -359,9 +362,8 @@ fn share_and_join_sync_edits_both_ways() {
     assert!(!host.contains("asks to join"), "{host}");
     assert!(host.contains("ok: name checked guard"), "{host}");
     assert!(guest.contains("ok: name classify sort"), "{guest}");
-    for said in [&host, &guest] {
-        assert!(said.contains("1 member(s) acknowledged"), "{said}");
-    }
+    assert!(host.contains("1 member(s) acknowledged"), "{host}");
+    assert!(guest.contains("0 member(s) acknowledged"), "{guest}");
     let members: Vec<&str> = host
         .lines()
         .filter(|line| line.starts_with("member "))
