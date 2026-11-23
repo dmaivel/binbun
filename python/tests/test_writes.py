@@ -7,6 +7,7 @@ threads, writes outside one, authors)."""
 
 from __future__ import annotations
 
+import hashlib
 import re
 import threading
 from collections.abc import Iterator
@@ -17,8 +18,10 @@ import pytest
 import binbun
 from conftest import FIXTURE, cli
 
-# Corrections made on a copy of bash, with which 1,777 of its 1,801
-# functions verified with 0 differences.
+# Corrections made on a copy of Arch's bash 5.3.20 (BASH_SHA256), with which
+# 1,777 of its 1,801 functions verified with 0 differences. Their addresses
+# are that build's, so the test that makes them runs on it alone.
+BASH_SHA256 = "c14c8f498f3be96f076ceb07d65dba584a86dca3c86b5dce65ed0f6cae73358d"
 BASH_CORRECTIONS = {
     "strings": [(0xECB0A, 23)],
     "dwords": [(0xED554, 4)],
@@ -151,6 +154,8 @@ def test_an_exception_rolls_the_transaction_back_byte_for_byte(bash_writable: bi
 def test_corrections_are_analysed_anew_once_and_swapped_in_at_commit(
     bash_writable: binbun.Database, bash_path: Path
 ) -> None:
+    if hashlib.sha256(bash_path.read_bytes()).hexdigest() != BASH_SHA256:
+        pytest.skip("the corrections are for Arch's bash 5.3.20, not this bash")
     db = bash_writable
     main = db.functions.get_by_name("main")
     assert main is not None
