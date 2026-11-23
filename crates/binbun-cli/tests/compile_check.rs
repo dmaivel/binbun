@@ -6,7 +6,6 @@
 
 //! The compile check of `binbun decompile --stats`.
 
-use std::path::PathBuf;
 use std::{env, fs};
 
 use binbun_cli::compile_check;
@@ -46,7 +45,7 @@ fn compile_check_counts_errors_and_warnings() {
         assert!(verdict.errors >= 1, "{verdict:?}");
     }
     // The checks leave nothing behind.
-    let root = PathBuf::from(env::var_os("HOME").unwrap()).join(".cache/binbun-print-check");
+    let root = env::home_dir().unwrap().join(".cache/binbun-print-check");
     let prefix = format!("{}-", std::process::id());
     let left = fs::read_dir(&root).map_or(0, |entries| {
         entries

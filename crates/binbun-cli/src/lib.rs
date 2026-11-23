@@ -160,18 +160,17 @@ static CHECKS: AtomicUsize = AtomicUsize::new(0);
 ///
 /// # Errors
 ///
-/// `HOME` is not set, or the directory or files cannot be written, or a
-/// compiler cannot be run for another reason than its absence.
+/// There is no home directory, or the directory or files cannot be
+/// written, or a compiler cannot be run for another reason than its
+/// absence.
 pub fn compile_check(source: &str, headers: &[(&str, &str)]) -> io::Result<Vec<Verdict>> {
-    let home = std::env::var_os("HOME")
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
-    let directory = PathBuf::from(home)
-        .join(".cache/binbun-print-check")
-        .join(format!(
-            "{}-{}",
-            std::process::id(),
-            CHECKS.fetch_add(1, Ordering::Relaxed)
-        ));
+    let home = std::env::home_dir()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no home directory"))?;
+    let directory = home.join(".cache/binbun-print-check").join(format!(
+        "{}-{}",
+        std::process::id(),
+        CHECKS.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&directory)?;
     let verdicts = compile_in(&directory, source, headers);
     let removed = std::fs::remove_dir_all(&directory);
