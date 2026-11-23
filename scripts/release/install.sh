@@ -188,8 +188,9 @@ install_linux() {
             cp "$icon" "$share/icons/hicolor/$size/apps/"
             installed "$share/icons/hicolor/$size/apps/$(basename "$icon")"
         done
-        command -v update-desktop-database >/dev/null 2>&1 &&
+        if command -v update-desktop-database >/dev/null 2>&1; then
             update-desktop-database -q "$share/applications" 2>/dev/null || true
+        fi
         if missing=$(ldd "$libdir/$VERSION/bin/binbun" 2>/dev/null | grep 'not found'); then
             say "warning: libraries binbun needs were not found:"
             printf '%s\n' "$missing" >&2
