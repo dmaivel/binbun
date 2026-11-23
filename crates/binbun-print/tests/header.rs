@@ -798,6 +798,18 @@ fn float_cases() -> String {
     out
 }
 
+/// Whether this processor runs FMA and SSE4.1 code.
+#[cfg(target_arch = "x86_64")]
+fn has_fma_and_sse41() -> bool {
+    std::arch::is_x86_feature_detected!("fma") && std::arch::is_x86_feature_detected!("sse4.1")
+}
+
+/// Whether this processor runs FMA and SSE4.1 code: not an x86 one.
+#[cfg(not(target_arch = "x86_64"))]
+const fn has_fma_and_sse41() -> bool {
+    false
+}
+
 /// `binbun_defs.h`'s floating-point operations under a rounding
 /// (`float_mul(a, b, rounding)`) and their exceptions
 /// (`float_mul_status`) run the machine's instruction, so they are
@@ -808,10 +820,7 @@ fn float_cases() -> String {
 #[test]
 fn float_operations_under_a_rounding_give_l0s_values_and_exceptions() {
     let compilers = compilers();
-    let features = cfg!(target_arch = "x86_64")
-        && std::arch::is_x86_feature_detected!("fma")
-        && std::arch::is_x86_feature_detected!("sse4.1");
-    if compilers.is_empty() || !features {
+    if compilers.is_empty() || !has_fma_and_sse41() {
         eprintln!("skipped: needs gcc or clang on x86-64 with FMA and SSE4.1");
         return;
     }
