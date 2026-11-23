@@ -164,7 +164,8 @@ fn holds(haystack: &[u8], needle: &str) -> bool {
         .any(|window| window == needle.as_bytes())
 }
 
-/// The bytes of every file under `dir` but a `private.toml`, by path.
+/// The bytes of every file under `dir` but a `private.toml` and the lock
+/// files (empty, and held open: Windows refuses to read them), by path.
 fn shared_files(dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut found = BTreeMap::new();
     let mut todo = vec![dir.to_owned()];
@@ -173,7 +174,9 @@ fn shared_files(dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
             let path = entry.path();
             if path.is_dir() {
                 todo.push(path);
-            } else if path.file_name().is_some_and(|name| name != "private.toml") {
+            } else if path.file_name().is_some_and(|name| name != "private.toml")
+                && path.extension().is_none_or(|extension| extension != "lock")
+            {
                 found.insert(path.clone(), fs::read(&path).unwrap());
             }
         }
