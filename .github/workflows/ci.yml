@@ -121,7 +121,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Tests
-        run: cargo test --workspace --release --locked
+        run: cargo test --workspace --release --locked --no-fail-fast
       - name: Tests, the CLI without collaboration
         run: cargo test -p binbun-cli --no-default-features --release --locked
 
@@ -139,7 +139,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Tests
-        run: cargo test --workspace --release --locked
+        run: cargo test --workspace --release --locked --no-fail-fast
 
   test-windows:
     name: Tests (Windows x64)
@@ -155,7 +155,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Tests
-        run: cargo test --workspace --release --locked
+        run: cargo test --workspace --release --locked --no-fail-fast
 
   gui:
     name: GUI (${{ matrix.name }})
@@ -193,7 +193,7 @@ jobs:
       - name: Clippy, without collaboration
         run: cargo clippy --workspace --all-targets --locked --no-default-features -- -D warnings
       - name: Tests
-        run: cargo test ${{ matrix.tests }} --locked
+        run: cargo test ${{ matrix.tests }} --locked --no-fail-fast
 
   python:
     name: Python ${{ matrix.python }} (Linux)
