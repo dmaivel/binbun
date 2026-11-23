@@ -47,9 +47,40 @@ def test_the_extension_links_no_libpython() -> None:
         assert not [name for name in imported if name.startswith("python3") and name != "python3.dll"], imported
         return
     assert ".abi3." in native.name, native.name
-    lister = ["otool", "-L"] if sys.platform == "darwin" else ["ldd"]
-    linked = subprocess.run([*lister, str(native)], check=True, capture_output=True, text=True).stdout
-    assert "libpython" not in linked and "Python.framework" not in linked, linked
+    if sys.platform == "darwin":
+        linked = subprocess.run(["otool", "-L", str(native)], check=True, capture_output=True, text=True).stdout
+        assert "libpython" not in linked and "Python.framework" not in linked, linked
+        return
+    # Read from the file, not ldd: musl's ldd also resolves symbols, and
+    # the interpreter's are found only at load, so it fails on any
+    # extension.
+    needed = elf_needed(native)
+    assert needed and not [name for name in needed if "libpython" in name], needed
+
+
+def elf_needed(path: Path) -> list[str]:
+    """The libraries a 64-bit little-endian ELF file needs: its dynamic
+    section's DT_NEEDED names."""
+    data = path.read_bytes()
+    assert data[:4] == b"\x7fELF" and data[4:6] == b"\x02\x01", data[:6]
+    (table,) = struct.unpack_from("<Q", data, 0x28)
+    size, count = struct.unpack_from("<HH", data, 0x3A)
+    # Each section's type, offset, size and link (the dynamic section's
+    # is its string table).
+    sections = [struct.unpack_from("<4xI16xQQI", data, table + at * size) for at in range(count)]
+    names = []
+    for kind, offset, length, link in sections:
+        if kind != 6:  # SHT_DYNAMIC
+            continue
+        strings = sections[link][1]
+        for at in range(offset, offset + length, 16):
+            tag, value = struct.unpack_from("<qQ", data, at)
+            if tag == 0:  # DT_NULL
+                break
+            if tag == 1:  # DT_NEEDED
+                start = strings + value
+                names.append(data[start : data.index(b"\0", start)].decode())
+    return names
 
 
 def pe_imports(path: Path) -> list[str]:
