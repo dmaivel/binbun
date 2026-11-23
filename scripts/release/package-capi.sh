@@ -45,7 +45,9 @@ stage=$(mktemp -d "$target_dir/stage.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
 
 name=libbinbun-$version-$target
-(cd "$root" && cargo cinstall --release --locked -p binbun-capi --target "$target" \
+# MSYS_NO_PATHCONV: Git Bash, on Windows, would make --prefix=/usr/local
+# a Windows path under its own directory, installing beside usr/local.
+(cd "$root" && MSYS_NO_PATHCONV=1 cargo cinstall --release --locked -p binbun-capi --target "$target" \
     --prefix=/usr/local --libdir=lib --destdir="$(native_path "$stage/destdir")")
 mv "$stage/destdir/usr/local" "$stage/$name"
 rm -rf "$stage/destdir"
