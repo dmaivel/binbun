@@ -32,7 +32,8 @@ def test_slice_opens_that_slice_with_a_project_of_its_own(name: str, architectur
 
 
 def test_without_slice_the_slice_is_this_machines() -> None:
-    host = "arm64" if platform.machine() in ("arm64", "aarch64") else "x86_64"
+    # Windows says ARM64, macOS arm64, Linux aarch64.
+    host = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x86_64"
     with binbun.open(UNIVERSAL, project=False) as db:
         assert db.slice == host
 
