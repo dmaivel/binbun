@@ -306,9 +306,12 @@ jobs:
           cd python/tests && "$py" -m pytest -q
       - name: Test (python/tests, Alpine)
         if: matrix.test == 'alpine'
+        # musl-utils: ldd, which test_package.py lists the extension's
+        # libraries with.
         run: >
           docker run --rm -v "$PWD:/binbun" -w /binbun/python/tests python:3.11-alpine
-          sh -euc 'pip install --quiet pytest mypy /binbun/wheels/*.whl && python -m pytest -q'
+          sh -euc 'apk add --no-cache --quiet musl-utils &&
+          pip install --quiet pytest mypy /binbun/wheels/*.whl && python -m pytest -q'
       - if: inputs.attest
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:

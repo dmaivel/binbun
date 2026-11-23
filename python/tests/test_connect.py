@@ -310,6 +310,8 @@ def test_the_socket_is_its_users_alone(served: binbun.Database, tmp_path: Path) 
         shutil.rmtree(shared, ignore_errors=True)
     if "Operation not permitted" in done.stderr or "unshare failed" in done.stderr:
         pytest.skip(f"no user namespaces here: {done.stderr.strip()}")
+    if "unrecognized option" in done.stderr:
+        pytest.skip(f"this unshare maps no users (BusyBox's): {done.stderr.strip()}")
     assert done.stdout.split("\n")[:2] == ["refused PermissionError"] * 2, done.stdout + done.stderr
 
 
