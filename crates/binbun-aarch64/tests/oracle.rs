@@ -839,7 +839,11 @@ fn corpus_words() -> (Vec<u32>, usize) {
     use object::{Architecture, Object as _, ObjectSection as _, SectionKind};
 
     let dir = std::env::var_os("BINBUN_ARM64_CORPUS").map_or_else(
-        || Path::new(&std::env::var_os("HOME").unwrap()).join(".cache/binbun-arm64/corpus"),
+        || {
+            std::env::home_dir()
+                .unwrap()
+                .join(".cache/binbun-arm64/corpus")
+        },
         PathBuf::from,
     );
     let mut files = Vec::new();

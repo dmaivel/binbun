@@ -61,7 +61,7 @@ const DIFFERENCES: [(&str, &str); 4] = [
 fn pdb(variable: &str, file: &str) -> Option<Vec<u8>> {
     let path = std::env::var_os(variable).map_or_else(
         || {
-            PathBuf::from(std::env::var_os("HOME")?)
+            std::env::home_dir()?
                 .join(".cache/binbun-model-data/pdb")
                 .join(file)
                 .into()
@@ -232,9 +232,8 @@ fn native_structures_match_ntdll_pdb() {
 
 #[test]
 fn glibc_tcb_matches_glibc_debug_information() {
-    let Some(path) = std::env::var_os("HOME").map(|home| {
-        PathBuf::from(home)
-            .join(".cache/binbun-model-data/glibc-r50/root/usr/lib/debug/usr/lib/libc.so.6.debug")
+    let Some(path) = std::env::home_dir().map(|home| {
+        home.join(".cache/binbun-model-data/glibc-r50/root/usr/lib/debug/usr/lib/libc.so.6.debug")
     }) else {
         return;
     };

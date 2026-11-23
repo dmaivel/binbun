@@ -311,8 +311,8 @@ pub struct Scratch {
 
 impl Scratch {
     pub fn new(name: &str) -> Self {
-        let home = std::env::var_os("HOME").expect("HOME");
-        let dir = PathBuf::from(home)
+        let dir = std::env::home_dir()
+            .expect("a home directory")
             .join(".cache/binbun-print-check")
             .join(format!("{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

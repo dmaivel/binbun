@@ -217,8 +217,8 @@ fn run_against_source(sources: &[(&str, String)]) {
         eprintln!("skipped: compiling -mavx2 code needs an x86-64 host");
         return;
     }
-    let home = env::var_os("HOME").unwrap();
-    let dir = PathBuf::from(home)
+    let dir = env::home_dir()
+        .unwrap()
         .join(".cache/binbun-print-check")
         .join(format!("simd-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();

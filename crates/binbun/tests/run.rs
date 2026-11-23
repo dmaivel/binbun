@@ -33,7 +33,7 @@ const BASH: &str = "/usr/bin/bash";
 fn libc() -> String {
     format!(
         "{}/.cache/binbun-truth-data/glibc-r50/root/usr/lib/libc.so.6",
-        std::env::var("HOME").unwrap()
+        std::env::home_dir().unwrap().display()
     )
 }
 

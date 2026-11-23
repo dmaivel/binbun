@@ -93,7 +93,7 @@ fn with_pdb(image: &Path, pdb: &Path) -> Option<(Vec<u8>, Vec<u8>)> {
 
 /// `~/.cache/binbun-truth-data/pdb`, where downloaded PDBs are kept.
 fn pdbs() -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("HOME")?).join(".cache/binbun-truth-data/pdb"))
+    Some(std::env::home_dir()?.join(".cache/binbun-truth-data/pdb"))
 }
 
 /// Windows on ARM64: Python 3.15.2's `select.pyd` for ARM64 (from the
@@ -101,7 +101,7 @@ fn pdbs() -> Option<PathBuf> {
 /// `~/.cache/binbun-arm64/corpus`) with its PDB (python.org's
 /// `3.15.2/arm64/lib_pdb.msi`, in [`pdbs`]`/python-3.15.2-arm64`).
 fn arm64_select() -> Option<(Vec<u8>, Vec<u8>)> {
-    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let home = std::env::home_dir()?;
     let corpus = std::env::var_os("BINBUN_ARM64_CORPUS")
         .map_or_else(|| home.join(".cache/binbun-arm64/corpus"), Into::into);
     with_pdb(

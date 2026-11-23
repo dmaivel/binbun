@@ -511,10 +511,10 @@ fn fixture_functions_lower_and_run_as_l1_with_debug_information() {
 #[test]
 #[ignore = "lowers and runs all of a glibc build with its debug information"]
 fn libc_functions_lower_and_run_as_l1_with_debug_information() {
-    let Ok(home) = std::env::var("HOME") else {
+    let Some(home) = std::env::home_dir() else {
         return;
     };
-    let root = format!("{home}/.cache/binbun-model-data/glibc-r50/root");
+    let root = format!("{}/.cache/binbun-model-data/glibc-r50/root", home.display());
     let (libc, debug) = (
         format!("{root}/{}", LIBC_PAIR.0),
         format!("{root}/{}", LIBC_PAIR.1),

@@ -2068,8 +2068,8 @@ fn a_va_list_parameter_decays_to_the_tag_report_passes_on() {
         ] {
             assert!(text.contains(line), "{name}: no {line} in\n{text}");
         }
-        let home = std::env::var_os("HOME").unwrap();
-        let directory = Path::new(&home)
+        let directory = std::env::home_dir()
+            .unwrap()
             .join(".cache/binbun-print-check")
             .join(format!("va-list-{}-{name}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();

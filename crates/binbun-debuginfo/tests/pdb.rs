@@ -545,7 +545,7 @@ fn arm64_xdata_frames() {
 /// `~/.cache/binbun-arm64/corpus`) for an image of the corpus, else
 /// `~/.cache/binbun-truth-data/pdb`; `None` where it is absent.
 fn arm64_data(corpus: bool, file: &str) -> Option<Vec<u8>> {
-    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let home = std::env::home_dir()?;
     let path = if corpus {
         std::env::var_os("BINBUN_ARM64_CORPUS")
             .map_or_else(|| home.join(".cache/binbun-arm64/corpus"), PathBuf::from)

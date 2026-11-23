@@ -15,7 +15,6 @@
 //! L2's interpreter (which makes a local undefined at its declaration)
 //! against the function before.
 
-use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -259,8 +258,8 @@ static FILES: AtomicUsize = AtomicUsize::new(0);
 
 /// Compiles `text` with each compiler present (C11, binbun's flags).
 fn compiles(text: &str) {
-    let home = std::env::var_os("HOME").expect("HOME");
-    let dir = PathBuf::from(home)
+    let dir = std::env::home_dir()
+        .expect("a home directory")
         .join(".cache/binbun-print-check")
         .join(format!(
             "scopes-{}-{}",
