@@ -557,12 +557,11 @@ impl Lowering<'_, '_> {
             // the space the caller reserves for it above the return
             // address (Microsoft x64's home space).
             let own = end <= 0 || (offset >= link && end <= shadow);
-            let parts =
-                if !reached && own && end - offset <= 64 && !one_value(&members, offset, end) {
-                    self.reuses(members)
-                } else {
-                    alloc::vec![members]
-                };
+            let parts = if !reached && own && end - offset <= 64 {
+                self.reuses(members)
+            } else {
+                alloc::vec![members]
+            };
             for members in parts {
                 self.add_slot(&mut frame, &members, own, reached, shadow);
             }
@@ -640,13 +639,14 @@ impl Lowering<'_, '_> {
         }
     }
 
-    /// The slots the overlapping accesses `members` are, of several shapes
-    /// in the function's own bytes no address used as a value reaches (so
-    /// that only they read and write those bytes): one per reuse of the
-    /// bytes ([`Self::webs`]) that is one value's ([`one_value`]: a
-    /// compiler sharing a spill slot among values of different types)
-    /// where every reuse is; else all of them one slot (in memory, whose
-    /// bytes are then that slot's alone).
+    /// The slots the overlapping accesses `members` are, in the function's
+    /// own bytes no address used as a value reaches (so that only they
+    /// read and write those bytes): one per reuse of the bytes
+    /// ([`Self::webs`]) that is one value's ([`one_value`]: a compiler
+    /// sharing a spill slot among values, of one type or of several: a
+    /// `sqlite3_context *` saved across one call, a `JsonParse *` across
+    /// another) where every reuse is; else all of them one slot (in
+    /// memory, whose bytes are then that slot's alone).
     fn reuses<'m>(&self, members: Vec<&'m Access>) -> Vec<Vec<&'m Access>> {
         let Some(webs) = self.webs(&members) else {
             return alloc::vec![members];

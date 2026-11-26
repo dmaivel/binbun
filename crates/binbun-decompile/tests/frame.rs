@@ -730,6 +730,31 @@ fn a_slot_reused_for_a_value_of_another_shape_is_a_local_per_value() {
 }
 
 #[test]
+fn a_slot_reused_for_another_value_of_its_shape_is_a_local_per_value() {
+    // *(sp − 0x20) = b; x = *(sp − 0x20); *(sp − 0x20) = c;
+    // return x + *(sp − 0x20): a spill slot saving one value across a
+    // call, then another (a context, then a parser): each read only where
+    // it was written, two locals, not one holding both.
+    let mut l1 = L1::new();
+    let [_, b, c, _, memory] = l1.entry;
+    let slot = l1.below(0x20);
+    let memory = l1.store(memory, slot, b);
+    let first = l1.load(memory, slot);
+    let memory = l1.store(memory, slot, c);
+    let second = l1.load(memory, slot);
+    let value = l1.pure(Op::Binary(Binary::Add, first, second));
+    let l2 = lowered(&l1.finish(memory, value));
+    let locals = l2
+        .variables
+        .iter()
+        .filter(|variable| {
+            variable.kind == VarKind::Local && variable.origins.contains(&Origin::Slot(-0x20))
+        })
+        .count();
+    assert_eq!(locals, 2, "{:?}", l2.variables);
+}
+
+#[test]
 fn a_slot_read_in_part_of_a_wider_store_stays_one() {
     // *(sp − 0x20) = b; return *(int32_t *)(sp − 0x20) + *(sp − 0x20):
     // the 4-byte load reads part of the 8-byte store's value, so both
