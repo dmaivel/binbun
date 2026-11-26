@@ -31,7 +31,10 @@
 //!   size, with one struct and no other, that is smaller and has no size
 //!   of its own is a partial view of it and one with it
 //!   ([`Structs::unite_partial_views`]: a callee reading a few fields of
-//!   its parameter). The structs the elements of the array of
+//!   its parameter), as are any two refused only for their sizes that
+//!   show two fields alike (at one offset, of one width and kind) and
+//!   none of another kind, neither with a size of its own (functions
+//!   reading different parts of one handle). The structs the elements of the array of
 //!   pointers one pointer global points to point to are one type
 //!   whatever their sizes ([`Structs::unite_one_type`], after the sweep:
 //!   each function shows as much of an element as it reads), each tried
@@ -1000,10 +1003,18 @@ impl Structs {
     /// its callers pass there is the larger struct. A struct refused with
     /// several (a list's node passed with each struct holding one) stays
     /// apart, as does the larger one of a pair. Then, as
-    /// [`Self::unite_one_type`], the structs that meet at fields.
+    /// [`Self::unite_one_type`], the structs that meet at fields. Then the
+    /// other pairs refused only for their sizes that show at least
+    /// [`ALIKE`] fields alike ([`agreement`]: at one offset, of one width
+    /// and kind) and no field of another kind where as wide, neither with
+    /// a size of its own, most fields alike first: two views of one
+    /// struct that each read a part of it (a callee passed the handle
+    /// several functions read different fields of) are one, but a list's
+    /// node, which shows only its link, is no other struct holding one.
     pub(crate) fn unite_partial_views(&mut self) {
         let mut partners: BTreeMap<StructId, BTreeSet<StructId>> = BTreeMap::new();
-        for (a, b) in core::mem::take(&mut self.refused) {
+        let refused = core::mem::take(&mut self.refused);
+        for &(a, b) in &refused {
             let (a, b) = (self.find(a), self.find(b));
             if a != b {
                 partners.entry(a).or_default().insert(b);
@@ -1036,6 +1047,28 @@ impl Structs {
         }
         while let Some((a, b)) = work.pop() {
             self.unite_as(a, b, &mut work, false);
+        }
+        let mut alike: Vec<(usize, StructId, StructId)> = refused
+            .into_iter()
+            .filter_map(|(a, b)| {
+                let (a, b) = (self.find(a), self.find(b));
+                let (first, second) = (self.layouts.get(&a)?, self.layouts.get(&b)?);
+                let unsized_ = |layout: &Layout| layout.allocated == 0 && layout.element == 0;
+                let shared = agreement(first, second);
+                (a != b
+                    && shared >= ALIKE
+                    && unsized_(first)
+                    && unsized_(second)
+                    && same_kinds(first, second))
+                .then_some((shared, a, b))
+            })
+            .collect();
+        alike.sort_unstable_by_key(|&(shared, a, b)| (core::cmp::Reverse(shared), a, b));
+        for (_, a, b) in alike {
+            self.unite_as(a, b, &mut work, false);
+            while let Some((a, b)) = work.pop() {
+                self.unite_as(a, b, &mut work, false);
+            }
         }
     }
 
@@ -1370,6 +1403,33 @@ fn compatible(a: &Layout, b: &Layout) -> bool {
         return false;
     }
     overlap(a, b, true)
+}
+
+/// How many fields two views of a struct must show alike to be one
+/// whatever their sizes ([`Structs::unite_partial_views`]).
+const ALIKE: usize = 2;
+
+/// How many fields layouts `a` and `b` show alike: at one offset, of one
+/// width, holding one kind of value ([`kinds_agree`]).
+fn agreement(a: &Layout, b: &Layout) -> usize {
+    a.fields
+        .iter()
+        .filter(|&(offset, field)| {
+            b.fields
+                .get(offset)
+                .is_some_and(|other| other.bits == field.bits && kinds_agree(&field.ty, &other.ty))
+        })
+        .count()
+}
+
+/// Whether the fields of `a` and `b` at one offset and of one width hold
+/// one kind of value ([`kinds_agree`]).
+fn same_kinds(a: &Layout, b: &Layout) -> bool {
+    a.fields.iter().all(|(offset, field)| {
+        b.fields
+            .get(offset)
+            .is_none_or(|other| other.bits != field.bits || kinds_agree(&field.ty, &other.ty))
+    })
 }
 
 /// Whether every field of `b` that overlaps a field of `a` is at its
@@ -2061,6 +2121,45 @@ mod tests {
             .intern(small, &mut types, &mut BTreeMap::new())
             .unwrap();
         assert_eq!(types.width(ty), Some(128));
+    }
+
+    /// Three functions each read the two first fields of one handle and a
+    /// field of their own past them; a callee passed it to both others
+    /// relates them: refused for their sizes, with two partners each, they
+    /// are still one struct, since they show two fields alike. A list's
+    /// node, which shows only its link, is not one with them.
+    #[test]
+    fn views_with_two_fields_alike_are_one_whatever_their_sizes() {
+        let view = |function: u64, own: u64| {
+            let id = StructId { function, k: 1 };
+            let mut layout = Layout::default();
+            layout.add(0, field(64, Type::Int(64), 4));
+            layout.add(8, field(32, Type::Int(32), 4));
+            layout.add(own, field(64, Type::UInt(64), 4));
+            (id, layout)
+        };
+        let (a, first) = view(0x10, 16);
+        let (b, second) = view(0x20, 32);
+        let (c, third) = view(0x30, 48);
+        let (list, links) = node(0x40, 64, 0);
+        let mut structs = Structs::default();
+        for (entry, id, layout) in [(0x10, a, first), (0x20, b, second), (0x30, c, third)] {
+            structs.add(entry, None, born(id, layout, Vec::new()));
+        }
+        structs.add(0x40, None, born(list, links, Vec::new()));
+        structs.add(
+            0x50,
+            None,
+            Contribution {
+                merges: vec![(a, b), (a, c), (b, c), (a, list)],
+                ..Contribution::default()
+            },
+        );
+        assert_eq!(structs.len(), 4);
+        structs.unite_partial_views();
+        assert_eq!(structs.find(b), structs.find(a));
+        assert_eq!(structs.find(c), structs.find(a));
+        assert_ne!(structs.find(list), structs.find(a));
     }
 
     #[test]
