@@ -333,6 +333,11 @@ pub struct Tally {
     pub struct_pointers: usize,
     /// Of those, the decompiler's target is a struct of the same name.
     pub struct_identity: usize,
+    /// Per named struct the truth points to (name and size): the names of
+    /// the decompiler's structs its pointer points to there, counted. One
+    /// source struct under several names is split; one name over several
+    /// source structs is merged ([`Self::identity_errors`]).
+    pub identities: BTreeMap<(String, u64), BTreeMap<String, usize>>,
     /// The sum of TIE distances.
     pub distance: usize,
     /// The sum of TIE intervals.
@@ -389,6 +394,18 @@ impl Tally {
                         .and_then(|target| target.identity.as_ref())
                         == Some(identity),
                 );
+                if let Some((name, _)) = inferred
+                    .target
+                    .as_ref()
+                    .and_then(|target| target.identity.as_ref())
+                {
+                    *self
+                        .identities
+                        .entry(identity.clone())
+                        .or_default()
+                        .entry(name.clone())
+                        .or_default() += 1;
+                }
             }
         }
         (d > 0).then(|| format!("{} for {}", describe(inferred), describe(truth)))
@@ -414,6 +431,73 @@ impl Tally {
         for (pair, count) in &other.confusion {
             *self.confusion.entry(*pair).or_default() += count;
         }
+        for (identity, names) in &other.identities {
+            let kept = self.identities.entry(identity.clone()).or_default();
+            for (name, count) in names {
+                *kept.entry(name.clone()).or_default() += count;
+            }
+        }
+    }
+
+    /// The source structs the decompiler names several ways (split), and
+    /// the decompiler's structs that are several source structs (merged),
+    /// each with what it is seen as; most first.
+    #[must_use]
+    pub fn identity_errors(&self) -> IdentityErrors {
+        let mut sources: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        let mut split = Vec::new();
+        for ((source, _), names) in &self.identities {
+            for name in names.keys() {
+                sources.entry(name).or_default().insert(source);
+            }
+            if names.len() > 1 {
+                split.push((source.clone(), names.keys().cloned().collect()));
+            }
+        }
+        let decompiler = sources.len();
+        let mut merged: Vec<(String, Vec<String>)> = sources
+            .into_iter()
+            .filter(|(_, sources)| sources.len() > 1)
+            .map(|(name, sources)| {
+                (
+                    name.to_owned(),
+                    sources.into_iter().map(str::to_owned).collect(),
+                )
+            })
+            .collect();
+        let most = |a: &(String, Vec<String>), b: &(String, Vec<String>)| {
+            b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0))
+        };
+        split.sort_by(most);
+        merged.sort_by(most);
+        IdentityErrors {
+            sources: self.identities.len(),
+            decompiler,
+            split,
+            merged,
+        }
+    }
+}
+
+/// How the decompiler's structs line up with the source's named structs
+/// over the struct pointers compared ([`Tally::identity_errors`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct IdentityErrors {
+    /// Source structs a pointer to which the decompiler typed as a pointer
+    /// to one of its structs.
+    pub sources: usize,
+    /// The decompiler's structs those pointers point to.
+    pub decompiler: usize,
+    /// Source structs under several of the decompiler's names, with them.
+    pub split: Vec<(String, Vec<String>)>,
+    /// The decompiler's structs that are several source structs, with them.
+    pub merged: Vec<(String, Vec<String>)>,
+}
+
+impl IdentityErrors {
+    /// The names beyond one per source struct.
+    fn extra_names(&self) -> usize {
+        self.split.iter().map(|(_, names)| names.len() - 1).sum()
     }
 }
 
@@ -1279,13 +1363,13 @@ impl Tally {
 
 impl Report {
     /// The totals only (for held-out binaries): coverage and the TIE
-    /// averages, no functions named.
+    /// averages, the struct identities split and merged, no functions or
+    /// structs named.
     pub fn totals(&self) -> String {
-        let mut all = self.parameter_scores.clone();
-        all.merge(&self.return_scores);
-        all.merge(&self.stack_scores);
+        let all = self.all_scores();
+        let identities = all.identity_errors();
         format!(
-            "functions {}/{} decompiled; variables compared {}: class {}, width {}, sign {}, TIE distance {}, interval {}, conservative {}; casts {}",
+            "functions {}/{} decompiled; variables compared {}: class {}, width {}, sign {}, TIE distance {}, interval {}, conservative {}; casts {}; struct identities {} as {}, split {} (+{} names), merged {}",
             self.decompiled,
             self.debug_functions,
             all.mapped,
@@ -1296,7 +1380,20 @@ impl Report {
             average(all.interval, all.mapped),
             percent(all.conservative, all.mapped),
             self.casts,
+            identities.sources,
+            identities.decompiler,
+            identities.split.len(),
+            identities.extra_names(),
+            identities.merged.len(),
         )
+    }
+
+    /// The parameters', returns' and stack variables' scores together.
+    fn all_scores(&self) -> Tally {
+        let mut all = self.parameter_scores.clone();
+        all.merge(&self.return_scores);
+        all.merge(&self.stack_scores);
+        all
     }
 }
 
@@ -1347,6 +1444,22 @@ impl fmt::Display for Report {
             percent(fields.matched, fields.accessed),
             percent(fields.recalled, fields.declared)
         )?;
+        let identities = self.all_scores().identity_errors();
+        writeln!(
+            f,
+            "struct identities through mapped pointers: {} source structs as {} decompiler structs; split {} (+{} names), merged {}",
+            identities.sources,
+            identities.decompiler,
+            identities.split.len(),
+            identities.extra_names(),
+            identities.merged.len(),
+        )?;
+        for (source, names) in identities.split.iter().take(8) {
+            writeln!(f, "  split {source}: {}", names.join(", "))?;
+        }
+        for (name, sources) in identities.merged.iter().take(8) {
+            writeln!(f, "  merged {name}: {}", sources.join(", "))?;
+        }
         write!(f, "{}", self.extras)?;
         writeln!(f, "worst functions (sum of distances):")?;
         for problem in &self.worst {

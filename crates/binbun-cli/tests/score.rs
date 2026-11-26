@@ -3,14 +3,14 @@
     clippy::indexing_slicing,
     reason = "test helpers fail loudly"
 )]
-//! The scorer on a fixture whose source is known (`program.c`), and the
-//! lattice's distances.
+//! The scorer on a fixture whose source is known (`program.c`), the
+//! lattice's distances, and struct identities split and merged.
 
 use std::path::PathBuf;
 
 use binbun::Database;
 use binbun::analysis::Seeds;
-use binbun_cli::score::{Class, Setup, Shape, conservative, distance, score};
+use binbun_cli::score::{Class, Setup, Shape, Tally, conservative, distance, score};
 use binbun_loader::Image;
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -103,4 +103,55 @@ fn lattice_distances() {
     };
     assert_eq!(distance(&shape(Class::Pointer, 8), &pointer), 1);
     assert!(conservative(&shape(Class::Pointer, 8), &pointer));
+}
+
+/// Pointers to the source's `list` the decompiler types as pointers to
+/// its `struct_a_1` and `struct_b_1` split `list`; `struct_b_1` also for
+/// the source's `node` merges the two; a pointer to `node` typed `void *`
+/// is neither.
+#[test]
+fn identities_split_and_merged() {
+    let to = |name: &str| Shape {
+        class: Class::Pointer,
+        bytes: Some(8),
+        target: Some(Box::new(Shape {
+            class: Class::Struct,
+            bytes: Some(16),
+            target: None,
+            identity: Some((name.to_owned(), 16)),
+        })),
+        identity: None,
+    };
+    let void = Shape {
+        class: Class::Pointer,
+        bytes: Some(8),
+        target: None,
+        identity: None,
+    };
+    let mut tally = Tally::default();
+    for (inferred, truth) in [
+        (to("struct_a_1"), to("list")),
+        (to("struct_a_1"), to("list")),
+        (to("struct_b_1"), to("list")),
+        (to("struct_b_1"), to("node")),
+        (void, to("node")),
+    ] {
+        tally.add(&inferred, &truth);
+    }
+    let errors = tally.identity_errors();
+    assert_eq!((errors.sources, errors.decompiler), (2, 2));
+    assert_eq!(
+        errors.split,
+        [(
+            "list".to_owned(),
+            vec!["struct_a_1".to_owned(), "struct_b_1".to_owned()]
+        )]
+    );
+    assert_eq!(
+        errors.merged,
+        [(
+            "struct_b_1".to_owned(),
+            vec!["list".to_owned(), "node".to_owned()]
+        )]
+    );
 }

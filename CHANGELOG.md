@@ -35,6 +35,10 @@ always read by later versions.
 
 ## Unreleased
 
+### Added
+
+- `binbun eval types` says how the decompiler's structs line up with the debug information's named structs through the pointers it compares: source structs split under several of the decompiler's names, and decompiler structs that merge several source structs (named, the worst first; `--totals` gives the counts).
+
 ### Changed
 
 - The reading view assumes that no code steps back from an address of a function's stack frame that the function passes or stores (as `container_of` does), and says so in its header: the locals below every such address are variables of their own instead of fields of the frame struct (most of an `-O0` function's locals).
