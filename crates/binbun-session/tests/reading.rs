@@ -344,7 +344,7 @@ fn a_line_comes_from_every_instruction_folded_into_it() {
     lines(
         "classify",
         &[(
-            "return (uint32_t)a1 >= 7 ? -1 : (a1 + 10 + a1 * 10);",
+            "return (uint32_t)a1 >= 7 ? -1 : (a1 * 11 + 10);",
             &[0x1190, 0x1193, 0x1196, 0x119b, 0x119f, 0x11a2],
         )],
     );
