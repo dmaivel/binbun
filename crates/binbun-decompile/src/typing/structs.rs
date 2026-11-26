@@ -182,8 +182,15 @@ pub struct Layout {
     /// differed at one offset.
     pub conflicts: usize,
     /// Pairs of structs its pointer fields point to that met at one
-    /// offset (one field points to one type: the table unites them).
-    pub unify: Vec<(StructId, StructId)>,
+    /// offset, with the offset (one field points to one type: the table
+    /// unites them, and where it may not, the field is generic:
+    /// [`Self::generic`]).
+    pub unify: Vec<(StructId, StructId, u64)>,
+    /// The offsets of its generic pointer fields, `void *`: fields that
+    /// point to structs that are not one (a container's `void *data`),
+    /// or to a struct and to a scalar (a `char *` that sometimes holds an
+    /// array's address). No pointers met there are united any more.
+    pub generic: BTreeSet<u64>,
     /// The size in bytes of the object it is, where an allocation (a
     /// callee declared `alloc_size`, its size arguments constants) or a
     /// global object of the image says (0: unknown): its size, and no
@@ -302,7 +309,9 @@ impl Layout {
     /// struct ([`Self::unify`], the field kept), and a pointer with a
     /// target replaces one without (or untyped bits) whatever their
     /// strengths, as a variable's type does; likewise a typed scalar
-    /// replaces untyped bits.
+    /// replaces untyped bits; a pointer to a struct where the field
+    /// points to a scalar (or the other way) makes the field generic
+    /// ([`Self::generic`]), and a generic field stays `void *`.
     pub fn add(&mut self, offset: u64, field: Field) {
         if field.bits == 0 || !field.bits.is_multiple_of(8) {
             return;
@@ -313,53 +322,9 @@ impl Layout {
             self.conflicts += 1;
             return;
         }
-        if let Some(kept) = self.fields.get_mut(&offset)
-            && kept.bits == field.bits
-        {
-            match (&kept.ty, &field.ty) {
-                (&FieldType::Struct(a), &FieldType::Struct(b)) if a != b => {
-                    self.unify.push((a, b));
-                    kept.strength = kept.strength.max(field.strength);
-                    return;
-                }
-                (
-                    FieldType::Pointer(None) | FieldType::Scalar(Type::Bits(_)),
-                    FieldType::Struct(_)
-                    | FieldType::Pointer(Some(_))
-                    | FieldType::Opaque
-                    | FieldType::Pointers(_)
-                    | FieldType::ScalarPointers(_)
-                    | FieldType::Code { .. },
-                ) => {
-                    let strength = kept.strength.max(field.strength);
-                    *kept = Field { strength, ..field };
-                    return;
-                }
-                (
-                    FieldType::Struct(_)
-                    | FieldType::Pointer(Some(_))
-                    | FieldType::Opaque
-                    | FieldType::Pointers(_)
-                    | FieldType::ScalarPointers(_)
-                    | FieldType::Code { .. },
-                    FieldType::Pointer(None) | FieldType::Scalar(Type::Bits(_)),
-                )
-                | (FieldType::Scalar(_), FieldType::Scalar(Type::Bits(_))) => {
-                    kept.strength = kept.strength.max(field.strength);
-                    return;
-                }
-                // Untyped bits say only the width: a typed scalar there
-                // is the field's type, whatever the strengths.
-                (FieldType::Scalar(Type::Bits(_)), FieldType::Scalar(ty))
-                    if !matches!(ty, Type::Bits(_)) =>
-                {
-                    let strength = kept.strength.max(field.strength);
-                    *kept = Field { strength, ..field };
-                    return;
-                }
-                _ => {}
-            }
-        }
+        let Some(field) = self.add_alike(offset, field) else {
+            return;
+        };
         let overlapping: Vec<u64> = self
             .fields
             .iter()
@@ -399,6 +364,64 @@ impl Layout {
         }
     }
 
+    /// [`Self::add`] of `field` where a field as wide is at its offset:
+    /// pointers to two structs met ([`Self::unify`]), a generic field
+    /// kept or made ([`Self::generic`]), a target or a typed scalar over
+    /// one with none; gives it back where neither says the other.
+    fn add_alike(&mut self, offset: u64, field: Field) -> Option<Field> {
+        let Some(kept) = self.fields.get_mut(&offset) else {
+            return Some(field);
+        };
+        if kept.bits != field.bits {
+            return Some(field);
+        }
+        let strength = kept.strength.max(field.strength);
+        if self.generic.contains(&offset) && pointer(&field.ty) {
+            kept.strength = strength;
+            return None;
+        }
+        match (&kept.ty, &field.ty) {
+            (&FieldType::Struct(a), &FieldType::Struct(b)) if a != b => {
+                self.unify.push((a, b, offset));
+                kept.strength = strength;
+            }
+            (FieldType::Struct(_), FieldType::Pointer(Some(_)))
+            | (FieldType::Pointer(Some(_)), FieldType::Struct(_)) => {
+                kept.strength = strength;
+                kept.ty = FieldType::Pointer(None);
+                self.generic.insert(offset);
+            }
+            (
+                FieldType::Pointer(None) | FieldType::Scalar(Type::Bits(_)),
+                FieldType::Struct(_)
+                | FieldType::Pointer(Some(_))
+                | FieldType::Opaque
+                | FieldType::Pointers(_)
+                | FieldType::ScalarPointers(_)
+                | FieldType::Code { .. },
+            ) => *kept = Field { strength, ..field },
+            (
+                FieldType::Struct(_)
+                | FieldType::Pointer(Some(_))
+                | FieldType::Opaque
+                | FieldType::Pointers(_)
+                | FieldType::ScalarPointers(_)
+                | FieldType::Code { .. },
+                FieldType::Pointer(None) | FieldType::Scalar(Type::Bits(_)),
+            )
+            | (FieldType::Scalar(_), FieldType::Scalar(Type::Bits(_))) => kept.strength = strength,
+            // Untyped bits say only the width: a typed scalar there is
+            // the field's type, whatever the strengths.
+            (FieldType::Scalar(Type::Bits(_)), FieldType::Scalar(ty))
+                if !matches!(ty, Type::Bits(_)) =>
+            {
+                *kept = Field { strength, ..field };
+            }
+            _ => return Some(field),
+        }
+        None
+    }
+
     /// Takes `field` (at `offset`, overlapping the fields at
     /// `overlapping`) as a part of the one field it overlaps, or that
     /// field as a part of it ([`part_of`], [`Self::parts`]); gives it
@@ -425,6 +448,49 @@ impl Layout {
         }
         Some(field)
     }
+
+    /// Makes its pointer field at `offset` generic ([`Self::generic`]):
+    /// `void *`.
+    pub fn make_generic(&mut self, offset: u64) {
+        if let Some(field) = self.fields.get_mut(&offset)
+            && pointer(&field.ty)
+        {
+            field.ty = FieldType::Pointer(None);
+            self.generic.insert(offset);
+        }
+    }
+
+    /// Adds what `other` shows of one struct: its sizes, conflicts and
+    /// the structs that met at its fields, and its fields, parts, generic
+    /// fields and arrays (each as [`Self::add`] takes it).
+    pub fn merge(&mut self, mut other: Self) {
+        self.conflicts += other.conflicts;
+        self.set_element(other.element);
+        self.set_allocated(other.allocated);
+        self.unify.append(&mut other.unify);
+        let parts = other.parts.into_values().flatten();
+        for (offset, field) in other.fields.into_iter().chain(parts) {
+            self.add(offset, field);
+        }
+        for offset in other.generic {
+            self.make_generic(offset);
+        }
+        for (offset, element) in other.arrays {
+            self.add_array(offset, element);
+        }
+    }
+}
+
+/// Whether a field of type `ty` is a pointer to data.
+const fn pointer(ty: &FieldType) -> bool {
+    matches!(
+        ty,
+        FieldType::Struct(_)
+            | FieldType::Pointer(_)
+            | FieldType::Opaque
+            | FieldType::Pointers(_)
+            | FieldType::ScalarPointers(_)
+    )
 }
 
 /// Whether `narrow` (at byte `offset`) reads part of `wide` (at byte
@@ -518,6 +584,10 @@ pub struct Structs {
     /// refused only for their sizes (their fields agree at their offsets),
     /// for [`Self::unite_partial_views`].
     refused: Vec<(StructId, StructId)>,
+    /// Pairs of structs that met at a pointer field, with the struct and
+    /// offset of the field: where [`Self::unite`] refuses a pair, the
+    /// fields they met at are generic ([`Layout::generic`]).
+    meets: Vec<(StructId, u64, StructId, StructId)>,
 }
 
 impl Structs {
@@ -540,6 +610,7 @@ impl Structs {
             declared: None,
             identity_conflicts: 0,
             refused: Vec::new(),
+            meets: Vec::new(),
         }
     }
 
@@ -750,9 +821,10 @@ impl Structs {
         }
     }
 
-    /// Adds `layout`'s fields and parts to struct `id`'s (by
-    /// [`Layout::add`], its pointers' structs as they are now), the pairs
-    /// of structs that meet at a field to `work`.
+    /// Adds `layout`'s fields, parts and generic fields to struct `id`'s
+    /// (by [`Layout::add`], its pointers' structs as they are now), the
+    /// pairs of structs that meet at a field to `work` (and
+    /// [`Self::meets`]).
     fn absorb(&mut self, id: StructId, mut layout: Layout, work: &mut Vec<(StructId, StructId)>) {
         let parts = core::mem::take(&mut layout.parts).into_values().flatten();
         let fields: Vec<(u64, Field)> = core::mem::take(&mut layout.fields)
@@ -775,10 +847,37 @@ impl Structs {
         for (offset, element) in core::mem::take(&mut layout.arrays) {
             kept.add_array(offset, element);
         }
-        work.append(&mut kept.unify);
-        work.append(&mut layout.unify);
+        for offset in core::mem::take(&mut layout.generic) {
+            kept.make_generic(offset);
+        }
+        let mut met = core::mem::take(&mut kept.unify);
+        met.append(&mut layout.unify);
         self.conflicts += kept.conflicts - before + layout.conflicts;
         kept.conflicts += layout.conflicts;
+        for (a, b, offset) in met {
+            self.meets.push((id, offset, a, b));
+            work.push((a, b));
+        }
+    }
+
+    /// Makes generic the fields structs `a` and `b` (as they are now) met
+    /// at ([`Self::meets`]), now they may not be one; whether they met at
+    /// one.
+    fn generalise(&mut self, a: StructId, b: StructId) -> bool {
+        let meets = core::mem::take(&mut self.meets);
+        let (fields, kept): (Vec<_>, Vec<_>) = meets.into_iter().partition(|&(_, _, x, y)| {
+            let (x, y) = (self.find(x), self.find(y));
+            (x, y) == (a, b) || (x, y) == (b, a)
+        });
+        self.meets = kept;
+        let met = !fields.is_empty();
+        for (holder, offset, _, _) in fields {
+            let holder = self.find(holder);
+            if let Some(layout) = self.layouts.get_mut(&holder) {
+                layout.make_generic(offset);
+            }
+        }
+        met
     }
 
     /// Unites structs `a` and `b` (one type: a family both are, a field
@@ -814,6 +913,7 @@ impl Structs {
             && first != second
         {
             self.identity_conflicts += 1;
+            let _ = self.generalise(keep, lose);
             return;
         }
         let empty = Layout::default();
@@ -832,7 +932,14 @@ impl Structs {
                 && overlap(first, second, false)
                 && overlap(second, first, false)
             {
-                self.refused.push((keep, lose));
+                // Refused only for size: met at a field, two types the
+                // field holds; else perhaps a partial view of the other
+                // ([`Self::unite_partial_views`]).
+                if !self.generalise(keep, lose) {
+                    self.refused.push((keep, lose));
+                }
+            } else {
+                let _ = self.generalise(keep, lose);
             }
             self.conflicts += 1;
             return;
@@ -1866,6 +1973,63 @@ mod tests {
         structs.add(0x40, None, born(list, second, vec![0x30]));
         assert_eq!(structs.find(b), a);
         assert_eq!(structs.len(), 2);
+    }
+
+    #[test]
+    fn a_field_pointing_to_two_types_is_generic() {
+        // A container's `data` one function saw pointing to `a` (two
+        // 32-bit fields), another to `b` (a pointer and a 64-bit field,
+        // another layout), a third to `c` (`b`'s size, not its kinds):
+        // `void *`, and the three stay apart.
+        let id = |function| StructId { function, k: 1 };
+        let (a, b, c, bucket) = (id(0x10), id(0x20), id(0x28), id(0x30));
+        let mut structs = Structs::default();
+        let mut first = Layout::default();
+        first.add(0, field(32, Type::Int(32), 4));
+        first.add(4, field(32, Type::Int(32), 4));
+        let mut second = Layout::default();
+        second.add(0, link(b));
+        second.add(8, field(64, Type::Int(64), 4));
+        let mut third = Layout::default();
+        third.add(0, field(32, Type::Int(32), 4));
+        third.add(8, field(64, Type::Int(64), 4));
+        for (id, layout) in [(a, first), (b, second), (c, third)] {
+            structs.add(id.function, None, born(id, layout, Vec::new()));
+        }
+        for (function, target) in [(0x30, a), (0x40, b), (0x50, c)] {
+            let mut holder = Layout::default();
+            holder.add(0, link(bucket));
+            holder.add(16, link(target));
+            structs.add(function, None, born(bucket, holder, vec![0x30]));
+        }
+        let layout = structs.layout(bucket).unwrap();
+        assert_eq!(
+            layout.fields.get(&16).map(|field| &field.ty),
+            Some(&FieldType::Pointer(None))
+        );
+        assert_eq!(
+            layout.fields.get(&0).map(|field| &field.ty),
+            Some(&FieldType::Struct(bucket))
+        );
+        let found: BTreeSet<StructId> = [a, b, c].iter().map(|&id| structs.find(id)).collect();
+        assert_eq!(found.len(), 3);
+        // A struct pointer where the field points to a scalar: generic.
+        let mut string = Layout::default();
+        string.add(8, link(a));
+        string.add(
+            8,
+            Field {
+                bits: 64,
+                ty: FieldType::Pointer(Some(Type::Char { signed: true })),
+                strength: Strength(4),
+            },
+        );
+        assert!(string.generic.contains(&8));
+        string.add(8, link(b));
+        assert_eq!(
+            string.fields.get(&8).map(|field| &field.ty),
+            Some(&FieldType::Pointer(None))
+        );
     }
 
     #[test]

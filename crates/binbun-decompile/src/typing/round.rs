@@ -2337,18 +2337,7 @@ pub(crate) fn contribution(
         {
             layout.set_allocated(size);
         }
-        let kept = out.layouts.entry(id).or_default();
-        kept.conflicts += layout.conflicts;
-        kept.set_element(layout.element);
-        kept.set_allocated(layout.allocated);
-        kept.unify.append(&mut layout.unify);
-        let parts = layout.parts.into_values().flatten();
-        for (offset, field) in layout.fields.into_iter().chain(parts) {
-            kept.add(offset, field);
-        }
-        for (offset, element) in layout.arrays {
-            kept.add_array(offset, element);
-        }
+        out.layouts.entry(id).or_default().merge(layout);
         out.accesses
             .extend(family.accesses.iter().map(|access| (access.inst, id, base)));
         out.classes
