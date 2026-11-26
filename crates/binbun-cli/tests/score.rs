@@ -208,7 +208,12 @@ fn a_declared_struct_is_its_definition() {
     let errors = tally.identity_errors();
     assert_eq!(errors.merged, []);
     assert_eq!(
-        (errors.sources, errors.same_source, errors.same_name, errors.both),
+        (
+            errors.sources,
+            errors.same_source,
+            errors.same_name,
+            errors.both
+        ),
         (1, 1, 1, 1)
     );
 }
