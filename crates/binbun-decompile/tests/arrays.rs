@@ -7,7 +7,11 @@
 //! Pointer loops as array loops (the `array-loops` pass, then the loop
 //! rules) on hand-built L2: a pointer stepped through a constant table, or
 //! to an end the program computes, becomes an index, `for (i = 0; i < n;
-//! i++) … p[i]`; a pointer read after its loop reads `p + d·i`; a count
+//! i++) … p[i]`; a pointer read after a loop that leaves only by its test
+//! reads `p + d·n`; a matrix walked by a row pointer beside its loop's
+//! counter and a column pointer stepped first (from a constant below the
+//! row's end) is indexed by both counters, but not where a `break` follows
+//! the leading step; a count
 //! bounded by a dominating test or computed by a logical shift of a
 //! difference (or an arithmetic one, proved non-negative) is exact; a
 //! pointer counting down is indexed from its end. Loops the pass must
@@ -322,9 +326,10 @@ fn a_pointer_loop_over_a_table_is_an_array_loop() {
 }
 
 #[test]
-fn a_pointer_read_after_its_loop_is_the_base_plus_the_index() {
-    // `return s + (int32_t)p`: `p` after the loop is `TABLE + 40`, read
-    // as `p + 4·i` with `i` at 10.
+fn a_pointer_read_after_its_loop_is_the_base_plus_its_end() {
+    // `return s + (int32_t)p`: `p` after the loop is `TABLE + 40`; the
+    // loop leaves only by its test, at `i == 10`, so that is `p + 4·10`,
+    // with no index.
     let (mut b, _) = summing(
         |b, s, p| vec![b.add_load(s, p, 0, 32)],
         |b, s, p| {
@@ -345,7 +350,11 @@ fn a_pointer_read_after_its_loop_is_the_base_plus_the_index() {
         panic!();
     };
     let index = VarId(u32::try_from(b.f.variables.len() - 1).unwrap());
-    assert!(reads(&b.f, value, index), "the exit value reads the index");
+    assert!(!reads(&b.f, value, index), "the exit value reads the index");
+    assert!(
+        reads(&b.f, value, VarId(1)),
+        "the exit value reads no pointer"
+    );
 }
 
 #[test]
@@ -828,4 +837,136 @@ fn a_stepped_parameter_is_the_array_from_its_entry_value() {
         };
         assert_eq!(reads(&b.f, *condition, x), read_after);
     }
+}
+
+/// `total = 0; counter = 0; row = TABLE + 32; do { cell = row - 32; do {
+/// cell = cell + 8; total = total + *(int32_t *)(cell - 8); } while (row
+/// != cell); row = row + 4; counter = counter + 1; } while (counter !=
+/// 2); return total;`: the columns of a 4×2 matrix, as compilers stride
+/// through them (`for (x < 2) for (y < 4) s += a[y * 2 + x]`). With the
+/// outer loop, the inner loop and the row pointer.
+fn columns() -> (Builder, StmtId, StmtId, VarId) {
+    let mut b = Builder::new();
+    let (int, pointer) = (b.int, b.pointer);
+    let (total, counter, row, cell) = (
+        b.local(int),
+        b.local(int),
+        b.local(pointer),
+        b.local(pointer),
+    );
+    let zero = b.c(32, 0);
+    let zero_c = b.c(32, 0);
+    let row_end = b.c(64, TABLE + 32);
+    let mut top = vec![
+        b.assign(total, zero),
+        b.assign(counter, zero_c),
+        b.assign(row, row_end),
+    ];
+    // cell = row - 32
+    let (rq, span) = (b.read(row), b.c(64, 32));
+    let start = b.binary(Binary::Sub, rq, span);
+    let begin = b.assign(cell, start);
+    // cell = cell + 8; total = total + *(int32_t *)(cell - 8)
+    let (rp, eight) = (b.read(cell), b.c(64, 8));
+    let stepped = b.binary(Binary::Add, rp, eight);
+    let step = b.assign(cell, stepped);
+    let (rp, eight) = (b.read(cell), b.c(64, 8));
+    let back = b.binary(Binary::Sub, rp, eight);
+    let ty = b.int;
+    let loaded = b.low32(back, ty);
+    let rs = b.read(total);
+    let sum = b.binary(Binary::Add, rs, loaded);
+    let add = b.assign(total, sum);
+    let (rq, rp) = (b.read(row), b.read(cell));
+    let more = b.binary(Binary::Ne, rq, rp);
+    let inner = b.stmt(Stmt::DoWhile {
+        body: vec![step, add],
+        condition: more,
+    });
+    // row = row + 4; counter = counter + 1
+    let (rq, four) = (b.read(row), b.c(64, 4));
+    let next_q = b.binary(Binary::Add, rq, four);
+    let q_step = b.assign(row, next_q);
+    let (rc, one) = (b.read(counter), b.c(32, 1));
+    let next_c = b.binary(Binary::Add, rc, one);
+    let c_step = b.assign(counter, next_c);
+    let (rc, two) = (b.read(counter), b.c(32, 2));
+    let looping = b.binary(Binary::Ne, rc, two);
+    let outer = b.stmt(Stmt::DoWhile {
+        body: vec![begin, inner, q_step, c_step],
+        condition: looping,
+    });
+    top.push(outer);
+    let rs = b.read(total);
+    top.push(b.stmt(Stmt::Return(Some(rs))));
+    b.f.body = top;
+    (b, outer, inner, row)
+}
+
+#[test]
+fn a_matrix_walked_by_column_and_row_pointers_is_indexed_by_both_counters() {
+    let (mut b, outer, inner, q) = columns();
+    let before = outcome(&b.f);
+    assert!(matches!(before, Outcome::Returned(Some(_))), "{before:?}");
+    // The inner pointer: an index from its start 32 bytes below the row's
+    // end, its step (first, then the reads of `p - 8`) last; the row
+    // pointer: the outer counter scaled.
+    let (rewritten, _) = b.rewrite();
+    assert_eq!(rewritten, 2);
+    assert_eq!(outcome(&b.f), before);
+    let body = match b.f.stmt(outer) {
+        Some(Stmt::DoWhile { body, .. } | Stmt::For { body, .. }) => body.clone(),
+        other => panic!("{other:?}"),
+    };
+    let writes_q = |id: StmtId| matches!(b.f.stmt(id), Some(&Stmt::Assign { place: Place::Var(v), .. }) if v == q);
+    assert!(
+        !body.iter().any(|&id| writes_q(id)),
+        "the row pointer still steps"
+    );
+    // The inner loop counts 4 elements of 8 bytes, its counter's step last.
+    let Some(Stmt::For {
+        condition, step, ..
+    }) = b.f.stmt(inner)
+    else {
+        panic!("{:?}", b.f.stmt(inner));
+    };
+    let Some(&Expr::Binary(Binary::ULt, _, bound)) = b.f.expr(*condition) else {
+        panic!("{:?}", b.f.expr(*condition));
+    };
+    assert_eq!(b.f.expr(bound), Some(&Expr::Const(Bits::from_u64(64, 4))));
+    assert_eq!(step.len(), 1);
+}
+
+#[test]
+fn a_leading_step_with_a_break_after_it_stays_a_pointer_loop() {
+    // As above, but the inner body may leave by a `break` after its step:
+    // the step cannot go last (the break would leave before it).
+    let (mut b, _, inner, _) = columns();
+    let Some(Stmt::DoWhile { body, .. }) = b.f.stmt(inner).cloned() else {
+        panic!();
+    };
+    let leave = b.stmt(Stmt::Break(inner));
+    let zero = b.c(32, 0);
+    let never = b.f.add_expr(Expr::Binary(Binary::Ne, zero, zero));
+    let guard = b.stmt(Stmt::If {
+        condition: never,
+        then: vec![leave],
+        otherwise: Vec::new(),
+    });
+    if let Some(Stmt::DoWhile { body: inside, .. }) = b.f.stmts.get_mut(inner.0 as usize) {
+        *inside = body.into_iter().chain([guard]).collect();
+    }
+    let before = outcome(&b.f);
+    let (rewritten, _) = b.rewrite();
+    assert_eq!(outcome(&b.f), before);
+    // Only the row pointer, the outer counter scaled.
+    assert_eq!(rewritten, 1);
+    let Some(Stmt::DoWhile { body, .. }) = b.f.stmt(inner) else {
+        panic!("{:?}", b.f.stmt(inner));
+    };
+    let p = VarId(3);
+    assert!(
+        matches!(b.f.stmt(body[0]), Some(&Stmt::Assign { place: Place::Var(v), .. }) if v == p),
+        "the step moved"
+    );
 }

@@ -51,6 +51,14 @@ rule sub-add-const: sub(add(x:W, #c), #d) => add(x, sub(#c, #d))
 rule sub-sub-const: sub(sub(x:W, #c), #d) => sub(x, add(#c, #d))
 rule mul-mul-const: mul(mul(x:W, #c), #d) => mul(x, mul(#c, #d))
 
+# Constants out of sums, to meet the others (`(p + 64) + i * 4 - 64` is
+# `p + i * 4`, as a pointer stepped through rows and columns becomes).
+rule add-const-out: add(add(x:W, #c), y) => add(add(x, y), #c)
+rule add-const-out-right: add(x:W, add(y, #c)) => add(add(x, y), #c)
+rule sub-const-out: sub(add(x:W, #c), y) => add(sub(x, y), #c)
+rule add-sub-const-out: add(sub(x:W, #c), y) => sub(add(x, y), #c)
+rule add-sub-const-out-right: add(x:W, sub(y, #c)) => sub(add(x, y), #c)
+
 # Adding a negative constant is subtracting its magnitude (but the most
 # negative, which is its own negation).
 rule add-negative: add(x:W, #c) => sub(x, neg(#c))

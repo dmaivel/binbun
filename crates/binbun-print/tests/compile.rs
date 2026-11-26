@@ -15,7 +15,7 @@ mod common;
 use binbun_ast::ir::{Call, Callee, Expr, Place, Stmt, VarId, VarKind};
 use binbun_ast::types::{Aggregate, Field, Type, TypeId};
 use binbun_print::style::{IntSpelling, Style};
-use binbun_semantics::ir::{Binary, Trap};
+use binbun_semantics::ir::{Binary, Format, Trap};
 use common::samples::{branches, calls, escapes, loops, memory, symbols, wide_literals};
 use common::{Builder, LLP64, LP64, Platform, Scratch, compilers, print_with, warnings};
 
@@ -706,6 +706,68 @@ fn indices_scaled_by_an_element_subscript_arrays_of_scalars_and_of_structs() {
     assert!(text.contains("a2[a3]"), "{text}");
     assert_eq!(text.matches("a1[").count(), 3, "{text}");
     let scratch = Scratch::new("elements");
+    scratch.write("out.c", &text);
+    for compiler in compilers() {
+        let stderr = scratch
+            .compile(compiler, &["-c", "-o", "out.o"], &["out.c"])
+            .unwrap_or_else(|e| panic!("{compiler} failed on\n{text}\n{e}"));
+        assert_eq!(warnings(&stderr), 0, "{compiler}:\n{text}\n{stderr}");
+    }
+}
+
+#[test]
+fn two_indices_scaled_by_whole_elements_are_one_subscript() {
+    // `p + i·4 + j·16` through a `float *` is `p[i + j * 4]` (a column of
+    // rows of four), `+ 8` after it `p[i + j * 4 + 2]`, read and written;
+    // a scale that is no whole number of elements (`j·6`) is no subscript.
+    let mut b = Builder::new(0x9480, "rows");
+    let (int32, int64, uint64) = (b.int(32), b.int(64), b.uint(64));
+    let float = b.ty(Type::Float(Format::Single));
+    let floats = b.ty(Type::Pointer(Some(float)));
+    b.f.returns = Some(int64);
+    let (pointer, row, column) = (b.param(floats), b.param(int32), b.param(uint64));
+    let at = |b: &mut Builder, by: u64, offset: u64| {
+        let (base, rows, columns) = (b.read(pointer), b.read(row), b.read(column));
+        let rows = b.ext(true, rows, 64);
+        let (four, by) = (b.c(64, 4), b.c(64, by));
+        let rows = b.bin(Binary::Mul, rows, four);
+        let columns = b.bin(Binary::Mul, columns, by);
+        let sum = b.bin(Binary::Add, base, rows);
+        let sum = b.bin(Binary::Add, sum, columns);
+        if offset == 0 {
+            sum
+        } else {
+            let offset = b.c(64, offset);
+            b.bin(Binary::Add, sum, offset)
+        }
+    };
+    let address = at(&mut b, 16, 8);
+    let zero = b.c(32, 0);
+    let store = b.s(Stmt::Assign {
+        place: Place::Memory { address, ty: float },
+        value: zero,
+    });
+    let address = at(&mut b, 16, 0);
+    let element = b.load_at(address, 0, float);
+    let address = at(&mut b, 6, 0);
+    let odd = b.load_at(address, 0, float);
+    let element = b.e(Expr::Cast {
+        value: element,
+        ty: int32,
+    });
+    let odd = b.e(Expr::Cast {
+        value: odd,
+        ty: int32,
+    });
+    let total = b.bin(Binary::Add, element, odd);
+    let total = b.ext(true, total, 64);
+    let ret = b.ret(total);
+    let function = b.done(vec![store, ret]);
+    let (text, _) = print_with(&function, &Style::kr(), &symbols);
+    assert!(text.contains("a1[a2 + a3 * 4 + 2] = "), "{text}");
+    assert!(text.contains("a1[a2 + a3 * 4]"), "{text}");
+    assert_eq!(text.matches("a1[").count(), 2, "{text}");
+    let scratch = Scratch::new("rows");
     scratch.write("out.c", &text);
     for compiler in compilers() {
         let stderr = scratch

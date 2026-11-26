@@ -42,6 +42,17 @@ pub(super) enum Shape {
         scale: u64,
         offset: i128,
     },
+    /// A load from `base + (rows.0 * rows.1 + columns.0 * columns.1) *
+    /// scale + offset`, `scale` the size of what `base` points to: two
+    /// indices, each a whole number of elements (`p[i + j * 4]`, a pointer
+    /// stepped through rows and columns).
+    Rows {
+        base: ExprId,
+        rows: (ExprId, u64),
+        columns: (ExprId, u64),
+        scale: u64,
+        offset: i128,
+    },
     /// `pointer + index * scale (+ offset)`, `scale` the size of what
     /// `pointer` points to: `pointer + index`; with an offset (into a
     /// struct `pointer` points to), `&pointer[index].field`.
@@ -163,7 +174,9 @@ impl Printer<'_> {
 
     fn shape(&self, id: ExprId) -> Shape {
         match self.f.expr(id) {
-            Some(&Expr::Load { address, .. }) => self.address_shape(address),
+            Some(&Expr::Load { address, .. }) => self
+                .rows_shape(address)
+                .unwrap_or_else(|| self.address_shape(address)),
             Some(&Expr::Binary(Binary::Add, x, y)) => self.index_shape(id, x, y),
             Some(&Expr::Binary(op @ (Binary::Eq | Binary::Ne), masked, zero))
                 if let Some(shape) = self.float_relation_of(op == Binary::Eq, masked, zero) =>
@@ -362,6 +375,12 @@ impl Printer<'_> {
                 }
             }
             Shape::Load { base, index, .. } => core::iter::once(base).chain(index).collect(),
+            Shape::Rows {
+                base,
+                rows: (rows, _),
+                columns: (columns, _),
+                ..
+            } => vec![base, rows, columns],
             Shape::Index { pointer, index, .. } => vec![pointer, index],
             Shape::Plain => match self.node_expr(id)? {
                 Expr::Lanes { op, operands, .. } => {
@@ -430,6 +449,7 @@ impl Printer<'_> {
                 let bounds = self.bounds(index_id);
                 self.access_at(base_id, base, (index, bounds), offset, ty, false)
             }
+            Shape::Rows { .. } => self.rows_load(id, shape, operands),
             Shape::Index {
                 pointer: pointer_id,
                 index: index_id,
@@ -1669,20 +1689,47 @@ impl Printer<'_> {
                 }
             }
         }
-        // `(p + i·s) + k` into an array of structs of `s` bytes.
+        // `(p + i·s) + k` into an array of structs of `s` bytes, or into an
+        // array field at `k` of the struct `p` points to, where the index is
+        // proved in it (`&p->f[i]`, the constant outermost as L2's rules
+        // order it).
         if let (Some(&Expr::Binary(Binary::Add, a, b)), Some(&Expr::Const(k))) =
             (self.f.expr(x), self.f.expr(y))
             && let Some((pointer, index, scale)) = self.indexed(x, a, b)
-            && self.points_to_struct(pointer)
         {
             let (negative, magnitude) = constant_value(k, Class::Sign);
             let magnitude = i128::try_from(magnitude).unwrap_or(0);
-            return Shape::Index {
-                pointer,
-                index,
-                scale,
-                offset: if negative { -magnitude } else { magnitude },
-            };
+            let offset = if negative { -magnitude } else { magnitude };
+            if self.points_to_struct(pointer) {
+                return Shape::Index {
+                    pointer,
+                    index,
+                    scale,
+                    offset,
+                };
+            }
+        }
+        if let (Some(&Expr::Binary(Binary::Add, a, b)), Some(&Expr::Const(k))) =
+            (self.f.expr(x), self.f.expr(y))
+        {
+            for (pointer, term) in [(a, b), (b, a)] {
+                let Some(target) = self.pointee_of(pointer) else {
+                    continue;
+                };
+                let (index, scale) = self.scaled(term);
+                let (negative, magnitude) = constant_value(k, Class::Sign);
+                let magnitude = i128::try_from(magnitude).unwrap_or(0);
+                let offset = if negative { -magnitude } else { magnitude };
+                let bounds = self.bounds(Some(index));
+                if self.array_field_at(target, scale, offset, bounds).is_some() {
+                    return Shape::Index {
+                        pointer,
+                        index,
+                        scale,
+                        offset,
+                    };
+                }
+            }
         }
         match self.indexed(id, x, y) {
             Some((pointer, index, scale)) => Shape::Index {
@@ -1693,6 +1740,111 @@ impl Printer<'_> {
             },
             None => Shape::Plain,
         }
+    }
+
+    /// Address `address` as [`Shape::Rows`]: `(p + a·s) + b·t` (either
+    /// way round, plus a constant), `p` surely a pointer to `e` bytes and
+    /// `s`, `t` and the constant whole numbers of `e`; else `None`.
+    pub(super) fn rows_shape(&self, address: ExprId) -> Option<Shape> {
+        let mut sum = address;
+        let mut offset = 0;
+        if let Some(&Expr::Binary(op @ (Binary::Add | Binary::Sub), x, y)) = self.f.expr(sum)
+            && let Some(&Expr::Const(k)) = self.f.expr(y)
+        {
+            let (negative, magnitude) = constant_value(k, Class::Sign);
+            let magnitude = i128::try_from(magnitude).ok()?;
+            offset = if negative == (op == Binary::Add) {
+                -magnitude
+            } else {
+                magnitude
+            };
+            sum = x;
+        }
+        if self.width(sum) != self.pointer_width() {
+            return None;
+        }
+        let &Expr::Binary(Binary::Add, x, y) = self.f.expr(sum)? else {
+            return None;
+        };
+        for (inner, outer) in [(x, y), (y, x)] {
+            let Some(&Expr::Binary(Binary::Add, a, b)) = self.f.expr(inner) else {
+                continue;
+            };
+            for (pointer, term) in [(a, b), (b, a)] {
+                if !self.pointerish(pointer) || self.pointerish(term) || self.pointerish(outer) {
+                    continue;
+                }
+                let Some(size) = self.pointee_size(pointer) else {
+                    continue;
+                };
+                let (rows, by_rows) = self.scaled(term);
+                let (columns, by_columns) = self.scaled(outer);
+                let constant = |id| matches!(self.f.expr(id), Some(Expr::Const(_)));
+                let whole = by_rows.is_multiple_of(size)
+                    && by_columns.is_multiple_of(size)
+                    && offset % i128::from(size) == 0;
+                if whole && !constant(rows) && !constant(columns) {
+                    return Some(Shape::Rows {
+                        base: pointer,
+                        rows: (rows, by_rows / size),
+                        columns: (columns, by_columns / size),
+                        scale: size,
+                        offset,
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    /// The index `rows.0 * rows.1 + columns.0 * columns.1` of
+    /// [`Shape::Rows`] (each value an index, each factor its elements).
+    pub(super) fn rows_index(
+        &mut self,
+        rows: (Value, u64),
+        columns: (Value, u64),
+    ) -> Result<Value, PrintError> {
+        let width = self.pointer_width();
+        let mut terms = Vec::with_capacity(2);
+        for (value, factor) in [rows, columns] {
+            let value = self.int_view(value)?;
+            let term = if factor == 1 {
+                value
+            } else {
+                let factor = self.constant(Bits::from_u64(width, factor), Class::Zero, false)?;
+                self.binary(Binary::Mul, value, factor, width)?
+            };
+            terms.push(term);
+        }
+        let [rows, columns] = take(terms)?;
+        self.binary(Binary::Add, rows, columns, width)
+    }
+
+    /// Load `id` of [`Shape::Rows`] `shape`, its base's and indices' values
+    /// `operands`: `base[rows + columns * k]`.
+    fn rows_load(
+        &mut self,
+        id: ExprId,
+        shape: Shape,
+        operands: Vec<Value>,
+    ) -> Result<Value, PrintError> {
+        let Shape::Rows {
+            base: base_id,
+            rows: (_, by_rows),
+            columns: (_, by_columns),
+            scale,
+            offset,
+        } = shape
+        else {
+            return Err(error(self.node, "not rows"));
+        };
+        let Expr::Load { ty, .. } = self.node_expr(id)? else {
+            return Err(error(self.node, "not a load"));
+        };
+        let [base, rows, columns] = take(operands)?;
+        let index = self.rows_index((rows, by_rows), (columns, by_columns))?;
+        let indexed = (Some((index, scale)), None);
+        self.access_at(base_id, base, indexed, offset, ty, false)
     }
 
     /// Sum `id` (`x + y`, neither a constant) as `(pointer, index, scale)`

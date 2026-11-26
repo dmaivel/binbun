@@ -1291,6 +1291,26 @@ impl Printer<'_> {
                 Ok((value?, ty))
             }
             Place::Memory { address, ty } => {
+                if let Some(Shape::Rows {
+                    base,
+                    rows: (rows, by_rows),
+                    columns: (columns, by_columns),
+                    scale,
+                    offset,
+                }) = self.rows_shape(address)
+                {
+                    let storing = core::mem::replace(&mut self.storing, true);
+                    let base = self.expr(base);
+                    self.storing = storing;
+                    let base = base?;
+                    let rows = self.expr(rows)?;
+                    let columns = self.expr(columns)?;
+                    let index = self.rows_index((rows, by_rows), (columns, by_columns))?;
+                    let storing = core::mem::replace(&mut self.storing, true);
+                    let place = self.deref(base, (Some((index, scale)), None), offset, ty, false);
+                    self.storing = storing;
+                    return place;
+                }
                 let Shape::Load {
                     base,
                     index,

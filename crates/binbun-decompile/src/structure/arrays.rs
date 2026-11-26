@@ -5,7 +5,9 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use binbun_ast::ir::{Expr, ExprId, Function, Place, Stmt, StmtId, VarId, VarKind, Variable};
+use binbun_ast::ir::{
+    Expr, ExprId, Function, Origin, Place, Stmt, StmtId, VarId, VarKind, Variable,
+};
 use binbun_ast::types::{Evidence, Type};
 use binbun_semantics::bits::Bits;
 use binbun_semantics::core::pass::{Changed, Cx, Pass, Refusal};
@@ -13,12 +15,13 @@ use binbun_semantics::ir::Binary;
 
 use super::refine::always;
 use crate::pass::{L2Env, size};
-use crate::range::{Index, Interval, Known, Term, WIDEST, before};
+use crate::range::{Index, Interval, Known, Ranges, Term, WIDEST, before};
 use crate::simplify::expr::{Info, map_roots, rebuild, same};
 
 /// Pointer loops as array loops (pass `array-loops`), on a structured
 /// function before the loop rules ([`super::Loops`]): a local `p` of type
-/// `T *` stepped through a loop `L` by `d = sizeof(T)` bytes from its
+/// `T *` stepped through a loop `L` by `d` bytes, a whole number of
+/// `sizeof(T)` (a row of a matrix walked a column at a time), from its
 /// start `A` to an end `E = A + d·n` becomes the base of an array indexed
 /// by a new counter `i` (`uint64_t`, as wide as a pointer): `p` keeps `A`,
 /// each step `p = p + d` becomes `i = i + 1`, `i = 0` goes just before
@@ -26,8 +29,25 @@ use crate::simplify::expr::{Info, map_roots, rebuild, same};
 /// other read of `p` in `L` and after it is `p + d·i` (`&p[i]`; an access
 /// at `p + k` is `p[i]` or `p[i + m].f`). The loop rules then make a
 /// `do`-`while` a `for (i = 0; i < n; i++)` where they prove `0 < n`
-/// (rule 4). Dead code ([`Prune`](crate::simplify::copies::Prune)) runs
-/// after it: an end only the tests read goes.
+/// (rule 4). Where a loop leaves only by its tests and `n` is a constant,
+/// the reads after it see `p + d·n`. The simplifications run again after
+/// it: an end only the tests read goes, and sums fold (`(p + d) - d`).
+///
+/// A step that leads a `do`-`while` body, `do { p = p + d; B } while (p
+/// != E)` (as compilers place the increment before the reads of `p - d`),
+/// goes last as `i = i + 1`: the reads in `B` are then `p + d·i + d`, the
+/// step having been made before them in the program; `B` holds no
+/// `break`, `continue`, `goto` or label (none leaves the body before the
+/// step, or enters it after), and the condition is the one exit test. The
+/// moved step is of no block (control passes through it).
+///
+/// Inner loops come first: an outer loop's pointer is read in an inner
+/// loop's start and tests, which the inner rewrite reads as they are.
+/// A pointer stepped in lockstep with its loop's own counter (`for (c =
+/// 0; c < m; c++) { …; q = q + s; }`) is that counter scaled instead
+/// ([`lockstep`]): its step goes and its reads are `q + s·c`, so a row
+/// pointer stepped beside its column pointer folds to one subscript
+/// (`a[c + i·m]`).
 ///
 /// Counting down, the mirror image: `p` stepped by `p = p - d` from `A =
 /// E + d·n` down to `E` is `E + d·i` with `i` counting down from `n` to
@@ -41,7 +61,10 @@ use crate::simplify::expr::{Info, map_roots, rebuild, same};
 /// `n - 1` below the signed maximum proved, and every read shifted by one.
 ///
 /// The end is a constant `E` with a constant start `A` (a number, a
-/// global's address, a sum of them): `n = (E - A) / d`; or a variable `e` whose last
+/// global's address, a sum of them): `n = (E - A) / d`; or a variable `e`
+/// that `p` starts a constant `c = n·d` below (`p = e - c`, `e` a local or
+/// parameter not written from there through `L`): `p == e` is `d·i == c`,
+/// which for `0 <= i <= n` holds at `i == n` only; or a variable `e` whose last
 /// assignment before `L`, in `L`'s block, is `e = x + d·n` (`n * d`,
 /// `d * n`, `n << log2(d)`) with `x` the variable `p` is assigned from (not
 /// written between the two assignments) or `p` itself (before `L`), `n` a
@@ -56,9 +79,8 @@ use crate::simplify::expr::{Info, map_roots, rebuild, same};
 /// It applies where (each needed for the rewrite to compute what the
 /// program computes, or to read as an array):
 ///
-/// - `p` is a local not in memory, a pointer to a type of `d` bytes (the
-///   element the solver gave it from the step: an evolution of `d`), its
-///   address not taken; its writes are assignments only: one before `L`,
+/// - `p` is a local not in memory, a pointer to a type whose size divides
+///   `d` (the element the solver gave it), its address not taken; its writes are assignments only: one before `L`,
 ///   in the block `L` is in, and in `L` steps `p = p + d`, or all `p = p -
 ///   d` (nothing in an inner loop, `switch` or `try`);
 /// - a constant end: `A <= E`, `E - A` a multiple of `d`, `n >= 1` and
@@ -139,19 +161,72 @@ impl<'e> Pass<Function, L2Env<'e>> for ArrayLoops {
             cx.fuel.spend(size(function))?;
             let tree = Tree::new(function);
             let uses = Uses::new(function, &tree);
-            let found = uses
+            // The pointers of inner loops first: an outer loop's pointer
+            // is read in the inner loop's start and tests, which its own
+            // rewrite would make sums.
+            let mut candidates: Vec<(usize, VarId)> = uses
                 .writes
                 .keys()
-                .filter(|&&var| tried.insert(var))
-                .find_map(|&var| plan(function, &tree, &uses, var));
-            let Some(found) = found else {
-                break;
-            };
-            apply(function, &tree, &found);
+                .filter(|var| !tried.contains(*var))
+                .map(|&var| (depth(function, &tree, &uses, var), var))
+                .collect();
+            candidates.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+            let mut ranges = None;
+            let mut found = None;
+            for (_, var) in candidates {
+                tried.insert(var);
+                if let Some(plan) = plan(function, &tree, &uses, var) {
+                    found = Some(Rewrite::Index(plan));
+                    break;
+                }
+                let ranges = ranges.get_or_insert_with(|| Ranges::of(function));
+                if let Some(paired) = lockstep(function, &tree, &uses, ranges, var) {
+                    found = Some(Rewrite::Lockstep(paired));
+                    break;
+                }
+            }
+            match found {
+                Some(Rewrite::Index(plan)) => apply(function, &tree, &plan),
+                Some(Rewrite::Lockstep(paired)) => apply_lockstep(function, &tree, &paired),
+                None => break,
+            }
             self.rewritten += 1;
         }
         Ok((self.rewritten > 0).into())
     }
+}
+
+/// A rewrite [`ArrayLoops`] found.
+enum Rewrite {
+    /// A new index for the pointer.
+    Index(Plan),
+    /// The loop's own counter for the pointer.
+    Lockstep(Lockstep),
+}
+
+/// How many loops hold the deepest of `var`'s writes.
+fn depth(function: &Function, tree: &Tree, uses: &Uses, var: VarId) -> usize {
+    let Some(writes) = uses.writes.get(&var) else {
+        return 0;
+    };
+    writes
+        .iter()
+        .map(|&id| {
+            let mut count = 0;
+            let mut at = id;
+            while let Some(parent) = tree.parent(at) {
+                if matches!(
+                    function.stmt(parent),
+                    Some(Stmt::While { .. } | Stmt::DoWhile { .. } | Stmt::For { .. })
+                ) {
+                    count += 1;
+                }
+                at = parent;
+            }
+            count
+        })
+        .max()
+        .unwrap_or(0)
 }
 
 /// Where each statement is: the blocks of the body.
@@ -319,6 +394,13 @@ struct Plan {
     /// The statements whose reads of the pointer become `p + d·i`: the
     /// loop and those after it in its block, and those they hold.
     rewrite: Vec<StmtId>,
+    /// Whether the one step is the first statement of the `do`-`while`
+    /// body, its exit test the loop's condition: `i = i + 1` goes last in
+    /// the body, and the reads before it see `p + d·i + d`.
+    leading: bool,
+    /// Whether the loop leaves only by its tests, with `i` at a constant
+    /// `n`: the reads after it see `p + d·n`.
+    settled: bool,
 }
 
 /// The count `n` of a loop: a constant, or the program's expression for
@@ -348,12 +430,13 @@ fn plan(function: &Function, tree: &Tree, uses: &Uses, var: VarId) -> Option<Pla
     let Some(&Type::Pointer(Some(target))) = function.types.get(variable.ty) else {
         return None;
     };
-    let step = function
+    let size = function
         .types
         .width(target)
         .filter(|&bits| bits > 0 && bits % 8 == 0)?
         / 8;
     let writes = uses.writes.get(&var)?;
+    let step = step_of(function, writes, var, size)?;
     let (steps, inits): (Vec<StmtId>, Vec<StmtId>) = writes
         .iter()
         .partition(|&&id| stepped(function, id, var, step, width).is_some());
@@ -380,7 +463,11 @@ fn plan(function: &Function, tree: &Tree, uses: &Uses, var: VarId) -> Option<Pla
         return None;
     }
     let (at_init, value) = start_of(function, tree, uses, var, &inits, lp, &rewrite)?;
-    let (end, tests) = tests(function, tree, lp, var, &steps, up)?;
+    let Exits {
+        end,
+        tests,
+        leading,
+    } = tests(function, tree, lp, var, &steps, up)?;
     let count = match (
         value.and_then(|value| constant(function, value, width)),
         end,
@@ -408,17 +495,22 @@ fn plan(function: &Function, tree: &Tree, uses: &Uses, var: VarId) -> Option<Pla
                 at_init,
                 at_loop,
             };
-            Count::Expr(if up {
-                found.symbolic(value, end, step, guarded)?
+            if up && let Some(count) = value.and_then(|value| found.below(value, end, step)) {
+                Count::Const(count)
             } else {
-                found.descending(value?, end, step, guarded)?
-            })
+                Count::Expr(if up {
+                    found.symbolic(value, end, step, guarded)?
+                } else {
+                    found.descending(value?, end, step, guarded)?
+                })
+            }
         }
         (None, End::Const(_)) => return None,
     };
     if !fits(function, &held(function, &[lp]), var, step, width) {
         return None;
     }
+    let settled = up && matches!(count, Count::Const(_)) && leaves_by_condition(function, lp);
     Some(Plan {
         var,
         lp,
@@ -428,6 +520,29 @@ fn plan(function: &Function, tree: &Tree, uses: &Uses, var: VarId) -> Option<Pla
         steps,
         tests,
         rewrite,
+        leading,
+        settled,
+    })
+}
+
+/// The step of pointer `var` to elements of `size` bytes, written by
+/// `writes`: what one of them adds to it, a whole number of elements; a
+/// byte pointer's is its own (a record's size says nothing of an array
+/// of bytes: `"abc" + 19·i`).
+fn step_of(function: &Function, writes: &[StmtId], var: VarId, size: u64) -> Option<u64> {
+    let width = function.types.pointer_width();
+    writes
+        .iter()
+        .find_map(|&id| step_size(function, id, var, width))
+        .filter(|&d| d == size || (size > 1 && d.is_multiple_of(size)))
+}
+
+/// Whether loop `lp` leaves only by its condition: it holds no `break` of
+/// it (an exit test's included), no `goto` and no label.
+fn leaves_by_condition(function: &Function, lp: StmtId) -> bool {
+    !held(function, &[lp]).iter().any(|&id| {
+        matches!(function.stmt(id), Some(&Stmt::Break(target)) if target == lp)
+            || matches!(function.stmt(id), Some(Stmt::Goto(_) | Stmt::Label(_)))
     })
 }
 
@@ -536,6 +651,27 @@ struct Found<'a> {
 }
 
 impl Found<'_> {
+    /// The count `n` where the pointer starts at `start`, `end - c` (`c`
+    /// a constant, `n·d` with `d` the `step`), and its tests compare it
+    /// with `end`, a local or parameter not written from the pointer's
+    /// start through the loop: `p == end` is `d·i == c` modulo the
+    /// pointer's range, which for `0 <= i <= n` (`d·i <= c`, no wrap)
+    /// holds only at `i == n`.
+    fn below(&self, start: ExprId, end: VarId, step: u64) -> Option<u64> {
+        let function = self.function;
+        let width = function.types.pointer_width();
+        let (base, offset) = linear(function, start, width)?;
+        let at_init = self.at_init?;
+        if base != end
+            || !matches!(function.var(end)?.kind, VarKind::Local | VarKind::Parameter)
+            || self.written(end, &self.between(at_init + 1, self.at_loop + 1))
+        {
+            return None;
+        }
+        let span = u64::try_from(offset.checked_neg()?).ok()?;
+        (span >= step && span.is_multiple_of(step)).then_some(span / step)
+    }
+
     /// The count `n` where the pointer starts at `start` (an expression;
     /// `None`: its value at the function's entry)
     /// and its tests compare it with variable `end`, assigned once in the
@@ -971,10 +1107,24 @@ fn bound_vars(function: &Function, id: ExprId, read: &mut BTreeSet<VarId>) -> Op
     }
 }
 
+/// A pointer loop's exit tests ([`tests`]).
+struct Exits {
+    /// The end `E` they compare the pointer with.
+    end: End,
+    /// Each test's statement, with the comparison it becomes.
+    tests: Vec<(StmtId, Binary)>,
+    /// Whether the one step leads a `do`-`while` body ([`Plan::leading`]).
+    leading: bool,
+}
+
 /// The exit tests following `steps` (`var`'s, in loop `lp`), if each step
 /// has one before any other step (see [`ArrayLoops`]): the end `E`
 /// they all compare `var` with, and each test's statement with the
-/// comparison it becomes (`i` with `n` counting `up`, else `i` with 0).
+/// comparison it becomes (`i` with `n` counting `up`, else `i` with 0);
+/// and whether the one step, counting up, leads a `do`-`while` body that
+/// the loop's condition tests after, with nothing between that may leave
+/// the body or enter it (a `break`, `continue`, `goto` or label): the
+/// step can go last ([`Plan::leading`]).
 fn tests(
     function: &Function,
     tree: &Tree,
@@ -982,7 +1132,7 @@ fn tests(
     var: VarId,
     steps: &[StmtId],
     up: bool,
-) -> Option<(End, Vec<(StmtId, Binary)>)> {
+) -> Option<Exits> {
     let width = function.types.pointer_width();
     let (&Stmt::DoWhile {
         ref body,
@@ -1002,10 +1152,30 @@ fn tests(
     };
     let mut end = None;
     let mut tests: Vec<(StmtId, Binary)> = Vec::new();
+    let mut leading = false;
+    let lead = |id: StmtId| {
+        let rest = match body.split_first() {
+            Some((&first, rest)) if first == id && !rest.is_empty() => rest,
+            Some(_) | None => return false,
+        };
+        up && steps == [id]
+            && matches!(function.stmt(lp), Some(Stmt::DoWhile { .. }))
+            && held(function, rest).iter().all(|&held| {
+                !matches!(
+                    function.stmt(held),
+                    Some(Stmt::Break(_) | Stmt::Continue(_) | Stmt::Goto(_) | Stmt::Label(_))
+                )
+            })
+    };
     for &id in steps {
         let (test, op, e) = if body.last() == Some(&id)
             && let Some((op, e)) = looping
         {
+            (lp, op, e)
+        } else if let Some((op, e)) = looping
+            && lead(id)
+        {
+            leading = true;
             (lp, op, e)
         } else {
             let &(block, position) = tree.at.get(&id)?;
@@ -1032,7 +1202,71 @@ fn tests(
             tests.push((test, op));
         }
     }
-    Some((end?, tests))
+    Some(Exits {
+        end: end?,
+        tests,
+        leading,
+    })
+}
+
+/// `id` as a variable plus a constant (`width`-bit, read signed): a read
+/// (through casts), and sums and differences of it with constants.
+fn linear(function: &Function, id: ExprId, width: u16) -> Option<(VarId, i128)> {
+    let shift = 128 - u32::from(width.min(64));
+    let constant = |id| match function.expr(id) {
+        Some(&Expr::Const(bits)) if bits.width() == width && width <= 64 => {
+            Some(i128::from(bits.low_u64()) << shift >> shift)
+        }
+        Some(_) | None => None,
+    };
+    match *function.expr(uncast(function, id))? {
+        Expr::Var(var) => Some((var, 0)),
+        Expr::Binary(Binary::Add, a, b) => {
+            if let Some(k) = constant(b) {
+                let (var, offset) = linear(function, a, width)?;
+                Some((var, offset.checked_add(k)?))
+            } else {
+                let k = constant(a)?;
+                let (var, offset) = linear(function, b, width)?;
+                Some((var, offset.checked_add(k)?))
+            }
+        }
+        Expr::Binary(Binary::Sub, a, b) => {
+            let k = constant(b)?;
+            let (var, offset) = linear(function, a, width)?;
+            Some((var, offset.checked_sub(k)?))
+        }
+        Expr::Binary(..)
+        | Expr::Const(_)
+        | Expr::Undefined(..)
+        | Expr::AddressOf(_)
+        | Expr::Unary(..)
+        | Expr::Logical(..)
+        | Expr::Flag(..)
+        | Expr::Extract { .. }
+        | Expr::Concat { .. }
+        | Expr::Extend { .. }
+        | Expr::Select { .. }
+        | Expr::Lanes { .. }
+        | Expr::Float { .. }
+        | Expr::Cast { .. }
+        | Expr::Load { .. }
+        | Expr::Call(_)
+        | Expr::Assign { .. }
+        | Expr::Exception { .. } => None,
+    }
+}
+
+/// What statement `id`, `var = var ± k` (`width`-bit, `k` a constant
+/// other than 0), moves `var` by: `|k|`.
+fn step_size(function: &Function, id: StmtId, var: VarId, width: u16) -> Option<u64> {
+    let Some(&Stmt::Assign { value, .. }) = function.stmt(id) else {
+        return None;
+    };
+    let (base, offset) = linear(function, value, width)?;
+    (base == var && offset != 0)
+        .then(|| u64::try_from(offset.unsigned_abs()).ok())
+        .flatten()
 }
 
 /// Whether statement `id` is `var = var + step` (`Some(true)`) or `var =
@@ -1378,16 +1612,98 @@ fn apply(function: &mut Function, tree: &Tree, plan: &Plan) {
             function.provenance.set_expr(test, &origins);
         }
     }
-    rebase(function, plan, index);
+    rebase_plan(function, plan, index);
+    if plan.leading {
+        lead_to_last(function, plan.lp);
+    }
 }
 
 /// Every other read of `plan`'s pointer `p` from the loop on as `p +
-/// d·i` (`index` is `i`).
-fn rebase(function: &mut Function, plan: &Plan, index: VarId) {
+/// d·i` (`index` is `i`): before a leading step's new place, `p + d·i +
+/// d` (the step went first); after a loop that leaves at `i == n` only,
+/// `p + d·n`.
+fn rebase_plan(function: &mut Function, plan: &Plan, index: VarId) {
     let width = function.types.pointer_width();
+    let inside = held(function, &[plan.lp]);
+    let ahead: Vec<StmtId> = match function.stmt(plan.lp) {
+        Some(Stmt::DoWhile { body, .. }) if plan.leading => {
+            held(function, body.get(1..).unwrap_or(&[]))
+        }
+        Some(_) | None => Vec::new(),
+    };
+    let step = plan.step;
+    let indexed = |extra: u64| {
+        move |function: &mut Function| {
+            let read = function.add_expr(Expr::Var(index));
+            let mut offset = if step == 1 {
+                read
+            } else {
+                let size = function.add_expr(Expr::Const(Bits::from_u64(width, step)));
+                function.add_expr(Expr::Binary(Binary::Mul, read, size))
+            };
+            if extra != 0 {
+                let extra = function.add_expr(Expr::Const(Bits::from_u64(width, extra)));
+                offset = function.add_expr(Expr::Binary(Binary::Add, offset, extra));
+            }
+            offset
+        }
+    };
+    let (before_step, mut elsewhere): (Vec<StmtId>, Vec<StmtId>) =
+        plan.rewrite.iter().partition(|id| ahead.contains(id));
+    let after: Vec<StmtId> = if plan.settled {
+        let (after, kept) = elsewhere.into_iter().partition(|id| !inside.contains(id));
+        elsewhere = kept;
+        after
+    } else {
+        Vec::new()
+    };
+    rebase(function, plan.var, &elsewhere, &mut indexed(0));
+    rebase(function, plan.var, &before_step, &mut indexed(step));
+    if let Count::Const(n) = plan.count {
+        let span = n.wrapping_mul(step);
+        rebase(
+            function,
+            plan.var,
+            &after,
+            &mut |function: &mut Function| {
+                function.add_expr(Expr::Const(Bits::from_u64(width, span)))
+            },
+        );
+    }
+}
+
+/// Moves the first statement of `do`-`while` `lp`'s body (a leading step,
+/// [`Plan::leading`]) to its end: control passes through it, in no block
+/// of its own (the structure check sees it as none of the code's).
+fn lead_to_last(function: &mut Function, lp: StmtId) {
+    let Some(Stmt::DoWhile { body, .. }) = function.stmts.get_mut(lp.0 as usize) else {
+        return;
+    };
+    if body.len() < 2 {
+        return;
+    }
+    let step = body.remove(0);
+    body.push(step);
+    let origins: Vec<Origin> = function
+        .provenance
+        .stmt(step)
+        .iter()
+        .copied()
+        .filter(|origin| !matches!(origin, Origin::Block(_)))
+        .collect();
+    function.provenance.set_stmt(step, &origins);
+}
+
+/// Every read of pointer `var` in statements `ids` as `p + offset`, a
+/// fresh `offset` (pointer-wide) each.
+fn rebase(
+    function: &mut Function,
+    var: VarId,
+    ids: &[StmtId],
+    offset: &mut dyn FnMut(&mut Function) -> ExprId,
+) {
     let mut info = Info::new(function);
-    let (var, step) = (plan.var, plan.step);
-    for &id in &plan.rewrite {
+    for &id in ids {
         let Some(mut stmt) = function.stmts.get(id.0 as usize).cloned() else {
             continue;
         };
@@ -1399,7 +1715,7 @@ fn rebase(function: &mut Function, plan: &Plan, index: VarId) {
                 root,
                 &mut memo,
                 &mut |function: &mut Function, info: &mut Info, node: ExprId| {
-                    // `p - k` is `(p + d·i) + -k`: an access before the
+                    // `p - k` is `(p + offset) + -k`: an access before the
                     // element `p` reached (`p[i - 1].f`).
                     let (read_p, negated) = match function.expr(node) {
                         Some(&Expr::Binary(Binary::Sub, a, b))
@@ -1413,13 +1729,7 @@ fn rebase(function: &mut Function, plan: &Plan, index: VarId) {
                         Some(&Expr::Var(v)) if v == var => (node, None),
                         Some(_) | None => return None,
                     };
-                    let read = function.add_expr(Expr::Var(index));
-                    let scaled = if step == 1 {
-                        read
-                    } else {
-                        let size = function.add_expr(Expr::Const(Bits::from_u64(width, step)));
-                        function.add_expr(Expr::Binary(Binary::Mul, read, size))
-                    };
+                    let scaled = offset(function);
                     let mut sum = function.add_expr(Expr::Binary(Binary::Add, read_p, scaled));
                     if let Some(k) = negated {
                         let k = function.add_expr(Expr::Const(k));
@@ -1435,6 +1745,232 @@ fn rebase(function: &mut Function, plan: &Plan, index: VarId) {
         });
         if let Some(slot) = function.stmts.get_mut(id.0 as usize) {
             *slot = stmt;
+        }
+    }
+}
+
+/// A pointer stepped in lockstep with its loop's counter ([`lockstep`]).
+struct Lockstep {
+    /// The pointer.
+    var: VarId,
+    /// The loop.
+    lp: StmtId,
+    /// The pointer's step, which goes.
+    step: StmtId,
+    /// What the step adds, in bytes.
+    by: u64,
+    /// The loop's counter.
+    counter: VarId,
+    /// Its width.
+    width: u16,
+    /// Whether it widens to the pointer's width by sign extension (a signed
+    /// counter; its values are the same either way).
+    signed: bool,
+    /// Its value where the loop starts.
+    start: u64,
+}
+
+/// Pointer `var` as its loop's counter scaled ([`ArrayLoops`]'s pointer
+/// with an index already there): a local of pointer type, not in memory,
+/// assigned once before the loop `L` in its block (read only after that)
+/// and stepped once in `L`, `p = p + d` (`d > 0`; or `p = q + k` where
+/// `q`'s one write in `L` is `q = p + m`, earlier in `L`'s body: `d = m +
+/// k`), as the statement of `L`'s body just before the last; `L` a
+/// counted loop ([`Ranges`]) whose counter `c` is that last statement's,
+/// `c = c + 1`, from a constant `c0` (its assignment before `L`), with
+/// every value it has in `L` the same read signed or unsigned (so it never
+/// wraps: `c - c0` counts the iterations). Each iteration steps both, one
+/// after the other, and nothing between reads `p`, leaves or enters `L`
+/// (a counted loop has no `continue` and no label), so wherever `L` reads
+/// `p` it is `A + d·(c - c0)`, `A` its start. Not read after `L`, where
+/// the counter may be written again.
+fn lockstep(
+    function: &Function,
+    tree: &Tree,
+    uses: &Uses,
+    ranges: &Ranges,
+    var: VarId,
+) -> Option<Lockstep> {
+    let width = function.types.pointer_width();
+    let variable = function.var(var)?;
+    if !matches!(variable.kind, VarKind::Local | VarKind::Parameter)
+        || uses.other.contains(&var)
+        || !matches!(function.types.get(variable.ty), Some(Type::Pointer(_)))
+    {
+        return None;
+    }
+    let writes = uses.writes.get(&var)?;
+    let in_loop = |id: StmtId| {
+        tree.parent(id).filter(|&lp| {
+            matches!(
+                function.stmt(lp),
+                Some(Stmt::While { .. } | Stmt::DoWhile { .. })
+            )
+        })
+    };
+    let (step, lp) = writes
+        .iter()
+        .find_map(|&id| in_loop(id).map(|lp| (id, lp)))?;
+    let (Stmt::While { body, .. } | Stmt::DoWhile { body, .. }) = function.stmt(lp)? else {
+        return None;
+    };
+    let counted = ranges.counted(lp)?;
+    let [.., before, last] = body.as_slice() else {
+        return None;
+    };
+    if *before != step
+        || *last != counted.step
+        || counted.counter == var
+        || counted.delta != 1
+        || !counted.counter_free
+    {
+        return None;
+    }
+    let start = match function.stmt(counted.init?) {
+        Some(&Stmt::Assign { value, .. }) => match function.expr(value) {
+            Some(&Expr::Const(bits)) if bits.width() == counted.width => bits.low_u64(),
+            Some(_) | None => return None,
+        },
+        Some(_) | None => return None,
+    };
+    let by = moved_by(function, uses, body, step, var, width)?;
+    let inits: Vec<StmtId> = writes.iter().copied().filter(|&id| id != step).collect();
+    let &(block, at_loop) = tree.at.get(&lp)?;
+    let rewrite = held(function, tree.from(block, at_loop));
+    let (at_init, _) = start_of(function, tree, uses, var, &inits, lp, &rewrite)?;
+    at_init?;
+    // Read in `L` only (after it the counter may be written again).
+    let inside = held(function, &[lp]);
+    let after = held(function, tree.from(block, at_loop + 1));
+    if uses
+        .readers
+        .get(&var)
+        .is_some_and(|readers| readers.iter().any(|id| after.contains(id)))
+        || inside.iter().any(|&id| id != step && writes.contains(&id))
+    {
+        return None;
+    }
+    let signed = matches!(
+        function
+            .var(counted.counter)
+            .and_then(|counter| function.types.get(counter.ty)),
+        Some(Type::Int(_))
+    );
+    Some(Lockstep {
+        var,
+        lp,
+        step,
+        by,
+        counter: counted.counter,
+        width: counted.width,
+        signed,
+        start,
+    })
+}
+
+/// What `step` (a statement of `body`) adds to pointer `var` (`width`
+/// bits), if more than 0: `p = p + d`, or `p = q + k` where `q`'s one write
+/// in the loop is `q = p + m`, a statement of `body` before `step` (`q` a
+/// local or parameter not in memory): `m + k`.
+fn moved_by(
+    function: &Function,
+    uses: &Uses,
+    body: &[StmtId],
+    step: StmtId,
+    var: VarId,
+    width: u16,
+) -> Option<u64> {
+    let Some(&Stmt::Assign { value, .. }) = function.stmt(step) else {
+        return None;
+    };
+    let (base, k) = linear(function, value, width)?;
+    let moved = if base == var {
+        k
+    } else {
+        let at_step = body.iter().position(|&id| id == step)?;
+        let inside = held(function, body);
+        let writes: Vec<StmtId> = uses
+            .writes
+            .get(&base)?
+            .iter()
+            .copied()
+            .filter(|id| inside.contains(id))
+            .collect();
+        let &[assigned] = writes.as_slice() else {
+            return None;
+        };
+        let kind = function.var(base)?.kind;
+        if !matches!(kind, VarKind::Local | VarKind::Parameter)
+            || uses.other.contains(&base)
+            || !body.get(..at_step)?.contains(&assigned)
+        {
+            return None;
+        }
+        let Some(&Stmt::Assign { value, .. }) = function.stmt(assigned) else {
+            return None;
+        };
+        let (from, m) = linear(function, value, width)?;
+        if from != var {
+            return None;
+        }
+        m.checked_add(k)?
+    };
+    u64::try_from(moved).ok().filter(|&moved| moved > 0)
+}
+
+/// Rewrites `paired`'s loop (see [`lockstep`]): each read of the pointer
+/// `p` in it is `p + d·(c - c0)`, and its step goes.
+fn apply_lockstep(function: &mut Function, tree: &Tree, paired: &Lockstep) {
+    let width = function.types.pointer_width();
+    let inside = held(function, &[paired.lp]);
+    let Lockstep {
+        counter,
+        width: from,
+        signed,
+        by,
+        start,
+        ..
+    } = *paired;
+    rebase(
+        function,
+        paired.var,
+        &inside,
+        &mut |function: &mut Function| {
+            let mut read = function.add_expr(Expr::Var(counter));
+            if from < width {
+                read = function.add_expr(Expr::Extend {
+                    signed,
+                    value: read,
+                    width,
+                });
+            }
+            let mut offset = if by == 1 {
+                read
+            } else {
+                let size = function.add_expr(Expr::Const(Bits::from_u64(width, by)));
+                function.add_expr(Expr::Binary(Binary::Mul, read, size))
+            };
+            if start != 0 {
+                let back = by.wrapping_mul(start).wrapping_neg();
+                let back = function.add_expr(Expr::Const(Bits::from_u64(width, back)));
+                offset = function.add_expr(Expr::Binary(Binary::Add, offset, back));
+            }
+            offset
+        },
+    );
+    if let Some(&(block, position)) = tree.at.get(&paired.step) {
+        let slot = match tree.blocks.get(block) {
+            Some(&(None, _, _)) => Some(&mut function.body),
+            Some(&(Some(owner), nth, _)) => function
+                .stmts
+                .get_mut(owner.0 as usize)
+                .and_then(|stmt| stmt.blocks_mut().nth(nth)),
+            None => None,
+        };
+        if let Some(slot) = slot
+            && slot.get(position) == Some(&paired.step)
+        {
+            slot.remove(position);
         }
     }
 }

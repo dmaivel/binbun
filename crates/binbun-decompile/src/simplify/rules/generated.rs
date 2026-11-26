@@ -5,8 +5,8 @@
 //! rule as data ([`RULES`]), its matcher, and the rules filed by the kind
 //! of their left side's root.
 //!
-//! 117 rules:
-//! - `algebra`: 40
+//! 122 rules:
+//! - `algebra`: 45
 //! - `compare`: 43
 //! - `extend`: 25
 //! - `select`: 9
@@ -18,7 +18,7 @@ use super::{
 use binbun_ast::ir::{Expr, ExprId};
 use binbun_semantics::ir::{Binary, Flag, Unary};
 /// The rules, in the order they are tried.
-pub static RULES: [Rule; 117] = [
+pub static RULES: [Rule; 122] = [
     Rule {
         name: "add-0",
         group: "algebra",
@@ -1349,6 +1349,251 @@ pub static RULES: [Rule; 117] = [
             Node::Const(1),
             Node::Binary(Binary::Mul, 1, 2),
             Node::Binary(Binary::Mul, 0, 3),
+        ],
+        constraints: &[],
+        conditions: &[],
+        holds: &[],
+    },
+    Rule {
+        name: "add-const-out",
+        group: "algebra",
+        text: "rule add-const-out: add(add(x:W, #c), y) => add(add(x, y), #c)",
+        widths: &[WidthVar {
+            name: "W",
+            claimed: &[8, 16, 32, 64],
+        }],
+        vars: &[
+            (
+                "x",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+            (
+                "y",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+        ],
+        constants: &[(
+            "c",
+            Width {
+                constant: 0,
+                terms: &[(0, 1)],
+            },
+        )],
+        lhs: &[
+            Node::Var(0),
+            Node::Const(0),
+            Node::Binary(Binary::Add, 0, 1),
+            Node::Var(1),
+            Node::Binary(Binary::Add, 2, 3),
+        ],
+        rhs: &[
+            Node::Var(0),
+            Node::Var(1),
+            Node::Binary(Binary::Add, 0, 1),
+            Node::Const(0),
+            Node::Binary(Binary::Add, 2, 3),
+        ],
+        constraints: &[],
+        conditions: &[],
+        holds: &[],
+    },
+    Rule {
+        name: "add-const-out-right",
+        group: "algebra",
+        text: "rule add-const-out-right: add(x:W, add(y, #c)) => add(add(x, y), #c)",
+        widths: &[WidthVar {
+            name: "W",
+            claimed: &[8, 16, 32, 64],
+        }],
+        vars: &[
+            (
+                "x",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+            (
+                "y",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+        ],
+        constants: &[(
+            "c",
+            Width {
+                constant: 0,
+                terms: &[(0, 1)],
+            },
+        )],
+        lhs: &[
+            Node::Var(0),
+            Node::Var(1),
+            Node::Const(0),
+            Node::Binary(Binary::Add, 1, 2),
+            Node::Binary(Binary::Add, 0, 3),
+        ],
+        rhs: &[
+            Node::Var(0),
+            Node::Var(1),
+            Node::Binary(Binary::Add, 0, 1),
+            Node::Const(0),
+            Node::Binary(Binary::Add, 2, 3),
+        ],
+        constraints: &[],
+        conditions: &[],
+        holds: &[],
+    },
+    Rule {
+        name: "sub-const-out",
+        group: "algebra",
+        text: "rule sub-const-out: sub(add(x:W, #c), y) => add(sub(x, y), #c)",
+        widths: &[WidthVar {
+            name: "W",
+            claimed: &[8, 16, 32, 64],
+        }],
+        vars: &[
+            (
+                "x",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+            (
+                "y",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+        ],
+        constants: &[(
+            "c",
+            Width {
+                constant: 0,
+                terms: &[(0, 1)],
+            },
+        )],
+        lhs: &[
+            Node::Var(0),
+            Node::Const(0),
+            Node::Binary(Binary::Add, 0, 1),
+            Node::Var(1),
+            Node::Binary(Binary::Sub, 2, 3),
+        ],
+        rhs: &[
+            Node::Var(0),
+            Node::Var(1),
+            Node::Binary(Binary::Sub, 0, 1),
+            Node::Const(0),
+            Node::Binary(Binary::Add, 2, 3),
+        ],
+        constraints: &[],
+        conditions: &[],
+        holds: &[],
+    },
+    Rule {
+        name: "add-sub-const-out",
+        group: "algebra",
+        text: "rule add-sub-const-out: add(sub(x:W, #c), y) => sub(add(x, y), #c)",
+        widths: &[WidthVar {
+            name: "W",
+            claimed: &[8, 16, 32, 64],
+        }],
+        vars: &[
+            (
+                "x",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+            (
+                "y",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+        ],
+        constants: &[(
+            "c",
+            Width {
+                constant: 0,
+                terms: &[(0, 1)],
+            },
+        )],
+        lhs: &[
+            Node::Var(0),
+            Node::Const(0),
+            Node::Binary(Binary::Sub, 0, 1),
+            Node::Var(1),
+            Node::Binary(Binary::Add, 2, 3),
+        ],
+        rhs: &[
+            Node::Var(0),
+            Node::Var(1),
+            Node::Binary(Binary::Add, 0, 1),
+            Node::Const(0),
+            Node::Binary(Binary::Sub, 2, 3),
+        ],
+        constraints: &[],
+        conditions: &[],
+        holds: &[],
+    },
+    Rule {
+        name: "add-sub-const-out-right",
+        group: "algebra",
+        text: "rule add-sub-const-out-right: add(x:W, sub(y, #c)) => sub(add(x, y), #c)",
+        widths: &[WidthVar {
+            name: "W",
+            claimed: &[8, 16, 32, 64],
+        }],
+        vars: &[
+            (
+                "x",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+            (
+                "y",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+        ],
+        constants: &[(
+            "c",
+            Width {
+                constant: 0,
+                terms: &[(0, 1)],
+            },
+        )],
+        lhs: &[
+            Node::Var(0),
+            Node::Var(1),
+            Node::Const(0),
+            Node::Binary(Binary::Sub, 1, 2),
+            Node::Binary(Binary::Add, 0, 3),
+        ],
+        rhs: &[
+            Node::Var(0),
+            Node::Var(1),
+            Node::Binary(Binary::Add, 0, 1),
+            Node::Const(0),
+            Node::Binary(Binary::Sub, 2, 3),
         ],
         constraints: &[],
         conditions: &[],
@@ -5508,7 +5753,7 @@ pub static RULES: [Rule; 117] = [
     },
 ];
 /// Each rule's matcher, by index into [`RULES`].
-pub(super) static MATCHERS: [Apply; 117] = [
+pub(super) static MATCHERS: [Apply; 122] = [
     rule_0, rule_1, rule_2, rule_3, rule_4, rule_5, rule_6, rule_7, rule_8, rule_9, rule_10,
     rule_11, rule_12, rule_13, rule_14, rule_15, rule_16, rule_17, rule_18, rule_19, rule_20,
     rule_21, rule_22, rule_23, rule_24, rule_25, rule_26, rule_27, rule_28, rule_29, rule_30,
@@ -5520,48 +5765,52 @@ pub(super) static MATCHERS: [Apply; 117] = [
     rule_81, rule_82, rule_83, rule_84, rule_85, rule_86, rule_87, rule_88, rule_89, rule_90,
     rule_91, rule_92, rule_93, rule_94, rule_95, rule_96, rule_97, rule_98, rule_99, rule_100,
     rule_101, rule_102, rule_103, rule_104, rule_105, rule_106, rule_107, rule_108, rule_109,
-    rule_110, rule_111, rule_112, rule_113, rule_114, rule_115, rule_116,
+    rule_110, rule_111, rule_112, rule_113, rule_114, rule_115, rule_116, rule_117, rule_118,
+    rule_119, rule_120, rule_121,
 ];
 /// The rules by the kind of their left side's root.
 pub(super) static DISPATCH: [(Shape, &[usize]); 23] = [
     (
         Shape::Binary(Binary::Add),
-        &[0, 1, 18, 19, 20, 26, 28, 33, 34, 38],
+        &[0, 1, 18, 19, 20, 26, 28, 33, 34, 38, 39, 41, 42, 43],
     ),
-    (Shape::Binary(Binary::Sub), &[2, 15, 21, 24, 27, 35, 36, 39]),
+    (
+        Shape::Binary(Binary::Sub),
+        &[2, 15, 21, 24, 27, 35, 36, 40, 44],
+    ),
     (Shape::Binary(Binary::Mul), &[3, 4, 5, 29, 37]),
-    (Shape::Binary(Binary::And), &[6, 7, 16, 30, 116]),
-    (Shape::Binary(Binary::Or), &[8, 9, 17, 31, 49, 50, 51, 52]),
+    (Shape::Binary(Binary::And), &[6, 7, 16, 30, 121]),
+    (Shape::Binary(Binary::Or), &[8, 9, 17, 31, 54, 55, 56, 57]),
     (Shape::Binary(Binary::Xor), &[10, 14, 25, 32]),
     (Shape::Binary(Binary::Shl), &[11]),
     (Shape::Binary(Binary::LShr), &[12]),
     (Shape::Binary(Binary::AShr), &[13]),
-    (Shape::Unary(Unary::Not), &[22, 57, 58, 59, 60, 61, 62]),
-    (Shape::Unary(Unary::Neg), &[23, 115]),
+    (Shape::Unary(Unary::Not), &[22, 62, 63, 64, 65, 66, 67]),
+    (Shape::Unary(Unary::Neg), &[23, 120]),
     (
         Shape::Binary(Binary::Ne),
-        &[40, 43, 45, 47, 53, 64, 76, 78, 79, 82],
+        &[45, 48, 50, 52, 58, 69, 81, 83, 84, 87],
     ),
     (
         Shape::Binary(Binary::Eq),
-        &[41, 42, 46, 48, 54, 63, 75, 77, 80, 81],
+        &[46, 47, 51, 53, 59, 68, 80, 82, 85, 86],
     ),
     (
         Shape::Extract,
         &[
-            44, 86, 87, 88, 89, 90, 91, 92, 93, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105,
-            106, 107,
+            49, 91, 92, 93, 94, 95, 96, 97, 98, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+            110, 111, 112,
         ],
     ),
-    (Shape::Flag(Flag::SubBorrow), &[55]),
-    (Shape::Flag(Flag::AddCarry), &[56]),
-    (Shape::Binary(Binary::ULt), &[65, 69, 71, 73]),
-    (Shape::Binary(Binary::ULe), &[66, 70, 72, 74]),
-    (Shape::Binary(Binary::SLt), &[67]),
-    (Shape::Binary(Binary::SLe), &[68]),
-    (Shape::Extend, &[83, 84, 85]),
-    (Shape::Concat, &[94]),
-    (Shape::Select, &[108, 109, 110, 111, 112, 113, 114]),
+    (Shape::Flag(Flag::SubBorrow), &[60]),
+    (Shape::Flag(Flag::AddCarry), &[61]),
+    (Shape::Binary(Binary::ULt), &[70, 74, 76, 78]),
+    (Shape::Binary(Binary::ULe), &[71, 75, 77, 79]),
+    (Shape::Binary(Binary::SLt), &[72]),
+    (Shape::Binary(Binary::SLe), &[73]),
+    (Shape::Extend, &[88, 89, 90]),
+    (Shape::Concat, &[99]),
+    (Shape::Select, &[113, 114, 115, 116, 117, 118, 119]),
 ];
 /// `add-0` (algebra).
 fn rule_0(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
@@ -6373,8 +6622,153 @@ fn rule_37(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let r4 = m.binary(Binary::Mul, r0, r3)?;
     Some(r4)
 }
-/// `add-negative` (algebra).
+/// `add-const-out` (algebra).
 fn rule_38(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+    let Expr::Binary(Binary::Add, e2, e3) = m.expr(root)? else {
+        return None;
+    };
+    let Expr::Binary(Binary::Add, e0, e1) = m.expr(e2)? else {
+        return None;
+    };
+    let v0 = e0;
+    let ce0 = e1;
+    let c0 = m.constant(ce0)?;
+    let v1 = e3;
+    let w_w = m.width(v0)?;
+    if !claimed(w_w, &[8, 16, 32, 64]) {
+        return None;
+    }
+    if i64::from(c0.width()) != w_w {
+        return None;
+    }
+    if m.width(v1)? != w_w {
+        return None;
+    }
+    let r0 = v0;
+    let r1 = v1;
+    let r2 = m.binary(Binary::Add, r0, r1)?;
+    let r3 = ce0;
+    let r4 = m.binary(Binary::Add, r2, r3)?;
+    Some(r4)
+}
+/// `add-const-out-right` (algebra).
+fn rule_39(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+    let Expr::Binary(Binary::Add, e0, e3) = m.expr(root)? else {
+        return None;
+    };
+    let v0 = e0;
+    let Expr::Binary(Binary::Add, e1, e2) = m.expr(e3)? else {
+        return None;
+    };
+    let v1 = e1;
+    let ce0 = e2;
+    let c0 = m.constant(ce0)?;
+    let w_w = m.width(v0)?;
+    if !claimed(w_w, &[8, 16, 32, 64]) {
+        return None;
+    }
+    if m.width(v1)? != w_w {
+        return None;
+    }
+    if i64::from(c0.width()) != w_w {
+        return None;
+    }
+    let r0 = v0;
+    let r1 = v1;
+    let r2 = m.binary(Binary::Add, r0, r1)?;
+    let r3 = ce0;
+    let r4 = m.binary(Binary::Add, r2, r3)?;
+    Some(r4)
+}
+/// `sub-const-out` (algebra).
+fn rule_40(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+    let Expr::Binary(Binary::Sub, e2, e3) = m.expr(root)? else {
+        return None;
+    };
+    let Expr::Binary(Binary::Add, e0, e1) = m.expr(e2)? else {
+        return None;
+    };
+    let v0 = e0;
+    let ce0 = e1;
+    let c0 = m.constant(ce0)?;
+    let v1 = e3;
+    let w_w = m.width(v0)?;
+    if !claimed(w_w, &[8, 16, 32, 64]) {
+        return None;
+    }
+    if i64::from(c0.width()) != w_w {
+        return None;
+    }
+    if m.width(v1)? != w_w {
+        return None;
+    }
+    let r0 = v0;
+    let r1 = v1;
+    let r2 = m.binary(Binary::Sub, r0, r1)?;
+    let r3 = ce0;
+    let r4 = m.binary(Binary::Add, r2, r3)?;
+    Some(r4)
+}
+/// `add-sub-const-out` (algebra).
+fn rule_41(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+    let Expr::Binary(Binary::Add, e2, e3) = m.expr(root)? else {
+        return None;
+    };
+    let Expr::Binary(Binary::Sub, e0, e1) = m.expr(e2)? else {
+        return None;
+    };
+    let v0 = e0;
+    let ce0 = e1;
+    let c0 = m.constant(ce0)?;
+    let v1 = e3;
+    let w_w = m.width(v0)?;
+    if !claimed(w_w, &[8, 16, 32, 64]) {
+        return None;
+    }
+    if i64::from(c0.width()) != w_w {
+        return None;
+    }
+    if m.width(v1)? != w_w {
+        return None;
+    }
+    let r0 = v0;
+    let r1 = v1;
+    let r2 = m.binary(Binary::Add, r0, r1)?;
+    let r3 = ce0;
+    let r4 = m.binary(Binary::Sub, r2, r3)?;
+    Some(r4)
+}
+/// `add-sub-const-out-right` (algebra).
+fn rule_42(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+    let Expr::Binary(Binary::Add, e0, e3) = m.expr(root)? else {
+        return None;
+    };
+    let v0 = e0;
+    let Expr::Binary(Binary::Sub, e1, e2) = m.expr(e3)? else {
+        return None;
+    };
+    let v1 = e1;
+    let ce0 = e2;
+    let c0 = m.constant(ce0)?;
+    let w_w = m.width(v0)?;
+    if !claimed(w_w, &[8, 16, 32, 64]) {
+        return None;
+    }
+    if m.width(v1)? != w_w {
+        return None;
+    }
+    if i64::from(c0.width()) != w_w {
+        return None;
+    }
+    let r0 = v0;
+    let r1 = v1;
+    let r2 = m.binary(Binary::Add, r0, r1)?;
+    let r3 = ce0;
+    let r4 = m.binary(Binary::Sub, r2, r3)?;
+    Some(r4)
+}
+/// `add-negative` (algebra).
+fn rule_43(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Add, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -6409,7 +6803,7 @@ fn rule_38(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r3)
 }
 /// `sub-negative` (algebra).
-fn rule_39(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_44(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Sub, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -6444,7 +6838,7 @@ fn rule_39(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r3)
 }
 /// `bit-ne-0` (compare).
-fn rule_40(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_45(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Ne, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -6459,7 +6853,7 @@ fn rule_40(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `bit-eq-1` (compare).
-fn rule_41(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_46(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Eq, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -6474,7 +6868,7 @@ fn rule_41(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `bit-eq-0` (compare).
-fn rule_42(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_47(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Eq, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -6490,7 +6884,7 @@ fn rule_42(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `bit-ne-1` (compare).
-fn rule_43(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_48(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Ne, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -6506,7 +6900,7 @@ fn rule_43(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `sign-bit` (compare).
-fn rule_44(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_49(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e0,
         offset: o1,
@@ -6532,7 +6926,7 @@ fn rule_44(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `sign-lshr-ne` (compare).
-fn rule_45(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_50(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Ne, e2, e3) = m.expr(root)? else {
         return None;
     };
@@ -6567,7 +6961,7 @@ fn rule_45(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `sign-lshr-eq` (compare).
-fn rule_46(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_51(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Eq, e2, e3) = m.expr(root)? else {
         return None;
     };
@@ -6602,7 +6996,7 @@ fn rule_46(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `sign-ashr-ne` (compare).
-fn rule_47(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_52(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Ne, e2, e3) = m.expr(root)? else {
         return None;
     };
@@ -6637,7 +7031,7 @@ fn rule_47(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `sign-ashr-eq` (compare).
-fn rule_48(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_53(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Eq, e2, e3) = m.expr(root)? else {
         return None;
     };
@@ -6672,7 +7066,7 @@ fn rule_48(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `sle-of-or` (compare).
-fn rule_49(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_54(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Or, e2, e5) = m.expr(root)? else {
         return None;
     };
@@ -6703,7 +7097,7 @@ fn rule_49(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `sle-of-or-swapped` (compare).
-fn rule_50(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_55(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Or, e2, e5) = m.expr(root)? else {
         return None;
     };
@@ -6734,7 +7128,7 @@ fn rule_50(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ule-of-or` (compare).
-fn rule_51(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_56(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Or, e2, e5) = m.expr(root)? else {
         return None;
     };
@@ -6765,7 +7159,7 @@ fn rule_51(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ule-of-or-swapped` (compare).
-fn rule_52(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_57(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Or, e2, e5) = m.expr(root)? else {
         return None;
     };
@@ -6796,7 +7190,7 @@ fn rule_52(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `slt-of-flags` (compare).
-fn rule_53(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_58(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Ne, e4, e8) = m.expr(root)? else {
         return None;
     };
@@ -6842,7 +7236,7 @@ fn rule_53(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `sle-of-flags` (compare).
-fn rule_54(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_59(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Eq, e4, e8) = m.expr(root)? else {
         return None;
     };
@@ -6891,7 +7285,7 @@ fn rule_54(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ult-of-borrow` (compare).
-fn rule_55(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_60(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Flag(Flag::SubBorrow, e0, e1, e2) = m.expr(root)? else {
         return None;
     };
@@ -6916,7 +7310,7 @@ fn rule_55(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ult-of-carry` (compare).
-fn rule_56(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_61(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Flag(Flag::AddCarry, e0, e1, e2) = m.expr(root)? else {
         return None;
     };
@@ -6946,7 +7340,7 @@ fn rule_56(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r4)
 }
 /// `not-slt` (compare).
-fn rule_57(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_62(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Unary(Unary::Not, e2) = m.expr(root)? else {
         return None;
     };
@@ -6971,7 +7365,7 @@ fn rule_57(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `not-sle` (compare).
-fn rule_58(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_63(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Unary(Unary::Not, e2) = m.expr(root)? else {
         return None;
     };
@@ -6996,7 +7390,7 @@ fn rule_58(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `not-ult` (compare).
-fn rule_59(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_64(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Unary(Unary::Not, e2) = m.expr(root)? else {
         return None;
     };
@@ -7021,7 +7415,7 @@ fn rule_59(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `not-ule` (compare).
-fn rule_60(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_65(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Unary(Unary::Not, e2) = m.expr(root)? else {
         return None;
     };
@@ -7046,7 +7440,7 @@ fn rule_60(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `not-eq` (compare).
-fn rule_61(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_66(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Unary(Unary::Not, e2) = m.expr(root)? else {
         return None;
     };
@@ -7068,7 +7462,7 @@ fn rule_61(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `not-ne` (compare).
-fn rule_62(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_67(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Unary(Unary::Not, e2) = m.expr(root)? else {
         return None;
     };
@@ -7090,7 +7484,7 @@ fn rule_62(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `eq-self` (compare).
-fn rule_63(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_68(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Eq, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7109,7 +7503,7 @@ fn rule_63(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `ne-self` (compare).
-fn rule_64(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_69(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Ne, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7128,7 +7522,7 @@ fn rule_64(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `ult-self` (compare).
-fn rule_65(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_70(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::ULt, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7147,7 +7541,7 @@ fn rule_65(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `ule-self` (compare).
-fn rule_66(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_71(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::ULe, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7166,7 +7560,7 @@ fn rule_66(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `slt-self` (compare).
-fn rule_67(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_72(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::SLt, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7185,7 +7579,7 @@ fn rule_67(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `sle-self` (compare).
-fn rule_68(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_73(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::SLe, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7204,7 +7598,7 @@ fn rule_68(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `ult-1` (compare).
-fn rule_69(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_74(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::ULt, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7225,7 +7619,7 @@ fn rule_69(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ule-0` (compare).
-fn rule_70(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_75(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::ULe, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7246,7 +7640,7 @@ fn rule_70(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ult-0-left` (compare).
-fn rule_71(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_76(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::ULt, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7267,7 +7661,7 @@ fn rule_71(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ule-1-left` (compare).
-fn rule_72(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_77(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::ULe, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7288,7 +7682,7 @@ fn rule_72(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ult-0` (compare).
-fn rule_73(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_78(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::ULt, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7310,7 +7704,7 @@ fn rule_73(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `ule-0-left` (compare).
-fn rule_74(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_79(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::ULe, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7332,7 +7726,7 @@ fn rule_74(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `eq-sub-0` (compare).
-fn rule_75(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_80(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Eq, e2, e3) = m.expr(root)? else {
         return None;
     };
@@ -7360,7 +7754,7 @@ fn rule_75(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ne-sub-0` (compare).
-fn rule_76(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_81(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Ne, e2, e3) = m.expr(root)? else {
         return None;
     };
@@ -7388,7 +7782,7 @@ fn rule_76(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `eq-xor-0` (compare).
-fn rule_77(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_82(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Eq, e2, e3) = m.expr(root)? else {
         return None;
     };
@@ -7416,7 +7810,7 @@ fn rule_77(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ne-xor-0` (compare).
-fn rule_78(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_83(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Ne, e2, e3) = m.expr(root)? else {
         return None;
     };
@@ -7444,7 +7838,7 @@ fn rule_78(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ne-zext-bit` (compare).
-fn rule_79(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_84(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Ne, e1, e2) = m.expr(root)? else {
         return None;
     };
@@ -7474,7 +7868,7 @@ fn rule_79(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `eq-zext-bit` (compare).
-fn rule_80(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_85(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Eq, e1, e2) = m.expr(root)? else {
         return None;
     };
@@ -7505,7 +7899,7 @@ fn rule_80(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `eq-const-left` (compare).
-fn rule_81(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_86(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Eq, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7525,7 +7919,7 @@ fn rule_81(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `ne-const-left` (compare).
-fn rule_82(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_87(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::Ne, e0, e1) = m.expr(root)? else {
         return None;
     };
@@ -7545,7 +7939,7 @@ fn rule_82(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `zext-zext` (extend).
-fn rule_83(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_88(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extend {
         signed: false,
         value: e1,
@@ -7580,7 +7974,7 @@ fn rule_83(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `sext-sext` (extend).
-fn rule_84(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_89(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extend {
         signed: true,
         value: e1,
@@ -7615,7 +8009,7 @@ fn rule_84(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `sext-zext` (extend).
-fn rule_85(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_90(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extend {
         signed: true,
         value: e1,
@@ -7650,7 +8044,7 @@ fn rule_85(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `low-of-zext` (extend).
-fn rule_86(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_91(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e1,
         offset: o2,
@@ -7686,7 +8080,7 @@ fn rule_86(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `low-of-sext` (extend).
-fn rule_87(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_92(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e1,
         offset: o2,
@@ -7722,7 +8116,7 @@ fn rule_87(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `lower-of-zext` (extend).
-fn rule_88(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_93(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e1,
         offset: o2,
@@ -7763,7 +8157,7 @@ fn rule_88(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `lower-of-sext` (extend).
-fn rule_89(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_94(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e1,
         offset: o2,
@@ -7804,7 +8198,7 @@ fn rule_89(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `part-of-zext` (extend).
-fn rule_90(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_95(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e1,
         offset: o2,
@@ -7848,7 +8242,7 @@ fn rule_90(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `part-of-sext` (extend).
-fn rule_91(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_96(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e1,
         offset: o2,
@@ -7892,7 +8286,7 @@ fn rule_91(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `extract-whole` (extend).
-fn rule_92(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_97(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e0,
         offset: o1,
@@ -7916,7 +8310,7 @@ fn rule_92(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `extract-extract` (extend).
-fn rule_93(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_98(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e1,
         offset: o2,
@@ -7959,7 +8353,7 @@ fn rule_93(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `concat-zero` (extend).
-fn rule_94(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_99(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Concat { high: e0, low: e1 } = m.expr(root)? else {
         return None;
     };
@@ -7980,7 +8374,7 @@ fn rule_94(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `low-of-concat` (extend).
-fn rule_95(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_100(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e2,
         offset: o3,
@@ -8028,7 +8422,7 @@ fn rule_95(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `high-of-concat` (extend).
-fn rule_96(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_101(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e2,
         offset: o3,
@@ -8076,7 +8470,7 @@ fn rule_96(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `within-low-of-concat` (extend).
-fn rule_97(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_102(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e2,
         offset: o3,
@@ -8138,7 +8532,7 @@ fn rule_97(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `within-high-of-concat` (extend).
-fn rule_98(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_103(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e2,
         offset: o3,
@@ -8203,7 +8597,7 @@ fn rule_98(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `over-concat` (extend).
-fn rule_99(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_104(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e2,
         offset: o3,
@@ -8245,7 +8639,7 @@ fn rule_99(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r3)
 }
 /// `low-of-add` (extend).
-fn rule_100(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_105(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e2,
         offset: o3,
@@ -8284,7 +8678,7 @@ fn rule_100(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r4)
 }
 /// `low-of-sub` (extend).
-fn rule_101(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_106(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e2,
         offset: o3,
@@ -8323,7 +8717,7 @@ fn rule_101(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r4)
 }
 /// `low-of-mul` (extend).
-fn rule_102(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_107(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e2,
         offset: o3,
@@ -8362,7 +8756,7 @@ fn rule_102(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r4)
 }
 /// `low-of-and` (extend).
-fn rule_103(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_108(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e2,
         offset: o3,
@@ -8401,7 +8795,7 @@ fn rule_103(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r4)
 }
 /// `low-of-or` (extend).
-fn rule_104(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_109(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e2,
         offset: o3,
@@ -8440,7 +8834,7 @@ fn rule_104(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r4)
 }
 /// `low-of-xor` (extend).
-fn rule_105(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_110(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e2,
         offset: o3,
@@ -8479,7 +8873,7 @@ fn rule_105(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r4)
 }
 /// `low-of-not` (extend).
-fn rule_106(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_111(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e1,
         offset: o2,
@@ -8512,7 +8906,7 @@ fn rule_106(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `low-of-neg` (extend).
-fn rule_107(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_112(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Extract {
         value: e1,
         offset: o2,
@@ -8545,7 +8939,7 @@ fn rule_107(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `select-bit` (select).
-fn rule_108(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_113(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Select {
         condition: e0,
         then: e1,
@@ -8568,7 +8962,7 @@ fn rule_108(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `select-not-bit` (select).
-fn rule_109(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_114(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Select {
         condition: e0,
         then: e1,
@@ -8592,7 +8986,7 @@ fn rule_109(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `select-same` (select).
-fn rule_110(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_115(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Select {
         condition: e0,
         then: e1,
@@ -8620,7 +9014,7 @@ fn rule_110(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r0)
 }
 /// `select-one` (select).
-fn rule_111(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_116(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Select {
         condition: e0,
         then: e1,
@@ -8651,7 +9045,7 @@ fn rule_111(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `select-zero` (select).
-fn rule_112(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_117(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Select {
         condition: e0,
         then: e1,
@@ -8683,7 +9077,7 @@ fn rule_112(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r2)
 }
 /// `select-ones` (select).
-fn rule_113(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_118(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Select {
         condition: e0,
         then: e1,
@@ -8714,7 +9108,7 @@ fn rule_113(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `select-not` (select).
-fn rule_114(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_119(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Select {
         condition: e1,
         then: e2,
@@ -8749,7 +9143,7 @@ fn rule_114(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r3)
 }
 /// `neg-of-bit` (select).
-fn rule_115(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_120(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Unary(Unary::Neg, e1) = m.expr(root)? else {
         return None;
     };
@@ -8774,7 +9168,7 @@ fn rule_115(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `and-1-of-bit` (select).
-fn rule_116(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_121(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::And, e1, e2) = m.expr(root)? else {
         return None;
     };

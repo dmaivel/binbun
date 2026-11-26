@@ -41,6 +41,8 @@ always read by later versions.
 - A stack slot that is accessed in parts and lives outside the frame struct has the type of its whole accesses (`int64_t frame_m78`) instead of being bytes (`uint8_t frame_m78[8]`).
 - A pointer to an array of floats that its function's own code steps through, or reads as floats and writes with SIMD moves (`movups`), is a `float *` even where a callee is passed it as something else, and those moves are of `f32x4` (or `f64x2`) values: `*(f32x4 *)p = (f32x4){1.0f, 2.0f, 3.0f, 4.0f};` instead of a 128-bit integer constant.
 - Vector constants of floats print their lanes as float literals (`(f32x4){1.0f, 0.5f, -0.0f, 3.0f}`) where every lane is a number.
+- Nested loops that walk a matrix with pointers (a row pointer stepped beside its loop's counter, a column pointer stepped at the start of its body) are `for` loops of two indices reading `a[i + j * 4]`, where they were pointer loops whose offsets did not cancel.
+- Sums print with their constants together (`p + i * 4` instead of `(p + 64) + i * 4 - 64`).
 
 ### Fixed
 

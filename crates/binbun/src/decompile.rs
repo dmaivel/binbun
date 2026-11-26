@@ -264,8 +264,10 @@ impl<F> Recorded<F> {
 /// 4. [`CommonArms`] (the statements both arms of an `if` begin with
 ///    before it, those both end with after it: the guard of an inverted
 ///    `for` is then its loop's alone), [`ArrayLoops`] (pointer loops
-///    through an array as loops of an index; then [`Prune`] for the end
-///    pointers it leaves unread), then
+///    through an array as loops of an index; then, if it rewrote one, the
+///    fixed point and [`Prune`] again: the end pointers it leaves unread
+///    go, a start read once moves into its reads, and their offsets fold),
+///    then
 ///    [`Loops`] (`do`-`while`s guarded by their own condition as
 ///    `while`, `for` loops, proved exit conditions as `<`, counted rotated
 ///    loops as `for`);
@@ -368,8 +370,10 @@ pub(crate) fn l2_passes_recorded<'e>(
     let mut arrays = ArrayLoops::default();
     manager.run(&mut arrays, l2, env).map_err(fails)?;
     if arrays.rewritten() > 0 {
-        // An end pointer only the rewritten tests read is dead.
-        manager.run(&mut Prune, l2, env).map_err(fails)?;
+        // An end pointer only the rewritten tests read is dead; a start
+        // read once moves into its reads, and their offsets fold (`(p +
+        // 64) + 4·i - 64`).
+        simplify(&mut manager, l2).map_err(fails)?;
     }
     let mut loops = Loops::default();
     manager.run(&mut loops, l2, env).map_err(fails)?;
