@@ -809,12 +809,13 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
 
     /// The type of slot `index`'s field in the frame struct of `region`
     /// ([`Self::frame_struct`]): the solved type of a slot of one shape;
-    /// of a slot of at most 8 bytes also accessed in parts, the type most
-    /// of its accesses of the whole slot have (the parts read or write its
-    /// bytes; no constraint joins the whole accesses, which may be of
-    /// different variables sharing the slot; 16 bytes accessed whole and
-    /// in parts are an aggregate's copy, which stays bytes); bytes for a
-    /// slot no access is all of,
+    /// of a slot of at most 8 bytes accessed in several widths all at its
+    /// first byte, a union of those views ([`Self::views`]); of one also
+    /// accessed in other parts, the type most of its accesses of the whole
+    /// slot have (the parts read or write its bytes; no constraint joins
+    /// the whole accesses, which may be of different variables sharing the
+    /// slot; 16 bytes accessed whole and in parts are an aggregate's copy,
+    /// which stays bytes); bytes for a slot no access is all of,
     /// and for one the function never writes where no address into the
     /// region is taken (what it reads there nothing in the function wrote:
     /// C would see a field read uninitialized).
@@ -833,6 +834,11 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
                 .any(|&offset| region.contains(offset));
         let scalar = slot.shape || bytes <= 8;
         if written && slot.whole && scalar && matches!(bytes, 1 | 2 | 4 | 8 | 16) {
+            if !slot.shape
+                && let Some(views) = self.views(index)
+            {
+                return views;
+            }
             let solved = if slot.shape {
                 self.lw
                     .typed
@@ -841,27 +847,7 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
             } else {
                 self.whole_access_type(index, width)
             };
-            let solved = solved
-                .filter(|&ty| self.ast.types.value_width(ty) == Some(width))
-                .filter(|&ty| match self.ast.types.get(ty) {
-                    Some(
-                        Type::Bits(_)
-                        | Type::Int(_)
-                        | Type::UInt(_)
-                        | Type::Char { .. }
-                        | Type::Bool(_)
-                        | Type::Pointer(_)
-                        | Type::Code(_)
-                        | Type::Enum(_),
-                    ) => true,
-                    Some(Type::Float(format)) => {
-                        !matches!(format, binbun_semantics::ir::Format::Extended)
-                    }
-                    Some(
-                        Type::Struct(_) | Type::Union(_) | Type::Array { .. } | Type::Vector { .. },
-                    )
-                    | None => false,
-                });
+            let solved = solved.filter(|&ty| self.field_scalar(ty, width));
             return solved.unwrap_or_else(|| self.bits(width));
         }
         let element = self.bits(8);
@@ -869,6 +855,78 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
             element,
             length: Some(bytes),
         })
+    }
+
+    /// Whether `ty` is a scalar a field holds in exactly `width` bits (no
+    /// x87 extended float).
+    fn field_scalar(&self, ty: TypeId, width: u16) -> bool {
+        self.ast.types.value_width(ty) == Some(width)
+            && match self.ast.types.get(ty) {
+                Some(
+                    Type::Bits(_)
+                    | Type::Int(_)
+                    | Type::UInt(_)
+                    | Type::Char { .. }
+                    | Type::Bool(_)
+                    | Type::Pointer(_)
+                    | Type::Code(_)
+                    | Type::Enum(_),
+                ) => true,
+                Some(Type::Float(format)) => {
+                    !matches!(format, binbun_semantics::ir::Format::Extended)
+                }
+                Some(
+                    Type::Struct(_) | Type::Union(_) | Type::Array { .. } | Type::Vector { .. },
+                )
+                | None => false,
+            }
+    }
+
+    /// The views of slot `index` in memory, accessed in several widths
+    /// every one at its first byte (a load or store, no call's stack
+    /// argument), as a union: a member `w<bits>` per width, of the solved
+    /// type most of that width's accesses have where one does and is a
+    /// scalar ([`Self::field_scalar`]), else bits. The members are the
+    /// same bytes, so each access names its own (`frame.at_m28.w32`)
+    /// instead of a cast of the slot's address.
+    fn views(&mut self, index: usize) -> Option<TypeId> {
+        let lw = self.lw;
+        let slot = lw.frame.slots.get(index)?;
+        if lw.frame.arguments.values().any(|&s| s == index) {
+            return None;
+        }
+        let mut widths = BTreeSet::new();
+        for (&inst, _) in lw.frame.accesses.iter().filter(|&(_, &s)| s == index) {
+            let (address, bytes) = match lw.l1.inst(inst).map(|i| &i.op) {
+                Some(&Op::Load { address, bytes, .. }) => (address, bytes),
+                Some(&Op::Store { address, value, .. }) => (address, lw.width(value).div_ceil(8)),
+                Some(_) | None => return None,
+            };
+            if lw.address(address) != Some(slot.offset) || !matches!(bytes, 1 | 2 | 4 | 8) {
+                return None;
+            }
+            widths.insert(bytes * 8);
+        }
+        if widths.len() < 2 {
+            return None;
+        }
+        let mut fields = Vec::new();
+        for width in widths {
+            let solved = self
+                .whole_access_type(index, width)
+                .filter(|&ty| self.field_scalar(ty, width));
+            let ty = solved.unwrap_or_else(|| self.bits(width));
+            fields.push(Field {
+                offset: 0,
+                ty,
+                name: Some(format!("w{width}")),
+            });
+        }
+        Some(self.ast.types.intern(Type::Union(Aggregate {
+            name: None,
+            size: slot.bytes(),
+            fields,
+        })))
     }
 
     /// The solved type most of the `width`-bit accesses of slot `index`
@@ -897,22 +955,29 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
 
     /// The type of the field (not an aggregate) of `width` bits that
     /// starts at `offset` in the frame struct or promoted object holding
-    /// it, if one does: an access there takes it (the same bits, typed as
-    /// the object is).
+    /// it, or of a member of a union field there, if one does: an access
+    /// there takes it (the same bits, typed as the object is).
     fn field_at(&self, offset: i64, width: u16) -> Option<TypeId> {
         let &(region, var) = self.regions.iter().find(|(r, _)| r.contains(offset))?;
         let ty = self.ast.var(var)?.ty;
-        let Some(Type::Struct(aggregate) | Type::Union(aggregate)) = self.ast.types.get(ty) else {
-            return None;
+        let types = &self.ast.types;
+        let fields = |ty| match types.get(ty) {
+            Some(Type::Struct(aggregate) | Type::Union(aggregate)) => Some(&aggregate.fields),
+            Some(_) | None => None,
         };
         let within = offset.abs_diff(region.offset);
-        aggregate
-            .fields
+        fields(ty)?
             .iter()
-            .find(|field| {
-                field.offset == within && self.ast.types.value_width(field.ty) == Some(width)
+            .filter(|field| field.offset == within)
+            .find_map(|field| {
+                let Some(Type::Union(_)) = types.get(field.ty) else {
+                    return (types.value_width(field.ty) == Some(width)).then_some(field.ty);
+                };
+                fields(field.ty)?
+                    .iter()
+                    .find(|member| types.value_width(member.ty) == Some(width))
+                    .map(|member| member.ty)
             })
-            .map(|field| field.ty)
     }
 
     // Expressions.

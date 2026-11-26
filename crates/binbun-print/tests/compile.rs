@@ -680,6 +680,53 @@ fn frame_struct(b: &mut Builder, start: i64, size: u64, fields: &[(i64, TypeId)]
 }
 
 #[test]
+fn a_union_field_is_accessed_through_the_member_of_each_width() {
+    // A frame struct whose field at entry−0x18 is a union of an `int32_t`
+    // `w32` and an `int64_t` `w64` (one slot written in two widths): a
+    // 4-byte store and an 8-byte load there are `frame.at_m18.w32` and
+    // `frame.at_m18.w64`, no cast of the field's address.
+    let mut b = Builder::new(0x9400, "views");
+    let (int32, int64) = (b.int(32), b.int(64));
+    let views = b.ty(Type::Union(Aggregate {
+        name: None,
+        size: 8,
+        fields: [(int32, "w32"), (int64, "w64")]
+            .into_iter()
+            .map(|(ty, name)| Field {
+                offset: 0,
+                ty,
+                name: Some(name.to_owned()),
+            })
+            .collect(),
+    }));
+    let layout = frame_struct(&mut b, -0x18, 16, &[(-0x18, views), (-0x10, int64)]);
+    b.f.returns = Some(int64);
+    let frame = b.var(VarKind::Frame(-0x18), layout, None);
+    b.f.frames.push(frame);
+    let (address, seven) = (b.e(Expr::AddressOf(frame)), b.c(32, 7));
+    let set = b.s(Stmt::Assign {
+        place: Place::Memory { address, ty: int32 },
+        value: seven,
+    });
+    let base = b.e(Expr::AddressOf(frame));
+    let whole = b.load_at(base, 0, int64);
+    let ret = b.ret(whole);
+    let f = b.done(vec![set, ret]);
+    let (text, printed) = print_with(&f, &Style::kr(), &symbols);
+    assert!(text.contains("frame.at_m18.w32 = 7;"), "{text}");
+    assert!(text.contains("return frame.at_m18.w64;"), "{text}");
+    assert_eq!(printed.casts, 0, "{text}");
+    let scratch = Scratch::new("views");
+    scratch.write("out.c", &text);
+    for compiler in compilers() {
+        let stderr = scratch
+            .compile(compiler, &["-c", "-o", "out.o"], &["out.c"])
+            .unwrap_or_else(|e| panic!("{compiler} failed on\n{text}\n{e}"));
+        assert_eq!(warnings(&stderr), 0, "{compiler}:\n{text}\n{stderr}");
+    }
+}
+
+#[test]
 fn the_frame_struct_and_promoted_objects_are_spelled_as_objects() {
     // A frame struct of 12 bytes (an `int64_t` at entry−0x18, an
     // `int32_t` at entry−0x10): `struct frame_<function> frame`, not packed

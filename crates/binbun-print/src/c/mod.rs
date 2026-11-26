@@ -53,7 +53,8 @@
 //!   extension is `-x`.
 //! - Loads are `*(T *)(p + k)` (`*(T *)p` at `p` itself: any pointer
 //!   converts to `T *`), or `p[i]`, `p->field` and `*p` when the pointer's
-//!   type allows; pointer arithmetic is scaled to the pointee or done in
+//!   type allows (at a union field, its member of the access's type:
+//!   `v.field.w32`); pointer arithmetic is scaled to the pointee or done in
 //!   bytes, a pointer plus or minus a byte index too: on a `void *` as it
 //!   is (`p + i`, `*(int32_t *)(p - 32)`), on another pointer through a
 //!   byte pointer (`(uint8_t *)p + i`), not `(uint64_t)p + i`; an index

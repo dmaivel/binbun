@@ -33,6 +33,9 @@ enum Form {
     Subscript(i128),
     /// A field: `v.f`, `p->f`.
     Field(FieldName, TypeId),
+    /// A member of a union field: `v.f.m`, `p->f.m` (the field's name and
+    /// aggregate, the member's name and union).
+    FieldMember(FieldName, TypeId, FieldName, TypeId),
     /// An element of an array field: `v.f[k]`, `p->f[k]`.
     FieldSubscript(FieldName, i128, TypeId),
     /// An element of an array's struct element: `p[i + k].f`.
@@ -589,6 +592,17 @@ impl Printer<'_> {
             if start == offset && self.fits(field_ty, fit)? {
                 return Ok(Some((Form::Field(name, object), field_ty)));
             }
+            // A union field at the offset: the member the access fits.
+            let members = match self.types.get(field_ty) {
+                Some(Type::Union(union)) if start == offset => field_names(union),
+                Some(_) | None => Vec::new(),
+            };
+            for (member_offset, member_ty, member_name) in members {
+                if member_offset == 0 && self.fits(member_ty, fit)? {
+                    let form = Form::FieldMember(name, object, member_name, field_ty);
+                    return Ok(Some((form, member_ty)));
+                }
+            }
             if let Some(element) = element_of(self, field_ty) {
                 let size = i128::from(self.types.width(element).map_or(0, |width| width / 8));
                 let end = start + i128::from(self.types.width(field_ty).unwrap_or(0) / 8);
@@ -783,7 +797,11 @@ impl Printer<'_> {
             Form::FieldSubscript(_, constant, _) => {
                 Some(vec![Doc::number(format!("{constant}"), node)])
             }
-            Form::Whole | Form::Subscript(_) | Form::Field(..) | Form::ElementField(..) => None,
+            Form::Whole
+            | Form::Subscript(_)
+            | Form::Field(..)
+            | Form::FieldMember(..)
+            | Form::ElementField(..) => None,
         };
         let doc = match form {
             Form::Whole if is_object => object.doc,
@@ -821,6 +839,14 @@ impl Printer<'_> {
                 let mut doc = self.operand(object, Op::Postfix, false);
                 doc.push(Doc::op("->", node));
                 doc.push(member(name, of));
+                doc
+            }
+            Form::FieldMember(name, of, member_name, union) => {
+                let mut doc = self.operand(object, Op::Postfix, false);
+                doc.push(Doc::op(if is_object { "." } else { "->" }, node));
+                doc.push(member(name, of));
+                doc.push(Doc::op(".", node));
+                doc.push(member(member_name, union));
                 doc
             }
         };

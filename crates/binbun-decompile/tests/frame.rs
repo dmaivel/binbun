@@ -466,7 +466,7 @@ fn frame_field(l2: &Ast, name: &str) -> Type {
 
 #[test]
 fn a_slot_also_accessed_in_parts_is_a_field_of_its_whole_accesses() {
-    // *(sp − 0x20) = b; *(uint8_t *)(sp − 0x20) = c;
+    // *(sp − 0x20) = b; *(uint8_t *)(sp − 0x1f) = c;
     // *(int32_t *)(sp − 0x14) = c; unknown(sp − 0x20);
     // return *(sp − 0x20): the 8-byte slot is a 64-bit field the byte
     // store writes a part of, not 8 bytes.
@@ -487,7 +487,8 @@ fn a_slot_also_accessed_in_parts_is_a_field_of_its_whole_accesses() {
             },
             &[L1Type::Bits(8)],
         )[0];
-        let memory = l1.store(memory, buffer, byte);
+        let second = l1.below(0x1f);
+        let memory = l1.store(memory, second, byte);
         let low = l1.inst(
             Op::Extract {
                 value: c,
@@ -508,7 +509,7 @@ fn a_slot_also_accessed_in_parts_is_a_field_of_its_whole_accesses() {
         "{field:?}"
     );
     // Only the byte: a field of its width.
-    let field = frame_field(&build(false), "at_m20");
+    let field = frame_field(&build(false), "at_m1f");
     assert!(
         matches!(
             field,
@@ -516,6 +517,44 @@ fn a_slot_also_accessed_in_parts_is_a_field_of_its_whole_accesses() {
         ),
         "{field:?}"
     );
+}
+
+/// The widths of the members of union `ty` of `l2`, each at its first
+/// byte.
+fn views(l2: &Ast, ty: &Type) -> Vec<u16> {
+    let Type::Union(aggregate) = ty else {
+        panic!("not a union: {ty:?}");
+    };
+    aggregate
+        .fields
+        .iter()
+        .inspect(|member| assert_eq!(member.offset, 0))
+        .filter_map(|member| l2.types.value_width(member.ty))
+        .collect()
+}
+
+#[test]
+fn a_field_accessed_in_two_widths_at_its_start_is_a_union_of_them() {
+    // *(sp − 0x20) = b; *(uint8_t *)(sp − 0x20) = c; unknown(sp − 0x20);
+    // return *(sp − 0x20): the field is the union of a byte and 8 bytes,
+    // each access its own member.
+    let mut l1 = L1::new();
+    let [_, b, c, _, memory] = l1.entry;
+    let buffer = l1.below(0x20);
+    let memory = l1.store(memory, buffer, b);
+    let byte = l1.inst(
+        Op::Extract {
+            value: c,
+            offset: 0,
+            width: 8,
+        },
+        &[L1Type::Bits(8)],
+    )[0];
+    let memory = l1.store(memory, buffer, byte);
+    let memory = l1.call(memory, UNKNOWN, buffer);
+    let value = l1.load(memory, buffer);
+    let l2 = lowered(&l1.finish(memory, value));
+    assert_eq!(views(&l2, &frame_field(&l2, "at_m20")), [8, 64]);
 }
 
 /// The names of the slots' fields (`at_…`) of the one frame struct of
@@ -607,11 +646,11 @@ fn a_slot_written_whole_and_read_in_part_is_a_local() {
 }
 
 #[test]
-fn a_slot_of_its_own_written_in_parts_has_the_type_of_its_whole_accesses() {
+fn a_slot_of_its_own_written_in_two_widths_is_a_union_of_them() {
     // *(sp − 0x20) = b; *(uint8_t *)(sp − 0x20) = c; return *(sp − 0x20):
     // no address is taken, so the slot is a variable of its own; of two
-    // shapes, it lives in memory, as wide as its whole accesses, not 8
-    // bytes.
+    // shapes the load reads both of, it lives in memory, a union of a
+    // byte and 8 bytes, not 8 bytes.
     let mut l1 = L1::new();
     let [_, b, c, _, memory] = l1.entry;
     let slot = l1.below(0x20);
@@ -634,10 +673,7 @@ fn a_slot_of_its_own_written_in_parts_has_the_type_of_its_whole_accesses() {
         .find(|variable| variable.kind == VarKind::Frame(-0x20))
         .expect("the slot's variable");
     let ty = l2.types.get(variable.ty).unwrap();
-    assert!(
-        matches!(ty, Type::Bits(64) | Type::Int(64) | Type::UInt(64)),
-        "{ty:?}"
-    );
+    assert_eq!(views(&l2, ty), [8, 64]);
 }
 
 #[test]

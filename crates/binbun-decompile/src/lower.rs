@@ -98,9 +98,12 @@
 //!    struct (`Function::frames`): a field per slot inside it, at its
 //!    offset, named by its offset from the entry stack pointer (`at_m28`:
 //!    entry−0x28; `at_p8`: entry+8), of the slot's solved type where it
-//!    has one shape C holds in exactly its bytes, of the type most of its
-//!    accesses of the whole slot have where it (at most 8 bytes) is also
-//!    accessed in parts, else bytes; the bytes no
+//!    has one shape C holds in exactly its bytes; where it (at most 8
+//!    bytes) is accessed in several widths, all at its first byte, a union
+//!    of a member per width (`w32`, `w64`: the same bytes, so each access
+//!    names its own member, `frame.at_m28.w32`, not a cast of the field's
+//!    address); of the type most of its accesses of the whole slot have
+//!    where it is also accessed in other parts; else bytes; the bytes no
 //!    slot holds are `unknown_m<hex>[n]`. Its size is the piece's; it
 //!    starts on the ABI's 16-byte grid (taking the padding below it, no
 //!    slot's and above every call's stack pointer) so its fields are at
