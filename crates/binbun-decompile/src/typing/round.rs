@@ -943,11 +943,10 @@ impl<'r, 'a> Rounder<'r, 'a> {
         // program's signature.
         let unscheme = instances.is_empty();
         let mut typed = self.types.signature(signature)?.clone();
-        let sources = &view
-            .calls
-            .iter()
-            .find(|c| c.callee == Some(callee))?
-            .sources;
+        let call = view.calls.iter().find(|c| c.callee == Some(callee))?;
+        let sources = &call.sources;
+        // An allocator wrapper's result stays `void *`: any object's.
+        let allocates = call.alloc_size.is_some();
         let mut changed = false;
         for (index, slot) in typed.parameters.iter_mut().enumerate() {
             let Some(&source) = sources.get(index) else {
@@ -979,7 +978,7 @@ impl<'r, 'a> Rounder<'r, 'a> {
                 changed = true;
             }
         }
-        if let Some(returns) = typed.returns {
+        if let Some(returns) = typed.returns.filter(|_| !allocates) {
             let width = self.types.value_width(returns).unwrap_or(0);
             let table = if unscheme && self.open(returns) {
                 self.table_type(callee, None, width)

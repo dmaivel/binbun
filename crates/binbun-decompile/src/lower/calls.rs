@@ -372,13 +372,16 @@ impl<'c> Lowering<'_, 'c> {
         if let Some(address) = address {
             if let Some(interface) = cx.interfaces.get(&address) {
                 let signature = interface_signature(interface, &mut self.types);
-                let signature = classed(
+                let mut signature = classed(
                     &mut self.types,
                     cx.convention,
                     signature,
                     &interface.parameters,
                     &interface.returns,
                 );
+                if interface.alloc_size.is_some() {
+                    signature = allocating(&mut self.types, signature);
+                }
                 let mut callee = Callee {
                     target: Some(address),
                     import: None,
@@ -390,7 +393,7 @@ impl<'c> Lowering<'_, 'c> {
                     format: None,
                     interfaced: true,
                     declared: false,
-                    alloc_size: None,
+                    alloc_size: interface.alloc_size,
                     list_format: None,
                 };
                 if interface.variadic {
@@ -2459,6 +2462,149 @@ impl Lowering<'_, '_> {
         reads
     }
 
+    /// Where the function is an allocator wrapper
+    /// ([`Interface::alloc_size`]), which of `parameters` (its interface's)
+    /// give the size of what it returns: every value it returns in one
+    /// whole register, at each return and each tail call that returns, is
+    /// the result of a call that allocates (its callee's `alloc_size`,
+    /// declared or itself a wrapper's), directly or through block
+    /// parameters, the size (and count) arguments of each the entry value
+    /// of the same register parameters. A path where the result is null
+    /// may call what does not return, or return that null.
+    pub(super) fn allocation(&self, parameters: &[Source]) -> Option<AllocSize> {
+        let [piece] = self.returns.pieces.as_slice() else {
+            return None;
+        };
+        let mut found = None;
+        let mut agree = |size: AllocSize| {
+            let same = found.is_none_or(|was| was == size);
+            found = Some(size);
+            same
+        };
+        for (id, block) in self.blocks() {
+            let size = match &block.terminator {
+                Terminator::Return { state, .. } => {
+                    let value = *state.registers.get(usize::from(piece.register.0))?;
+                    self.allocated(value, *piece, parameters)?
+                }
+                Terminator::Leave { returns: true, .. } => {
+                    let callee = self.callees.get(&Site::Tail(id))?;
+                    self.sized(Site::Tail(id), callee, *piece, parameters)?
+                }
+                Terminator::Leave { .. }
+                | Terminator::Jump(_)
+                | Terminator::Branch { .. }
+                | Terminator::IndirectJump { .. }
+                | Terminator::Invoke { .. }
+                | Terminator::Trap(_)
+                | Terminator::Stop
+                | Terminator::Open => continue,
+            };
+            if !agree(size) {
+                return None;
+            }
+        }
+        found
+    }
+
+    /// The parameters of the function giving the size of the allocation
+    /// `value` is ([`Self::allocation`]), in the register of `piece`.
+    fn allocated(&self, value: Value, piece: Piece, parameters: &[Source]) -> Option<AllocSize> {
+        let mut found = None;
+        let mut seen = BTreeSet::new();
+        let mut work = vec![self.canonical(value)];
+        while let Some(value) = work.pop() {
+            if !seen.insert(value) {
+                continue;
+            }
+            if seen.len() > STEPS {
+                return None;
+            }
+            let size = match self.kind(value) {
+                Kind::Phi => {
+                    let &ValueInfo {
+                        definition: Definition::Parameter { block, index },
+                        ..
+                    } = self.l1.value(value)?
+                    else {
+                        return None;
+                    };
+                    for (_, argument) in self.incoming(block, index as usize) {
+                        work.push(self.canonical(argument));
+                    }
+                    continue;
+                }
+                Kind::Result(inst) => {
+                    let i = self.l1.inst(inst)?;
+                    let Op::Call { changes, .. } = &i.op else {
+                        return None;
+                    };
+                    let at = i.results.iter().skip(1).position(|&r| r == value)?;
+                    if changes.get(at) != Some(&piece.register) {
+                        return None;
+                    }
+                    let callee = self.callees.get(&Site::Call(inst))?;
+                    self.sized(Site::Call(inst), callee, piece, parameters)?
+                }
+                Kind::None
+                | Kind::Const(_)
+                | Kind::Undefined(..)
+                | Kind::Address(_)
+                | Kind::Entry(_)
+                | Kind::Pure(_)
+                | Kind::Load(_)
+                | Kind::CallView { .. } => return None,
+            };
+            if found.is_some_and(|was| was != size) {
+                return None;
+            }
+            found = Some(size);
+        }
+        found
+    }
+
+    /// The parameters of the function (of `parameters`) that `callee`'s
+    /// allocation at `site` takes its size (and count) from, where it
+    /// allocates, returns in `piece`'s register alone, and passes them as
+    /// it found them at its entry.
+    fn sized(
+        &self,
+        site: Site,
+        callee: &Callee,
+        piece: Piece,
+        parameters: &[Source],
+    ) -> Option<AllocSize> {
+        let alloc = callee.alloc_size?;
+        if callee.results.as_slice() != [piece] {
+            return None;
+        }
+        let registers = self.site_registers(site);
+        let parameter = |argument: usize| {
+            let &Source::Register(passed) = callee.arguments.get(argument)? else {
+                return None;
+            };
+            let value = *registers.get(usize::from(passed.register.0))?;
+            let held = self.held(value);
+            let mut entries = held.entries.iter();
+            let (Some(&register), None) = (entries.next(), entries.next()) else {
+                return None;
+            };
+            if held.value || held.undefined {
+                return None;
+            }
+            parameters.iter().position(|source| {
+                matches!(source, Source::Register(own) if own.register == register && own.offset == 0)
+            })
+        };
+        Some(AllocSize {
+            size: parameter(alloc.size)?,
+            count: match alloc.count {
+                Some(count) => Some(parameter(count)?),
+                None => None,
+            },
+        })
+    }
+
     /// What the function's calls pass each callee at a constant address
     /// ([`Found::passes`](super::Found::passes)): per register of the
     /// convention's argument registers and the call's arguments, what it
@@ -3124,6 +3270,21 @@ fn interface_signature(interface: &Interface, types: &mut Types) -> TypeId {
     };
     signature.variadic = true;
     types.intern(Type::Code(signature))
+}
+
+/// Code type `signature` returning `void *` where it returns a pointer-wide
+/// value: an allocator wrapper's ([`Interface::alloc_size`]), whose
+/// allocation is any object's.
+fn allocating(types: &mut Types, signature: TypeId) -> TypeId {
+    let Some(mut code) = types.signature(signature).cloned() else {
+        return signature;
+    };
+    let pointer = types.pointer_width();
+    if code.returns.and_then(|ty| types.value_width(ty)) != Some(pointer) {
+        return signature;
+    }
+    code.returns = Some(types.intern(Type::Pointer(None)));
+    types.intern(Type::Code(code))
 }
 
 /// The type of code taking `parameters` and returning in `returns`,

@@ -232,7 +232,7 @@ use std::sync::Arc;
 use binbun_decompile::data::Data;
 use binbun_decompile::lower::{Convention, Found, Interface, Passed, Read};
 use binbun_decompile::mapping::Source;
-use binbun_decompile::prototype::Prototypes;
+use binbun_decompile::prototype::{AllocSize, Prototypes};
 use binbun_decompile::typing::{Argument, Class, FunctionTypes, Schemes};
 use binbun_loader::{Image, SymbolSource};
 use binbun_semantics::ir::RegisterId;
@@ -537,10 +537,33 @@ fn less(
         .filter_map(|(&entry, function)| {
             let mut interface = function.interface.clone()?;
             let dropped = dropped.get(&entry).map_or(&[][..], Vec::as_slice);
-            interface.parameters.retain(|source| match source {
-                Source::Register(piece) => !dropped.contains(&piece.register),
-                Source::Stack { .. } => true,
+            let kept: Vec<bool> = interface
+                .parameters
+                .iter()
+                .map(|source| match source {
+                    Source::Register(piece) => !dropped.contains(&piece.register),
+                    Source::Stack { .. } => true,
+                })
+                .collect();
+            // An allocation's size parameters, counted in what is kept.
+            let at = |old: usize| {
+                kept.get(old)
+                    .copied()?
+                    .then(|| kept.iter().take(old).filter(|&&k| k).count())
+            };
+            interface.alloc_size = interface.alloc_size.and_then(|alloc| {
+                Some(AllocSize {
+                    size: at(alloc.size)?,
+                    count: match alloc.count {
+                        Some(count) => Some(at(count)?),
+                        None => None,
+                    },
+                })
             });
+            let mut flags = kept.iter();
+            interface
+                .parameters
+                .retain(|_| flags.next().copied().unwrap_or(true));
             if unread.contains(&entry) {
                 interface.returns.clear();
             }

@@ -107,6 +107,10 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
             ast.returns = Some(ty);
             ast.returns_evidence = deduced(ast.returns_evidence);
         }
+        // An allocator wrapper returns `void *` ([`Lowering::allocator`]).
+        if let Some(any) = lw.allocator {
+            ast.returns = Some(any);
+        }
         // What is returned in a vector register is, to C, a
         // floating-point value.
         if let ([piece], Some(ty)) = (&lw.returns.pieces[..], ast.returns)

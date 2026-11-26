@@ -715,16 +715,21 @@ impl Lowering<'_, '_> {
         values.dedup();
         registers.sort_unstable();
         registers.dedup();
-        let evidence = returns.stated.then_some(if returns.open {
-            Evidence::DeclaredPointer
+        let evidence = if returns.stated {
+            Some(if returns.open {
+                Evidence::DeclaredPointer
+            } else {
+                Evidence::Declared
+            })
         } else {
-            Evidence::Declared
-        });
+            // An allocator wrapper returns `void *`, as a declared one does.
+            self.allocator.map(|_| Evidence::Declared)
+        };
         Returns {
             width: piece.width,
             values,
             registers,
-            ty: returns.ty.filter(|_| returns.stated),
+            ty: returns.ty.filter(|_| returns.stated).or(self.allocator),
             evidence,
         }
     }

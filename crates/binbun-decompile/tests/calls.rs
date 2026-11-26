@@ -22,7 +22,7 @@ use binbun_decompile::format::Family;
 use binbun_decompile::itanium::NONE;
 use binbun_decompile::lower::{Context, Convention, Facts, Found, Interface, interface, lower};
 use binbun_decompile::mapping::{Piece, Source};
-use binbun_decompile::prototype::{Format, Open, Prototype, Prototypes};
+use binbun_decompile::prototype::{AllocSize, Format, Open, Prototype, Prototypes};
 use binbun_decompile::typing::{FieldType, FunctionTypes, Schemes};
 use binbun_decompile::validate::{Hashed, Link, Setup, differential, random_states, structure};
 use binbun_semantics::bits::Bits;
@@ -755,4 +755,194 @@ fn a_call_no_scheme_types_takes_its_callees_signature() {
     let l2 = without_scheme(&l1, FieldType::Scalar(Type::Bits(64)));
     let signature = l2.types.signature(call(&l2).signature).unwrap();
     assert_eq!(l2.types.get(signature.parameters[0]), Some(&Type::Bits(64)));
+}
+
+/// `void *grab(uint64_t)`, declared to allocate as many bytes as its
+/// argument (`alloc_size(1)`).
+const GRAB: u64 = 0x7400;
+/// A function of the program with no prototype.
+const WRAPPER: u64 = 0x7500;
+
+/// [`GRAB`]'s prototype, then [`Put`]'s.
+struct Allocates;
+
+impl Prototypes for Allocates {
+    fn of(&self, address: u64, types: &mut Types) -> Option<Prototype> {
+        if address != GRAB {
+            return Put.of(address, types);
+        }
+        let size = types.intern(Type::UInt(64));
+        let any = types.intern(Type::Pointer(None));
+        Some(Prototype {
+            name: Some("grab".to_owned()),
+            signature: types.intern(Type::Code(Signature {
+                parameters: vec![size],
+                returns: Some(any),
+                variadic: false,
+            })),
+            returns_stated: true,
+            own: false,
+            open: Open::default(),
+            noreturn: false,
+            format: None,
+            format_arg: Vec::new(),
+            alloc_size: Some(AllocSize {
+                size: 0,
+                count: None,
+            }),
+            wide_result: None,
+        })
+    }
+}
+
+/// `return target(a)`, `a` the caller's entry value (`entry`), or 16.
+fn allocating(target: u64, entry: bool) -> Function {
+    let (mut l1, [a, b, c, sp, memory]) = L1::new();
+    let size = if entry { a } else { l1.constant(16) };
+    let eight = l1.constant(8);
+    let pushed = l1.pure(Op::Binary(Binary::Sub, sp, eight));
+    let back = l1.constant(0x1100);
+    let memory = l1.inst(
+        Op::Store {
+            memory,
+            address: pushed,
+            value: back,
+            atomic: None,
+        },
+        &[L1Type::Memory],
+    )[0];
+    let target = l1.constant(target);
+    let results = l1.inst(
+        Op::Call {
+            target,
+            return_address: back,
+            memory,
+            registers: vec![size, b, c, pushed],
+            changes: vec![A],
+        },
+        &[L1Type::Memory, L1Type::Bits(64)],
+    );
+    let address = l1.pure(Op::Load {
+        memory: results[0],
+        address: sp,
+        bytes: 8,
+        atomic: None,
+    });
+    let popped = l1.pure(Op::Binary(Binary::Add, sp, eight));
+    l1.f.blocks[1].terminator = Terminator::Return {
+        address,
+        state: State {
+            registers: vec![results[1], b, c, popped],
+            memory: results[0],
+        },
+    };
+    l1.f
+}
+
+/// The context of the allocation tests: [`Allocates`]'s prototypes, and
+/// [`WRAPPER`] a function of the program with `interface`.
+fn with_wrapper<T>(interface: Interface, f: impl FnOnce(&Context<'_>) -> T) -> T {
+    let convention = Convention {
+        arguments: vec![A, B, C],
+        results: vec![A],
+        long: 64,
+        ..Convention::default()
+    };
+    let interfaces = BTreeMap::from([(WRAPPER, interface)]);
+    let functions = BTreeSet::from([0x1000, WRAPPER]);
+    let context = Context {
+        data: &Image,
+        prototypes: &Allocates,
+        functions: &functions,
+        interfaces: &interfaces,
+        ..Context::new(&DECLARATIONS, SP, LINK, &convention)
+    };
+    f(&context)
+}
+
+/// `l1`'s facts.
+fn facts_of(l1: &Function) -> Facts {
+    let env = L1Env {
+        declarations: &DECLARATIONS,
+        memory: &NoMemory,
+        stack_pointer: SP,
+        arguments: &[A, B, C],
+        return_slot: Some(0),
+        thread_pointer: None,
+    };
+    Facts::of(&mut Manager::new(Fuel::new(0)), l1, &env)
+}
+
+/// `WRAPPER`'s interface: `a` in, `a` out, allocating as many bytes as
+/// `a` where `allocates`.
+fn wrapper(allocates: bool) -> Interface {
+    let whole = Piece {
+        register: A,
+        offset: 0,
+        width: 64,
+    };
+    Interface {
+        parameters: vec![Source::Register(whole)],
+        returns: vec![whole],
+        alloc_size: allocates.then_some(AllocSize {
+            size: 0,
+            count: None,
+        }),
+        ..Interface::default()
+    }
+}
+
+#[test]
+fn a_function_returning_an_allocation_of_its_parameter_is_an_allocator() {
+    // `return grab(a)`: an allocator of `a` bytes, its own parameter 0.
+    let l1 = allocating(GRAB, true);
+    let found = with_wrapper(wrapper(false), |context| {
+        interface(&l1, &facts_of(&l1), context).unwrap()
+    });
+    let size = Some(AllocSize {
+        size: 0,
+        count: None,
+    });
+    assert_eq!(found.interface.unwrap().alloc_size, size);
+    // So is one returning an allocator wrapper's result (callees first).
+    let l1 = allocating(WRAPPER, true);
+    let found = with_wrapper(wrapper(true), |context| {
+        interface(&l1, &facts_of(&l1), context).unwrap()
+    });
+    assert_eq!(found.interface.unwrap().alloc_size, size);
+    // `return grab(16)`: a fixed size, no parameter of its own.
+    let l1 = allocating(GRAB, false);
+    let found = with_wrapper(wrapper(false), |context| {
+        interface(&l1, &facts_of(&l1), context).unwrap()
+    });
+    assert_eq!(found.interface.unwrap().alloc_size, None);
+    // `return wrapper(a)` where the wrapper is not one: none.
+    let l1 = allocating(WRAPPER, true);
+    let found = with_wrapper(wrapper(false), |context| {
+        interface(&l1, &facts_of(&l1), context).unwrap()
+    });
+    assert_eq!(found.interface.unwrap().alloc_size, None);
+}
+
+#[test]
+fn an_allocator_returns_void_and_its_callers_calls_take_its_size() {
+    // `return wrapper(a)`: the call returns `void *` (any object's), as a
+    // declared allocator's does.
+    let l1 = allocating(WRAPPER, true);
+    let l2 = with_wrapper(wrapper(true), |context| {
+        lower(&l1, &facts_of(&l1), context).unwrap().0
+    });
+    let signature = l2.types.signature(call(&l2).signature).unwrap();
+    let returns = signature.returns.and_then(|ty| l2.types.get(ty));
+    assert_eq!(returns, Some(&Type::Pointer(None)));
+    // The function itself, an allocator too, returns `void *`.
+    let own = l2.returns.and_then(|ty| l2.types.get(ty));
+    assert_eq!(own, Some(&Type::Pointer(None)));
+    // Not an allocator: the result stays as wide as it is.
+    let l2 = with_wrapper(wrapper(false), |context| {
+        lower(&l1, &facts_of(&l1), context).unwrap().0
+    });
+    let signature = l2.types.signature(call(&l2).signature).unwrap();
+    let returns = signature.returns.and_then(|ty| l2.types.get(ty));
+    assert_ne!(returns, Some(&Type::Pointer(None)));
 }

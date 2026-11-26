@@ -9,7 +9,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::hash::{Hash, Hasher};
 
-use binbun_ast::types::Types;
+use binbun_ast::types::{TypeId, Types};
 use binbun_semantics::bits::Bits;
 use binbun_semantics::ir::{Binary, RegisterId};
 use binbun_ssa::constant::Constants;
@@ -208,6 +208,10 @@ pub(super) struct Lowering<'a, 'c> {
     pub(super) unsettled_futex: bool,
     /// The function's own signature.
     pub(super) returns: Returns,
+    /// `void *`, where the function is an allocator wrapper
+    /// ([`Self::allocation`]) no declaration types the return value of:
+    /// what it returns is any object's.
+    pub(super) allocator: Option<TypeId>,
     /// The frame.
     pub(super) frame: Frame,
     /// What is needed, and folded.
@@ -299,6 +303,7 @@ impl<'a, 'c> Lowering<'a, 'c> {
             callees: BTreeMap::new(),
             system_calls: BTreeMap::new(),
             unsettled_futex: false,
+            allocator: None,
             returns: Returns::default(),
             frame: Frame::default(),
             needed: Needed::default(),
@@ -359,6 +364,23 @@ impl<'a, 'c> Lowering<'a, 'c> {
             self.find_needed();
         }
         self.find_parameters();
+        self.find_allocator();
+    }
+
+    /// [`Self::allocator`].
+    fn find_allocator(&mut self) {
+        let parameters: Vec<Source> = self
+            .needed
+            .parameters
+            .iter()
+            .map(|parameter| parameter.source)
+            .collect();
+        let pointer = self.types.pointer_width();
+        let returns_pointer =
+            matches!(self.returns.pieces.as_slice(), [piece] if piece.width == pointer);
+        self.allocator =
+            (returns_pointer && !self.returns.stated && self.allocation(&parameters).is_some())
+                .then(|| self.types.intern(binbun_ast::types::Type::Pointer(None)));
     }
 
     /// The passes before the L2 function is built.
@@ -391,14 +413,16 @@ impl<'a, 'c> Lowering<'a, 'c> {
             return None;
         }
         let called = self.called_variadic();
+        let parameters: Vec<Source> = self
+            .needed
+            .parameters
+            .iter()
+            .map(|parameter| parameter.source)
+            .filter(|source| called.as_ref().is_none_or(|named| named.contains(source)))
+            .collect();
         Some(Interface {
-            parameters: self
-                .needed
-                .parameters
-                .iter()
-                .map(|parameter| parameter.source)
-                .filter(|source| called.as_ref().is_none_or(|named| named.contains(source)))
-                .collect(),
+            alloc_size: self.allocation(&parameters),
+            parameters,
             returns: self.returns.pieces.clone(),
             variadic: self.va.is_some() || called.is_some(),
             format: self.own_format(),

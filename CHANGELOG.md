@@ -41,6 +41,7 @@ always read by later versions.
 
 ### Changed
 
+- A function of the program that returns, on every path, what an allocator returns for its own unchanged size parameter (`xmalloc`, `xrealloc`, wrappers of those) is an allocator too: it and every call to it return `void *` (`void *xmalloc(uint64_t);` and `v = xmalloc(24);` instead of `char *xmalloc(uint64_t);` and `v = (struct s *)xmalloc(24);`), and its calls' sizes are allocation sizes, as a declared `malloc`'s are.
 - The reading view assumes that no code steps back from an address of a function's stack frame that the function passes or stores (as `container_of` does), and says so in its header: the locals below every such address are variables of their own instead of fields of the frame struct (most of an `-O0` function's locals).
 - A stack slot that is accessed in parts and lives outside the frame struct has the type of its whole accesses (`int64_t frame_m78`) instead of being bytes (`uint8_t frame_m78[8]`).
 - A pointer to an array of floats that its function's own code steps through, or reads as floats and writes with SIMD moves (`movups`), is a `float *` even where a callee is passed it as something else, and those moves are of `f32x4` (or `f64x2`) values: `*(f32x4 *)p = (f32x4){1.0f, 2.0f, 3.0f, 4.0f};` instead of a 128-bit integer constant.

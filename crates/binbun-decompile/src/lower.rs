@@ -267,8 +267,10 @@ use binbun_ssa::stack::Stack;
 use crate::data::{Data, NoData};
 use crate::format::Refusal;
 use crate::mapping::{Mapping, Piece, Source};
-use crate::prototype::{Format, NoPrototypes, Prototypes, Unplaced};
-use crate::typing::{Arguments, Class, Contribution, Explained, Outcome, Schemes, Summary};
+use crate::prototype::{AllocSize, Format, NoPrototypes, Prototypes, Unplaced};
+use crate::typing::{
+    Arguments, Class, Contribution, Explained, FieldType, Outcome, Schemes, Summary,
+};
 use crate::validate::Link;
 
 /// The registers of a calling convention, as lowering uses them.
@@ -717,6 +719,14 @@ pub struct Interface {
     /// [`parameters`](Self::parameters), its callers' arguments are
     /// counted from their format strings.
     pub format: Option<Format>,
+    /// The parameters (counted in [`parameters`](Self::parameters)) whose
+    /// values give the size of the object it returns, where it is an
+    /// allocator wrapper: every value it returns is the result of a call
+    /// that allocates (declared `alloc_size`, or itself such a wrapper)
+    /// whose size (and count) arguments are its own parameters' entry
+    /// values. Its callers' calls take it as a declared `alloc_size`
+    /// would give it, and return `void *` (an allocation is any object's).
+    pub alloc_size: Option<AllocSize>,
 }
 
 /// No interfaces.
@@ -1302,7 +1312,11 @@ pub fn summarise(
     let summary = lowering.summary();
     let arguments = lowering.arguments();
     let structs = lowering.structs();
-    let signature = lowering.signature_types();
+    let mut signature = lowering.signature_types();
+    // An allocator wrapper's is `void *`: its allocation is any object's.
+    if lowering.allocator.is_some() {
+        signature.returns = Some(FieldType::Pointer(None));
+    }
     Ok((
         Found {
             arguments,
