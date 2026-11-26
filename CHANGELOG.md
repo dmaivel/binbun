@@ -37,7 +37,7 @@ always read by later versions.
 
 ### Added
 
-- `binbun eval types` says how the decompiler's structs line up with the debug information's named structs through the pointers it compares: source structs split under several of the decompiler's names, and decompiler structs that merge several source structs (named, the worst first; `--totals` gives the counts).
+- `binbun eval types` says how the decompiler's structs line up with the debug information's named structs through the pointers it compares: source structs split under several of the decompiler's names, decompiler structs that merge several source structs (named, the worst first; `--totals` gives the counts), and of the pairs of pointers to one source struct the share under one name, of those under one name the share to one source struct.
 
 ### Changed
 
