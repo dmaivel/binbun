@@ -31,10 +31,12 @@
 //!   size, with one struct and no other, that is smaller and has no size
 //!   of its own is a partial view of it and one with it
 //!   ([`Structs::unite_partial_views`]: a callee reading a few fields of
-//!   its parameter), as are any two refused only for their sizes that
-//!   show two fields alike (at one offset, of one width and kind) and
-//!   none of another kind, neither with a size of its own (functions
-//!   reading different parts of one handle). The structs the elements of the array of
+//!   its parameter), as are any two refused only for their sizes (each
+//!   field one view of the other's: as wide, a part, a copy) that show
+//!   two fields alike (at one offset, of one width and kind), most of
+//!   the offsets both show, and none of another kind, neither with a
+//!   size of its own (functions reading different parts of one handle).
+//!   The structs the elements of the array of
 //!   pointers one pointer global points to point to are one type
 //!   whatever their sizes ([`Structs::unite_one_type`], after the sweep:
 //!   each function shows as much of an element as it reads), each tried
@@ -587,6 +589,10 @@ pub struct Structs {
     /// refused only for their sizes (their fields agree at their offsets),
     /// for [`Self::unite_partial_views`].
     refused: Vec<(StructId, StructId)>,
+    /// Pairs of structs [`Self::unite`] refused only for their sizes whose
+    /// fields are one view of each other's but not all as wide (a part, a
+    /// copy), for [`Self::unite_partial_views`]'s fields-alike pass.
+    views: Vec<(StructId, StructId)>,
     /// Pairs of structs that met at a pointer field, with the struct and
     /// offset of the field: where [`Self::unite`] refuses a pair, the
     /// fields they met at are generic ([`Layout::generic`]).
@@ -613,6 +619,7 @@ impl Structs {
             declared: None,
             identity_conflicts: 0,
             refused: Vec::new(),
+            views: Vec::new(),
             meets: Vec::new(),
         }
     }
@@ -941,6 +948,14 @@ impl Structs {
                 if !self.generalise(keep, lose) {
                     self.refused.push((keep, lose));
                 }
+            } else if sized
+                && self.classes_agree(keep, lose).is_none()
+                && overlap(first, second, true)
+                && overlap(second, first, true)
+            {
+                if !self.generalise(keep, lose) {
+                    self.views.push((keep, lose));
+                }
             } else {
                 let _ = self.generalise(keep, lose);
             }
@@ -1004,10 +1019,12 @@ impl Structs {
     /// several (a list's node passed with each struct holding one) stays
     /// apart, as does the larger one of a pair. Then, as
     /// [`Self::unite_one_type`], the structs that meet at fields. Then the
-    /// other pairs refused only for their sizes that show at least
-    /// [`ALIKE`] fields alike ([`agreement`]: at one offset, of one width
-    /// and kind) and no field of another kind where as wide, neither with
-    /// a size of its own, most fields alike first: two views of one
+    /// other pairs refused only for their sizes (and those whose fields
+    /// are views of each other's but not all as wide, [`Self::views`])
+    /// that show at least [`ALIKE`] fields alike ([`agreement`]: at one
+    /// offset, of one width and kind), more than half of the offsets both
+    /// show, and no field of another kind where as wide, neither with a
+    /// size of its own, most fields alike first: two views of one
     /// struct that each read a part of it (a callee passed the handle
     /// several functions read different fields of) are one, but a list's
     /// node, which shows only its link, is no other struct holding one.
@@ -1048,15 +1065,23 @@ impl Structs {
         while let Some((a, b)) = work.pop() {
             self.unite_as(a, b, &mut work, false);
         }
+        let views = core::mem::take(&mut self.views);
         let mut alike: Vec<(usize, StructId, StructId)> = refused
             .into_iter()
+            .chain(views)
             .filter_map(|(a, b)| {
                 let (a, b) = (self.find(a), self.find(b));
                 let (first, second) = (self.layouts.get(&a)?, self.layouts.get(&b)?);
                 let unsized_ = |layout: &Layout| layout.allocated == 0 && layout.element == 0;
                 let shared = agreement(first, second);
+                let both = first
+                    .fields
+                    .keys()
+                    .filter(|offset| second.fields.contains_key(offset))
+                    .count();
                 (a != b
                     && shared >= ALIKE
+                    && shared * 2 > both
                     && unsized_(first)
                     && unsized_(second)
                     && same_kinds(first, second))
@@ -2160,6 +2185,46 @@ mod tests {
         assert_eq!(structs.find(b), structs.find(a));
         assert_eq!(structs.find(c), structs.find(a));
         assert_ne!(structs.find(list), structs.find(a));
+    }
+
+    /// Two views of one struct of different sizes, one reading a field
+    /// narrower than the other (`(short)p->n`): not as wide at every
+    /// offset, but showing two fields alike of three shared, they are one.
+    #[test]
+    fn views_differing_by_a_narrower_read_are_one() {
+        let mut first = Layout::default();
+        first.add(0, field(64, Type::Int(64), 4));
+        first.add(8, field(32, Type::Int(32), 4));
+        first.add(16, field(64, Type::Int(64), 4));
+        let mut second = Layout::default();
+        second.add(0, field(64, Type::Int(64), 4));
+        second.add(8, field(16, Type::Int(16), 4));
+        second.add(16, field(64, Type::Int(64), 4));
+        second.add(40, field(64, Type::UInt(64), 4));
+        let (a, b) = (
+            StructId {
+                function: 0x10,
+                k: 1,
+            },
+            StructId {
+                function: 0x20,
+                k: 1,
+            },
+        );
+        let mut structs = Structs::default();
+        structs.add(0x10, None, born(a, first, Vec::new()));
+        structs.add(0x20, None, born(b, second, Vec::new()));
+        structs.add(
+            0x30,
+            None,
+            Contribution {
+                merges: vec![(a, b)],
+                ..Contribution::default()
+            },
+        );
+        assert_ne!(structs.find(b), structs.find(a));
+        structs.unite_partial_views();
+        assert_eq!(structs.find(b), structs.find(a));
     }
 
     #[test]
