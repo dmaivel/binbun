@@ -58,6 +58,7 @@ always read by later versions.
 - A local integer is signed or unsigned as more of its comparisons, divisions, shifts and extensions read it (and to agree with the locals it is compared with by `==` and `!=`), instead of as its strongest evidence says: `uint32_t v8 = a1->field_8; if (v8 > 6) … v8 * 4L` instead of `int32_t v8 = a1->field_8; if ((uint32_t)v8 > 6) … (uint32_t)v8 * 4L`.
 - A struct field read narrower than it is somewhere (`(int)p->len` loads the low half of a `long`) keeps its width, instead of becoming the narrower field and turning every other access into a cast; and two views of one struct where one reads a field narrower, or copies two fields at once, are one struct instead of two names. On bash built with debug information, pairs of pointers to one source struct under one name rise from 23% to 43%.
 - A struct's pointer field that points to structs of different layouts in different functions, or to a struct in one and to characters in another (a hash bucket's `data`, a variable's `value`), is `void *` instead of a pointer to the first struct seen: its stores and loads need no casts, and the structs it points to are no longer merged through it.
+- A function whose variable holds a pointer to a struct and then what that struct points to (`r = r->data; return r;`) returns `void *` instead of a pointer to the struct.
 
 ### Fixed
 

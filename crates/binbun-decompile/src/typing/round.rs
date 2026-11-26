@@ -748,9 +748,23 @@ impl<'r, 'a> Rounder<'r, 'a> {
         Some(structs.field_type(&field.ty, self.types, &mut self.interned))
     }
 
-    /// A pointer to the struct every value returned points to the start
-    /// of, if they all do.
+    /// A pointer to the struct the values returned point to the start of
+    /// ([`Self::returned_root`] at offset 0).
     fn returned_struct(&mut self) -> Option<TypeId> {
+        let (id, 0) = self.returned_root()? else {
+            return None;
+        };
+        let target = self
+            .view
+            .schemes
+            .structs()
+            .intern(id, self.types, &mut self.interned)?;
+        Some(self.types.intern(Type::Pointer(Some(target))))
+    }
+
+    /// The struct and offset the values returned point into, if they all
+    /// point into one at one offset.
+    fn returned_root(&mut self) -> Option<(StructId, i64)> {
         let view = self.view;
         let generated = self.generated;
         if view.returns.width != self.types.pointer_width() {
@@ -760,16 +774,13 @@ impl<'r, 'a> Rounder<'r, 'a> {
         for &value in &view.returns.values {
             let (index, offset, modulus) = generated.families.of(generated.var(value)?)?;
             let ((id, base), stride) = self.struct_of(index, modulus)?;
-            if place(offset, base, stride) != 0 || found.is_some_and(|known| known != id) {
+            let at = (id, place(offset, base, stride));
+            if found.is_some_and(|known| known != at) {
                 return None;
             }
-            found = Some(id);
+            found = Some(at);
         }
-        let target = view
-            .schemes
-            .structs()
-            .intern(found?, self.types, &mut self.interned)?;
-        Some(self.types.intern(Type::Pointer(Some(target))))
+        found
     }
 
     /// The type of the variables of one L2 variable `width` bits wide: the
@@ -1015,8 +1026,12 @@ impl<'r, 'a> Rounder<'r, 'a> {
         if ty.is_none() {
             // Nothing speaks for the values returned themselves (a copy
             // of what something else is demanded as): the type of the
-            // variables holding them, where they agree.
-            let mut held = classes
+            // variables holding them, where they agree; a pointer to a
+            // struct as only a pointer, as only the values returned say
+            // which struct ([`Self::returned_struct`]): a variable holds
+            // a bucket and then the data it points to (`r = r->data;
+            // return r;`).
+            let held: Vec<TypeId> = classes
                 .iter()
                 .zip(types)
                 .filter(|(class, _)| {
@@ -1027,7 +1042,15 @@ impl<'r, 'a> Rounder<'r, 'a> {
                             .chain(&returns.registers)
                             .any(|&v| class.values.contains(&view.canonical(v)))
                 })
-                .filter_map(|(_, &ty)| ty);
+                .filter_map(|(_, &ty)| ty)
+                .collect();
+            let mut held = held.into_iter().map(|ty| {
+                if points_to_aggregate(self.types, ty) {
+                    self.types.intern(Type::Pointer(None))
+                } else {
+                    ty
+                }
+            });
             let first = held.next();
             if held.all(|other| Some(other) == first) {
                 ty = first;
@@ -2378,12 +2401,7 @@ pub(crate) fn contribution(
         }
     }
     out.classes.extend(this_class(view, &at));
-    let returned: Vec<Option<(StructId, i64)>> =
-        view.returns.values.iter().map(|&v| at(v)).collect();
-    if view.returns.width > 0
-        && let Some(&Some((id, offset))) = returned.first()
-        && returned.iter().all(|&other| other == Some((id, offset)))
-    {
+    if let Some((id, offset)) = state.returned_root() {
         out.roots
             .push((Root::Return(view.returns.width), id, offset));
     }
@@ -3167,6 +3185,12 @@ pub(super) fn field_class(ty: &FieldType) -> Option<Class> {
         | FieldType::ScalarPointers(_) => Some(Class::Pointer(None)),
         FieldType::Code { .. } => Some(Class::Code),
     }
+}
+
+/// Whether `ty` (in `types`) is a pointer to a struct or a union.
+fn points_to_aggregate(types: &Types, ty: TypeId) -> bool {
+    matches!(types.get(ty), Some(&Type::Pointer(Some(target)))
+        if matches!(types.get(target), Some(Type::Struct(_) | Type::Union(_))))
 }
 
 /// `level`'s atom if it says more than a width and is `width` bits.
