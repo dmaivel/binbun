@@ -17,9 +17,10 @@ use binbun_ast::types::{Type, TypeId};
 use binbun_semantics::bits::Bits;
 use binbun_semantics::ir::Binary;
 
+use super::convert::{Class, constant_value};
 use super::expr::Shape;
 use super::types::{CTy, FieldName, field_names};
-use super::value::{Class, Op, Value, cast_parentheses, constant_value};
+use super::value::{Op, Value, cast_parentheses};
 use super::{PrintError, Printer, error};
 use crate::document::{Doc, TokenKind};
 
@@ -522,13 +523,14 @@ impl Printer<'_> {
         volatile: bool,
     ) -> Result<Value, PrintError> {
         let bits = self.pointer_width();
-        let address =
-            if address.ty.is_pointer() || address.promoted().is_some_and(|own| own.1 == bits) {
-                address
-            } else {
-                let address = self.coerce(address, Class::Zero)?;
-                self.exact(address, false, bits)
-            };
+        let address = if address.ty.is_pointer()
+            || address.form().promoted().is_some_and(|own| own.1 == bits)
+        {
+            address
+        } else {
+            let address = self.coerce(address, Class::Zero)?;
+            self.exact(address, false, bits)
+        };
         let mut doc = vec![Doc::op("*", self.node)];
         let target = match self.pointee(address.ty) {
             Some((Some(target), _)) => Some(self.cty(target)?),
@@ -1278,7 +1280,7 @@ impl Printer<'_> {
         index: Value,
     ) -> Result<Value, PrintError> {
         let index = self.int_view(index)?;
-        let index = if index.is(Class::Zero) || index.is(Class::Sign) {
+        let index = if index.form().is(Class::Zero) || index.form().is(Class::Sign) {
             index
         } else {
             self.coerce(index, Class::Zero)?

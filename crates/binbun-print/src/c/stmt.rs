@@ -16,11 +16,12 @@ use binbun_ast::types::{Type, TypeId};
 use binbun_semantics::bits::Bits;
 use binbun_semantics::ir::{Binary, IntrinsicId, Trap, Unary};
 
+use super::convert::{self, Class, IntTy, constant_value};
 use super::enums::Context;
 use super::expr::{Shape, Shift};
 use super::types::{CTy, container, native, with_specifier};
 use super::unlifted::{is_unlifted, pure};
-use super::value::{Class, IntTy, Op, Value, constant_value};
+use super::value::{Op, Value};
 use super::{Intrinsic, Opaque, PrintError, Printer, error};
 use crate::document::{BlockKind, Braces, Doc, TokenKind};
 
@@ -617,7 +618,8 @@ impl Printer<'_> {
                     };
                     let same = self.key(value.ty)? == self.key(target)?;
                     let data = value.ty.is_pointer() && target.is_pointer();
-                    if same || (data && (void(self, value.ty) || void(self, target))) {
+                    let either_void = void(self, value.ty) || void(self, target);
+                    if convert::implicit_pointer(same, data, either_void) {
                         return Ok(value);
                     }
                     if data && let Some(member) = self.first_member(&value, target)? {
@@ -625,7 +627,7 @@ impl Printer<'_> {
                     }
                     return Ok(self.cast(value, target));
                 }
-                if value.constant.is_some_and(|bits| bits.is_zero()) {
+                if value.form().null() {
                     return Ok(value);
                 }
                 self.int_to_pointer(value, target)
@@ -642,19 +644,14 @@ impl Printer<'_> {
     }
 
     /// `value` as C converts it on assignment to integer type `ty`
-    /// ([`Self::converted`]).
+    /// ([`Self::converted`], [`convert::assigned`]).
     fn converted_integer(&mut self, value: Value, ty: TypeId) -> Result<Value, PrintError> {
         let value = self.int_view(value)?;
         let rep = self
             .int_rep(ty)
             .ok_or_else(|| error(self.node, "not an integer type"))?;
-        if rep.boolean {
-            return self.truthy(value);
-        }
-        if native(rep.width) {
-            return self.arg(value, rep.signed);
-        }
-        self.coerce(value, if rep.signed { Class::Sign } else { Class::Zero })
+        let conversion = convert::assigned(value.form(), rep).map_err(|r| self.refused(r))?;
+        Ok(self.apply(value, conversion))
     }
 
     /// `x op= b`, `x++`, `x--` for `x = x op b` on a variable of a native
@@ -948,10 +945,10 @@ impl Printer<'_> {
         }
         let value = self.int_view(value)?;
         let bits = container(value.width).unwrap_or(128).max(32);
-        if value.promoted().is_some_and(|ty| ty.1 == bits) {
+        if value.form().promoted().is_some_and(|ty| ty.1 == bits) {
             return Ok(value);
         }
-        let signed = value.is(Class::Sign) && !value.is(Class::Zero);
+        let signed = value.form().is(Class::Sign) && !value.form().is(Class::Zero);
         Ok(self.exact(value, signed, bits))
     }
 
@@ -1647,13 +1644,13 @@ impl Printer<'_> {
     fn switch(&mut self, id: StmtId, scrutinee: ExprId, arms: &[Arm]) -> Result<Doc, PrintError> {
         let value = self.expr(scrutinee)?;
         let value = self.int_view(value)?;
-        let need = if value.is(Class::Sign) && !value.is(Class::Zero) {
+        let need = if value.form().is(Class::Sign) && !value.form().is(Class::Zero) {
             Class::Sign
         } else {
             Class::Zero
         };
         let value = self.coerce(value, need)?;
-        let control = value.promoted().unwrap_or((true, 32));
+        let control = value.form().promoted().unwrap_or((true, 32));
         let enumeration = self.enum_type(scrutinee);
         let characters = enumeration.is_none() && self.character(scrutinee);
         self.breakable.push(id);

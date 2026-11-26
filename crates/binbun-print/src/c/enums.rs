@@ -45,8 +45,9 @@ use alloc::vec::Vec;
 use binbun_ast::ir::{Expr, ExprId, Node};
 use binbun_ast::types::{Enumeration, Type, TypeId};
 
-use super::types::{CTy, common};
-use super::value::{Class, IntTy, Op, Value, constant_value, promote};
+use super::convert::{Class, IntTy, common, constant_value, promote};
+use super::types::CTy;
+use super::value::{Op, Value};
 use super::{PrintError, Printer, number};
 use crate::document::{BlockKind, Braces, Doc, TokenKind};
 
@@ -260,7 +261,7 @@ impl Printer<'_> {
     /// literal whose value they say with the same meaning in `context`;
     /// else `value` itself.
     pub(super) fn by_name(&mut self, value: Value, ty: TypeId, context: Context) -> Value {
-        let (Some(bits), Some(literal)) = (value.constant, value.promoted()) else {
+        let (Some(bits), Some(literal)) = (value.constant, value.form().promoted()) else {
             return value;
         };
         if bits.width() > 64 || self.enumeration(ty).is_none() {

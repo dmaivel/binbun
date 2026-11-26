@@ -10,9 +10,10 @@ use alloc::vec::Vec;
 use binbun_semantics::bits::Bits;
 use binbun_semantics::ir::{Binary, FloatOp, FloatOutput, Format};
 
+use super::convert::Class;
 use super::types::CTy;
 use super::unlifted::Opaque;
-use super::value::{Class, Op, Value};
+use super::value::{Op, Value};
 use super::{PrintError, Printer, error};
 use crate::document::Doc;
 

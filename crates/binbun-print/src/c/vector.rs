@@ -30,9 +30,10 @@ use binbun_semantics::bits::Bits;
 use binbun_semantics::ir::{Binary, FloatOp, Format, LaneOp, Unary};
 
 use super::chars::Spelling;
+use super::convert::Class;
 use super::float::float_literal;
 use super::types::{CTy, LaneKind, VectorTy};
-use super::value::{Class, Op, Value, parenthesized};
+use super::value::{Op, Value, parenthesized};
 use super::{PrintError, Printer, error};
 use crate::document::{Doc, TokenKind};
 
@@ -219,7 +220,9 @@ impl Printer<'_> {
                     return Err(self.unsupported(self.node, "values over 128 bits"));
                 }
                 let int = self.int_view(value)?;
-                let int = if int.is(Class::Zero) || int.promoted().is_some_and(|ty| ty.1 <= width) {
+                let int = if int.form().is(Class::Zero)
+                    || int.form().promoted().is_some_and(|ty| ty.1 <= width)
+                {
                     int
                 } else {
                     self.coerce(int, Class::Zero)?

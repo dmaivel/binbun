@@ -134,6 +134,7 @@
 //! print as `0`, counted.
 
 mod chars;
+mod convert;
 mod enums;
 mod expr;
 mod float;

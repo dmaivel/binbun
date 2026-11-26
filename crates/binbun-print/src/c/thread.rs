@@ -66,8 +66,9 @@ use binbun_ast::types::{Type, TypeId};
 use binbun_semantics::bits::Bits;
 use binbun_semantics::ir::{Binary, Format};
 
+use super::convert::Class;
 use super::types::{CTy, field_names};
-use super::value::{Class, Op, Value};
+use super::value::{Op, Value};
 use super::{PrintError, Printer, error};
 use crate::document::Doc;
 

@@ -1,32 +1,22 @@
 //! C expressions as the printer builds them: tokens, the C type, the
 //! precedence of the top operator, and how the C value relates to the L2
 //! value it stands for; and the conversions that make a value what an
-//! operation needs, with a cast only where it is not already so.
+//! operation needs, as [`super::convert`] decides them, with a cast only
+//! where it is not already so.
 
 use alloc::format;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::cmp::Ordering;
 
 use binbun_ast::ir::{Node, VarId};
 use binbun_ast::types::Type;
 use binbun_semantics::bits::Bits;
 use binbun_semantics::ir::Format;
 
-use super::types::{CTy, VectorTy, common, container, native};
+use super::convert::{self, Class, Conversion, Form, IntTy, Refusal, Side, common, constant_value};
+use super::types::{CTy, VectorTy, native};
 use super::{PrintError, Printer, error, number, string_literal};
 use crate::document::{Doc, Token, TokenKind};
-
-/// What a C value is, of the L2 value `x` of width `w` it stands for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Class {
-    /// The unsigned value of `x`.
-    Zero,
-    /// The signed value of `x`.
-    Sign,
-    /// Only congruent to `x` modulo 2^w.
-    Low,
-}
 
 /// The top operator of a C expression, in C's precedence order (lowest
 /// first).
@@ -77,7 +67,7 @@ pub(super) struct Value {
     /// For `x + k`, `k - x` or `x * k` computed in the signed type of
     /// exactly the L2 width (32 or 64 bits), `k` a literal of a signed
     /// type and not negative: where `k` is, to print it unsigned
-    /// ([`Printer::unsigned_literal`]).
+    /// ([`convert::unsigned_literal`]).
     pub unsigned_literal: Option<EndLiteral>,
 }
 
@@ -89,161 +79,19 @@ pub(super) struct EndLiteral {
     pub bits: Bits,
 }
 
-/// The values of a C integer value's range: `[0, 2^n)` or
-/// `[-2^(n-1), 2^(n-1))`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Range {
-    Unsigned(u16),
-    Signed(u16),
-}
-
-/// An integer type: signedness and width (`bool`: unsigned, 1 bit).
-pub(super) type IntTy = (bool, u16);
-
-/// The integer type of `ty`, if it is one.
-pub(super) const fn int_of(ty: CTy) -> Option<IntTy> {
-    match ty {
-        CTy::Int { signed, bits } => Some((signed, bits)),
-        CTy::Bool => Some((false, 1)),
-        CTy::Float(_)
-        | CTy::Bytes
-        | CTy::Pointer(_)
-        | CTy::Code(_)
-        | CTy::Other(_)
-        | CTy::Vector(_) => None,
-    }
-}
-
-/// `ty` after the integer promotions.
-pub(super) const fn promote(ty: IntTy) -> IntTy {
-    if ty.1 >= 32 { ty } else { (true, 32) }
-}
-
-/// Whether every value of `range` is a value of `ty`.
-pub(super) const fn fits(range: Range, ty: IntTy) -> bool {
-    match (range, ty.0) {
-        (Range::Unsigned(bits), false) | (Range::Signed(bits), true) => bits <= ty.1,
-        (Range::Unsigned(bits), true) => bits < ty.1,
-        (Range::Signed(_), false) => false,
-    }
-}
-
-/// The number of bits of `value`.
-fn bit_length(value: u128) -> u16 {
-    #[expect(clippy::cast_possible_truncation, reason = "at most 128")]
-    let bits = (128 - value.leading_zeros()) as u16;
-    bits
-}
-
-/// The C integer of an L2 constant read as `class` says: whether it is
-/// negative, and its magnitude.
-pub(super) fn constant_value(bits: Bits, class: Class) -> (bool, u128) {
-    let width = bits.width();
-    let unsigned = bits.low_u128();
-    if class == Class::Sign && bits.msb() {
-        let magnitude = if width >= 128 {
-            unsigned.wrapping_neg()
-        } else {
-            (1u128 << width) - unsigned
-        };
-        (true, magnitude)
-    } else {
-        (false, unsigned)
-    }
-}
-
-/// Whether the integer `(negative, magnitude)` is a value of `ty`.
-pub(super) fn holds(ty: IntTy, negative: bool, magnitude: u128) -> bool {
-    let (signed, bits) = ty;
-    let top = |shift: u16| {
-        if shift >= 128 {
-            u128::MAX
-        } else {
-            (1u128 << shift) - 1
-        }
-    };
-    match (signed, negative) {
-        (false, true) => magnitude == 0,
-        (false, false) => bits >= 128 || magnitude <= top(bits),
-        (true, false) => magnitude <= top(bits - 1),
-        (true, true) => magnitude == 0 || magnitude - 1 <= top(bits - 1),
-    }
-}
-
 impl Value {
-    /// The range of its C values.
-    pub(super) fn range(&self) -> Option<Range> {
-        let (signed, bits) = int_of(self.ty)?;
-        if let Some(constant) = self.constant {
-            let (negative, magnitude) = constant_value(constant, self.class);
-            return Some(if negative {
-                Range::Signed(bit_length(magnitude - 1) + 1)
-            } else {
-                Range::Unsigned(bit_length(magnitude))
-            });
+    /// What the conversion rules see of it.
+    pub(super) fn form(&self) -> Form {
+        let unsigned_literal = self.unsigned_literal.is_some_and(|end| {
+            matches!(self.op, Op::Additive | Op::Multiplicative) && end_number(&self.doc, end.last)
+        });
+        Form {
+            ty: self.ty,
+            class: self.class,
+            width: self.width,
+            constant: self.constant,
+            unsigned_literal,
         }
-        Some(match self.class {
-            Class::Zero => Range::Unsigned(self.width.min(bits - u16::from(signed))),
-            Class::Sign if signed => Range::Signed(self.width.min(bits)),
-            Class::Sign | Class::Low if signed => Range::Signed(bits),
-            Class::Sign | Class::Low => Range::Unsigned(bits),
-        })
-    }
-
-    /// Whether it is what `need` asks for.
-    pub(super) fn is(&self, need: Class) -> bool {
-        let Some((signed, bits)) = int_of(self.ty) else {
-            return false;
-        };
-        match need {
-            Class::Low => true,
-            Class::Zero => self.class == Class::Zero || (!signed && bits == self.width),
-            Class::Sign => {
-                self.class == Class::Sign
-                    || (signed && bits == self.width)
-                    || (self.class == Class::Zero
-                        && matches!(self.range(), Some(Range::Unsigned(n)) if n < self.width))
-            }
-        }
-    }
-
-    /// Whether, converted to `ty` (by C's usual arithmetic conversions),
-    /// it is what `need` asks for.
-    pub(super) fn is_in(&self, ty: IntTy, need: Class) -> bool {
-        let Some(range) = self.range() else {
-            return false;
-        };
-        if fits(range, ty) {
-            return self.is(need);
-        }
-        match ty.1.cmp(&self.width) {
-            Ordering::Less => false,
-            Ordering::Equal => {
-                need == Class::Low || need == if ty.0 { Class::Sign } else { Class::Zero }
-            }
-            Ordering::Greater => need == Class::Low,
-        }
-    }
-
-    /// Whether, compared with or chosen against a value of type `ty`, it
-    /// would draw a warning about mixing signedness: a signed value C
-    /// converts to unsigned, unless it is a literal or of an unsigned type
-    /// narrower than `int`.
-    pub(super) fn mixes(&self, ty: IntTy) -> bool {
-        let Some(own) = int_of(self.ty) else {
-            return false;
-        };
-        !ty.0
-            && promote(own).0
-            && own.0
-            && self
-                .constant
-                .is_none_or(|bits| constant_value(bits, self.class).0)
-    }
-
-    /// Its integer type after the promotions.
-    pub(super) fn promoted(&self) -> Option<IntTy> {
-        int_of(self.ty).map(promote)
     }
 
     /// The same expression standing for an L2 value of `width` bits.
@@ -298,6 +146,28 @@ fn end_token(docs: &mut [Doc], last: bool) -> Option<&mut Token> {
         | Doc::Outdent(_)
         | Doc::Block { .. }
         | Doc::AfterBlock => None,
+    }
+}
+
+/// Whether the first (`last`: the last) token of `docs`, inside its
+/// groups, is a number ([`end_token`]).
+fn end_number(docs: &[Doc], last: bool) -> bool {
+    let doc = if last { docs.last() } else { docs.first() };
+    match doc {
+        Some(Doc::Token(token)) => token.kind == TokenKind::Number,
+        Some(Doc::Group(items)) => end_number(items, last),
+        Some(
+            Doc::Space
+            | Doc::Line
+            | Doc::SoftLine
+            | Doc::HardLine
+            | Doc::BlankLine
+            | Doc::Nest(_)
+            | Doc::Outdent(_)
+            | Doc::Block { .. }
+            | Doc::AfterBlock,
+        )
+        | None => false,
     }
 }
 
@@ -567,17 +437,26 @@ impl Printer<'_> {
         class: Class,
         bitwise: bool,
     ) -> Result<Value, PrintError> {
-        let (negative, magnitude) = constant_value(bits, class);
-        let ty = CANDIDATES
-            .into_iter()
-            .find(|&ty| holds(ty, negative, magnitude))
-            .ok_or_else(|| self.unsupported(self.node, "constants over 128 bits"))?;
+        let ty =
+            convert::narrowest(bits, class).ok_or_else(|| self.refused(Refusal::WideConstant))?;
         Ok(self.literal(bits, class, ty, bitwise))
+    }
+
+    /// The error for a conversion [`super::convert`] refuses.
+    pub(super) fn refused(&self, refusal: Refusal) -> PrintError {
+        match refusal {
+            Refusal::WideConstant => self.unsupported(self.node, "constants over 128 bits"),
+            Refusal::WideValue => self.unsupported(self.node, "values over 128 bits"),
+            Refusal::NotIntegers => error(self.node, "operands are not integers"),
+            Refusal::NoCommonType => {
+                error(self.node, "operands could not be given a common C type")
+            }
+        }
     }
 
     /// `-value`, of its promoted type.
     fn negate(&self, value: Value) -> Value {
-        let ty = value.promoted().unwrap_or((true, 32));
+        let ty = value.form().promoted().unwrap_or((true, 32));
         let (width, depth, loads) = (value.width, value.depth, value.loads);
         let mut doc = vec![Doc::op("-", self.node)];
         let operand = self.operand(value, Op::Unary, false);
@@ -595,10 +474,7 @@ impl Printer<'_> {
 
     /// `(T)value`.
     pub(super) fn cast(&mut self, value: Value, ty: CTy) -> Value {
-        let class = match (int_of(ty), value.range()) {
-            (Some(target), Some(range)) if fits(range, target) => value.class,
-            _ => Class::Low,
-        };
+        let class = value.form().cast(ty).class;
         let mut doc = self.cast_tokens(ty);
         let depth = value.depth;
         let loads = value.loads;
@@ -740,7 +616,7 @@ impl Printer<'_> {
         }
         let value = self.int_view(value)?;
         let bits = self.pointer_width();
-        let value = if value.promoted().is_some_and(|own| own.1 == bits) {
+        let value = if value.form().promoted().is_some_and(|own| own.1 == bits) {
             value
         } else {
             let value = self.coerce(value, Class::Zero)?;
@@ -811,68 +687,85 @@ impl Printer<'_> {
 
     /// `value` (an integer) made what `need` asks for: a literal printed
     /// again, a cast to the exact type of its width, or at widths C lacks
-    /// a mask or `sext_n`.
+    /// a mask or `sext_n` ([`convert::coerce`]).
     pub(super) fn coerce(&mut self, value: Value, need: Class) -> Result<Value, PrintError> {
-        if value.is(need) {
-            return Ok(value);
-        }
-        let mut value = value;
-        if need == Class::Zero && self.unsigned_literal(&mut value) {
-            return Ok(value);
-        }
+        let conversion = convert::coerce(value.form(), need).map_err(|r| self.refused(r))?;
+        Ok(self.apply(value, conversion))
+    }
+
+    /// `value` (an integer congruent to the L2 value) as exactly C type
+    /// `(signed, bits)`, `bits` at least its width: unchanged if it is of
+    /// that type, else cast ([`convert::exact`]).
+    pub(super) fn exact(&mut self, value: Value, signed: bool, bits: u16) -> Value {
+        let conversion = convert::exact(value.form(), signed, bits);
+        self.apply(value, conversion)
+    }
+
+    /// `value` converted as `conversion` says.
+    pub(super) fn apply(&mut self, value: Value, conversion: Conversion) -> Value {
+        #[cfg(debug_assertions)]
+        let expected = value.form().after(conversion);
+        let value = match conversion {
+            Conversion::Keep => value,
+            Conversion::UnsignedLiteral => self.print_unsigned(value),
+            Conversion::Literal(literal) => {
+                let bits = value.form().literal_bits();
+                self.literal(bits, literal.class, literal.ty, literal.bitwise)
+            }
+            Conversion::Folded(literal) => {
+                let bits = value.form().literal_bits();
+                let mut folded = self.literal(bits, literal.class, literal.ty, literal.bitwise);
+                folded.constant = None;
+                folded
+            }
+            Conversion::Cast((signed, bits)) => self.cast(value, CTy::Int { signed, bits }),
+            Conversion::Negate => {
+                // 0 or 1 sign-extended: 0 or -1.
+                let mut negated = self.negate(value);
+                negated.class = Class::Sign;
+                negated
+            }
+            Conversion::SignExtend(wide) => {
+                let width = value.width;
+                let unsigned = self.exact(value, false, wide);
+                self.helper(
+                    "sext_n",
+                    vec![unsigned, self.literal_number(u64::from(width), false)],
+                    CTy::Int {
+                        signed: true,
+                        bits: wide,
+                    },
+                    Class::Sign,
+                    width,
+                )
+            }
+            Conversion::Mask { widen, ty } => self.mask(value, widen, ty),
+        };
+        #[cfg(debug_assertions)]
+        debug_assert_eq!(value.form(), expected, "{conversion:?}");
+        value
+    }
+
+    /// `value & mask`, the mask of its width ([`Conversion::Mask`]).
+    fn mask(&mut self, value: Value, widen: bool, ty: IntTy) -> Value {
         let width = value.width;
-        if let Some(bits) = value.constant {
-            return self.constant(bits, need, false);
-        }
-        if native(width) {
-            return Ok(self.cast(
-                value,
-                CTy::Int {
-                    signed: need == Class::Sign,
-                    bits: width,
-                },
-            ));
-        }
-        if width == 1 && need == Class::Sign && value.is(Class::Zero) {
-            // 0 or 1 sign-extended: 0 or -1.
-            let mut negated = self.negate(value);
-            negated.class = Class::Sign;
-            return Ok(negated);
-        }
-        let wide = if width < 64 { 64 } else { 128 };
-        if width > 128 {
-            return Err(self.unsupported(self.node, "values over 128 bits"));
-        }
-        if need == Class::Sign {
-            let unsigned = self.exact(value, false, wide);
-            return Ok(self.helper(
-                "sext_n",
-                vec![unsigned, self.literal_number(u64::from(width), false)],
-                CTy::Int {
-                    signed: true,
-                    bits: wide,
-                },
-                Class::Sign,
-                width,
-            ));
-        }
-        let value = if value.promoted().is_some_and(|ty| ty.1 < width) {
+        let value = if widen {
             self.cast(
                 value,
                 CTy::Int {
                     signed: false,
-                    bits: wide,
+                    bits: ty.1,
                 },
             )
         } else {
             value
         };
-        let ty = value.promoted().unwrap_or((false, 32));
         let mask = Bits::ones(width).zext(ty.1);
         let mask = self.literal(mask, Class::Zero, (false, ty.1), true);
-        let (doc, depth) = self.binary_doc(value.clone(), "&", Op::BitAnd, mask);
+        let loads = value.loads;
+        let (doc, depth) = self.binary_doc(value, "&", Op::BitAnd, mask);
         let (signed, bits) = common(ty, (false, ty.1));
-        Ok(Value {
+        Value {
             doc,
             op: Op::BitAnd,
             ty: CTy::Int { signed, bits },
@@ -880,73 +773,32 @@ impl Printer<'_> {
             width,
             constant: None,
             lvalue: false,
-            loads: value.loads,
+            loads,
             depth,
             address_of: None,
             unsigned_literal: None,
-        })
+        }
     }
 
-    /// `value` (an integer congruent to the L2 value) as exactly C type
-    /// `(signed, bits)`, `bits` at least its width: unchanged if it is of
-    /// that type, else cast.
-    pub(super) fn exact(&mut self, value: Value, signed: bool, bits: u16) -> Value {
-        let ty = CTy::Int { signed, bits };
-        if value.ty == ty {
-            return value;
-        }
-        let mut value = value;
-        if !signed && bits == value.width && self.unsigned_literal(&mut value) {
-            return value;
-        }
-        if let Some(constant) = value.constant {
-            let class = if signed { Class::Sign } else { Class::Zero };
-            if bits >= 32 {
-                return self.literal(constant, class, (signed, bits), false);
+    /// `value`, `x + k`, `k - x` or `x * k`, with the literal `k` printed
+    /// unsigned ([`convert::unsigned_literal`]).
+    fn print_unsigned(&mut self, mut value: Value) -> Value {
+        let width = value.width;
+        if let Some(end) = value.unsigned_literal {
+            let literal = self.literal(end.bits, Class::Zero, (false, width), false);
+            if let ([Doc::Token(spelled)], Some(token)) =
+                (literal.doc.as_slice(), end_token(&mut value.doc, end.last))
+            {
+                token.text.clone_from(&spelled.text);
             }
         }
-        self.cast(value, ty)
-    }
-
-    /// `value`, `x + k`, `k - x` or `x * k` in the signed type of its
-    /// width, made its zero value by printing the literal `k` unsigned
-    /// (`x - 14U`, not `(uint32_t)(x - 14)`), where it is such a value
-    /// ([`Value::unsigned_literal`]): C then converts `x` to the unsigned
-    /// type of the width and computes in it, modulo 2^width. Gives
-    /// whether it did.
-    pub(super) fn unsigned_literal(&mut self, value: &mut Value) -> bool {
-        let Some(end) = value.unsigned_literal else {
-            return false;
-        };
-        let width = value.width;
-        let signed = CTy::Int {
-            signed: true,
-            bits: width,
-        };
-        if value.ty != signed
-            || !matches!(width, 32 | 64)
-            || !matches!(value.op, Op::Additive | Op::Multiplicative)
-        {
-            return false;
-        }
-        let literal = self.literal(end.bits, Class::Zero, (false, width), false);
-        let [Doc::Token(spelled)] = literal.doc.as_slice() else {
-            return false;
-        };
-        let Some(token) = end_token(&mut value.doc, end.last) else {
-            return false;
-        };
-        if token.kind != TokenKind::Number {
-            return false;
-        }
-        token.text.clone_from(&spelled.text);
         value.ty = CTy::Int {
             signed: false,
             bits: width,
         };
         value.class = Class::Zero;
         value.unsigned_literal = None;
-        true
+        value
     }
 
     /// `value` (an integer of its width's class `need`) as exactly the
@@ -975,7 +827,7 @@ impl Printer<'_> {
     /// operands must be `need` (a comparison: `compare`, which must not
     /// mix signedness): literals typed, operands widened where C would
     /// compute narrower and cast where they are not what is needed. Gives
-    /// the operands and the type C computes in.
+    /// the operands and the type C computes in ([`convert::operands`]).
     pub(super) fn operands(
         &mut self,
         mut a: Value,
@@ -984,152 +836,15 @@ impl Printer<'_> {
         compare: bool,
         bitwise: bool,
     ) -> Result<(Value, Value, IntTy), PrintError> {
-        let width = a.width.max(b.width);
-        for _ in 0..6 {
-            if a.constant.is_some() && b.constant.is_some() {
-                let bits = a.constant.unwrap_or(Bits::zero(width));
-                a = self.constant(
-                    bits,
-                    if need == Class::Sign {
-                        Class::Sign
-                    } else {
-                        Class::Zero
-                    },
-                    bitwise,
-                )?;
-                a.constant = None;
-            }
-            if a.constant.is_some() {
-                a = self.fit_literal(&a, &b, need, compare, bitwise)?;
-            } else if b.constant.is_some() {
-                b = self.fit_literal(&b, &a, need, compare, bitwise)?;
-            }
-            let (Some(ta), Some(tb)) = (a.promoted(), b.promoted()) else {
-                return Err(error(self.node, "operands are not integers"));
-            };
-            let ty = common(ta, tb);
-            if ty.1 < width {
-                let wide = container(width).unwrap_or(128).max(32);
-                let signed = need == Class::Sign;
-                if a.constant.is_none() && (ta.1 <= tb.1 || b.constant.is_some()) {
-                    a = self.cast(a, CTy::Int { signed, bits: wide });
-                } else {
-                    b = self.cast(b, CTy::Int { signed, bits: wide });
-                }
-                continue;
-            }
-            let good = |v: &Value| v.is_in(ty, need) && !(compare && v.mixes(ty));
-            let (good_a, good_b) = (good(&a), good(&b));
-            if good_a && good_b {
-                return Ok((a, b, ty));
-            }
-            // First make each operand what is needed, then keep it so
-            // through the conversions.
-            if !a.is(need) && a.constant.is_none() {
-                a = self.coerce(a, need)?;
-            } else if !b.is(need) && b.constant.is_none() {
-                b = self.coerce(b, need)?;
-            } else if !good_a {
-                a = self.fix(a, need, ty)?;
-            } else {
-                b = self.fix(b, need, ty)?;
+        let plan = convert::operands(a.form(), b.form(), need, compare, bitwise);
+        for &(side, conversion) in plan.steps() {
+            match side {
+                Side::Left => a = self.apply(a, conversion),
+                Side::Right => b = self.apply(b, conversion),
             }
         }
-        Err(error(
-            self.node,
-            "operands could not be given a common C type",
-        ))
-    }
-
-    /// `value` made `need` (or, if it is, cast to the type of `need`'s
-    /// signedness and `ty`'s width so the conversions keep it).
-    fn fix(&mut self, value: Value, need: Class, ty: IntTy) -> Result<Value, PrintError> {
-        if !value.is(need) {
-            return self.coerce(value, need);
-        }
-        let bits = container(value.width).unwrap_or(128).max(ty.1);
-        let signed = match need {
-            Class::Sign => true,
-            Class::Zero => false,
-            Class::Low => ty.0,
-        };
-        if let Some(bits_value) = value.constant {
-            let class = if signed { Class::Sign } else { Class::Zero };
-            return self.constant(bits_value, class, false);
-        }
-        Ok(self.cast(value, CTy::Int { signed, bits }))
-    }
-
-    /// The literal `literal` typed to go with `other`: the first of
-    /// `other`'s promoted type and the candidate types that holds its
-    /// value as `need` reads it, makes C compute at the width, and keeps
-    /// `other` what it must be.
-    fn fit_literal(
-        &mut self,
-        literal: &Value,
-        other: &Value,
-        need: Class,
-        compare: bool,
-        bitwise: bool,
-    ) -> Result<Value, PrintError> {
-        let bits = literal.constant.unwrap_or(Bits::zero(literal.width));
-        let width = bits.width();
-        let other_ty = other.promoted().unwrap_or((true, 32));
-        let class = match need {
-            Class::Zero | Class::Sign => need,
-            Class::Low => {
-                let (negative, magnitude) = constant_value(bits, Class::Sign);
-                // A signed operand: `x - 1`, `x & -16`, `x | -1`, not
-                // values beyond its type (compilers warn when the result
-                // is converted back).
-                if negative && magnitude < 1 << 15 && other_ty.0 {
-                    Class::Sign
-                } else {
-                    Class::Zero
-                }
-            }
-        };
-        let (negative, magnitude) = constant_value(bits, class);
-        let mut first = None;
-        // `int` where it holds the value, else the other operand's type,
-        // else the narrowest that does.
-        let order = [(true, 32), other_ty].into_iter().chain(CANDIDATES);
-        for ty in order {
-            if !holds(ty, negative, magnitude) {
-                continue;
-            }
-            let common = common(other_ty, ty);
-            if common.1 < width {
-                continue;
-            }
-            // What the literal would be, without its tokens (a 128-bit
-            // one is a cast, counted only if printed).
-            let probe = Value {
-                doc: Vec::new(),
-                op: Op::Postfix,
-                ty: CTy::Int {
-                    signed: ty.0,
-                    bits: ty.1,
-                },
-                class: if negative { Class::Sign } else { Class::Zero },
-                width,
-                constant: Some(bits),
-                lvalue: false,
-                loads: false,
-                depth: 0,
-                address_of: None,
-                unsigned_literal: None,
-            };
-            let keeps = other.is_in(common, need)
-                && probe.is_in(common, need)
-                && !(compare && (other.mixes(common) || probe.mixes(common)));
-            if keeps {
-                return Ok(self.literal(bits, class, ty, bitwise));
-            }
-            first.get_or_insert(ty);
-        }
-        let ty = first.ok_or_else(|| self.unsupported(self.node, "constants over 128 bits"))?;
-        Ok(self.literal(bits, class, ty, bitwise))
+        let ty = plan.outcome.map_err(|r| self.refused(r))?;
+        Ok((a, b, ty))
     }
 
     /// A value of `width` bits, of C type `ty` and `class`, built from
@@ -1161,13 +876,3 @@ impl Printer<'_> {
         }
     }
 }
-
-/// The literal types, narrowest first.
-const CANDIDATES: [IntTy; 6] = [
-    (true, 32),
-    (false, 32),
-    (true, 64),
-    (false, 64),
-    (true, 128),
-    (false, 128),
-];

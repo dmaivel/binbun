@@ -143,25 +143,6 @@ pub(super) fn vector_name(name: &str) -> bool {
     }
 }
 
-/// The type of `a op b` for promoted integer types (C's usual arithmetic
-/// conversions).
-pub(super) fn common(a: (bool, u16), b: (bool, u16)) -> (bool, u16) {
-    let ((a_signed, a_bits), (b_signed, b_bits)) = (a, b);
-    if a_signed == b_signed {
-        return (a_signed, a_bits.max(b_bits));
-    }
-    let (unsigned, signed) = if a_signed {
-        (b_bits, a_bits)
-    } else {
-        (a_bits, b_bits)
-    };
-    if unsigned >= signed {
-        (false, unsigned)
-    } else {
-        (true, signed)
-    }
-}
-
 /// Whether C has an integer type of exactly `width` bits.
 pub(super) const fn native(width: u16) -> bool {
     matches!(width, 8 | 16 | 32 | 64 | 128)

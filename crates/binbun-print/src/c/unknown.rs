@@ -45,10 +45,11 @@ use binbun_semantics::bits::Bits;
 use binbun_semantics::ir::RegisterId;
 use binbun_ssa::ir::Unknown;
 
+use super::convert::Class;
 use super::stmt::MAX_NESTING;
 use super::types::container;
 use super::unlifted::pure;
-use super::value::{Class, Value};
+use super::value::Value;
 use super::{Opaque, PrintError, Printer, comment};
 use crate::document::{Doc, TokenKind};
 

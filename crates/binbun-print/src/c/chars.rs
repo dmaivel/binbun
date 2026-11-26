@@ -142,7 +142,7 @@ impl Printer<'_> {
     /// character C can write ([`spelled`]): the same constant, of the
     /// same type; else `value` itself.
     pub(super) fn by_character(&self, value: Value) -> Value {
-        let (Some(bits), Some((true, 32))) = (value.constant, value.promoted()) else {
+        let (Some(bits), Some((true, 32))) = (value.constant, value.form().promoted()) else {
             return value;
         };
         if bits.width() > 64 || bits.leading_zeros() + 7 < u32::from(bits.width()) {

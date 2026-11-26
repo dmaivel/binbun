@@ -12,11 +12,10 @@ use binbun_semantics::ir::{Binary, Flag, FloatOp, FloatOutput, Format, LaneOp, U
 use binbun_ssa::ir::Unknown;
 
 use super::chars::Spelling;
+use super::convert::{self, Class, IntTy, Range, common, constant_value, int_of, promote};
 use super::enums::Context;
-use super::types::{CTy, common, container, native};
-use super::value::{
-    Class, EndLiteral, IntTy, Op, Range, Value, constant_value, int_of, parenthesized, promote,
-};
+use super::types::{CTy, container, native};
+use super::value::{EndLiteral, Op, Value, parenthesized};
 use super::{PrintError, Printer, error};
 use crate::document::Doc;
 
@@ -735,24 +734,18 @@ impl Printer<'_> {
 
     /// A literal argument printed in the class of a parameter of
     /// signedness `signed` (so C's conversion does not change its value);
-    /// anything else as it is.
+    /// anything else as it is ([`convert::arg`]).
     pub(super) fn arg(&mut self, value: Value, signed: bool) -> Result<Value, PrintError> {
-        match value.constant {
-            Some(bits) => {
-                self.constant(bits, if signed { Class::Sign } else { Class::Zero }, false)
-            }
-            None => Ok(value),
-        }
+        let conversion = convert::arg(value.form(), signed).map_err(|r| self.refused(r))?;
+        Ok(self.apply(value, conversion))
     }
 
-    /// A 1-bit condition whose C value is non-zero exactly when it is 1.
+    /// A 1-bit condition whose C value is non-zero exactly when it is 1
+    /// ([`convert::truthy`]).
     pub(super) fn truthy(&mut self, value: Value) -> Result<Value, PrintError> {
         let value = self.int_view(value)?;
-        if value.is(Class::Zero) || value.is(Class::Sign) {
-            Ok(value)
-        } else {
-            self.coerce(value, Class::Zero)
-        }
+        let conversion = convert::truthy(value.form()).map_err(|r| self.refused(r))?;
+        Ok(self.apply(value, conversion))
     }
 
     pub(super) fn unary(&mut self, op: Unary, a: Value, width: u16) -> Result<Value, PrintError> {
@@ -779,11 +772,11 @@ impl Printer<'_> {
                 } else {
                     Class::Low
                 };
-                let ty = a.promoted().unwrap_or((true, 32));
+                let ty = a.form().promoted().unwrap_or((true, 32));
                 Ok(self.prefix("~", a, ty, class))
             }
             Unary::Neg => {
-                let ty = a.promoted().unwrap_or((true, 32));
+                let ty = a.form().promoted().unwrap_or((true, 32));
                 Ok(self.prefix("-", a, ty, Class::Low))
             }
             Unary::Popcount | Unary::LeadingZeros | Unary::TrailingZeros => {
@@ -1023,8 +1016,14 @@ impl Printer<'_> {
         let bitwise = matches!(kind, Op::BitAnd | Op::BitOr | Op::BitXor);
         let (a, b, ty) = self.operands(a, b, Class::Low, false, bitwise)?;
         let (zero, sign) = (
-            (a.is_in(ty, Class::Zero), b.is_in(ty, Class::Zero)),
-            (a.is_in(ty, Class::Sign), b.is_in(ty, Class::Sign)),
+            (
+                a.form().is_in(ty, Class::Zero),
+                b.form().is_in(ty, Class::Zero),
+            ),
+            (
+                a.form().is_in(ty, Class::Sign),
+                b.form().is_in(ty, Class::Sign),
+            ),
         );
         let class = match kind {
             Op::BitAnd if zero.0 || zero.1 => Class::Zero,
@@ -1136,7 +1135,7 @@ impl Printer<'_> {
         if b.constant.is_some() {
             return self.arg(b, false);
         }
-        if b.is_in((false, bits), Class::Zero) {
+        if b.form().is_in((false, bits), Class::Zero) {
             Ok(b)
         } else {
             self.coerce(b, Class::Zero)
@@ -1160,7 +1159,7 @@ impl Printer<'_> {
             Shift::Logical => self.coerce(a, Class::Zero)?,
             Shift::Arithmetic => self.coerce(a, Class::Sign)?,
         };
-        let promoted = a.promoted().unwrap_or((true, 32));
+        let promoted = a.form().promoted().unwrap_or((true, 32));
         let too_narrow = if op == Shift::Left {
             promoted.1 < width
         } else {
@@ -1177,11 +1176,12 @@ impl Printer<'_> {
         } else {
             a
         };
-        let ty = a.promoted().unwrap_or((true, 32));
+        let ty = a.form().promoted().unwrap_or((true, 32));
         let class = match op {
-            Shift::Left => match a.range() {
+            Shift::Left => match a.form().range() {
                 Some(Range::Unsigned(bits))
-                    if a.is(Class::Zero) && bits + count <= width.min(ty.1 - u16::from(ty.0)) =>
+                    if a.form().is(Class::Zero)
+                        && bits + count <= width.min(ty.1 - u16::from(ty.0)) =>
                 {
                     Class::Zero
                 }
@@ -1257,7 +1257,7 @@ impl Printer<'_> {
             let need = order.unwrap_or_else(|| equality_need(&a, &b));
             let (x, y, ty) = self.operands(a.clone(), b.clone(), need, true, false)?;
             if need == Class::Low && ty.1 != a.width {
-                let need = if a.is(Class::Sign) && b.is(Class::Sign) {
+                let need = if a.form().is(Class::Sign) && b.form().is(Class::Sign) {
                     Class::Sign
                 } else {
                     Class::Zero
@@ -1277,7 +1277,7 @@ impl Printer<'_> {
             (a, text, b)
         };
         let literal = b.constant.is_some() && a.constant.is_none();
-        let b = match (spelling, a.promoted()) {
+        let b = match (spelling, a.form().promoted()) {
             (Spelling::Enumeration(ty), Some(other)) if literal => {
                 self.by_name(b, ty, Context::Compared(other))
             }
@@ -1351,13 +1351,13 @@ fn mirrored(text: &'static str) -> &'static str {
 /// compares at exactly the width, else both zero- or both sign-extended
 /// (whichever needs fewer casts).
 fn equality_need(a: &Value, b: &Value) -> Class {
-    if let (Some(ta), Some(tb)) = (a.promoted(), b.promoted()) {
+    if let (Some(ta), Some(tb)) = (a.form().promoted(), b.form().promoted()) {
         let ty = common(ta, tb);
-        if ty.1 == a.width && !a.mixes(ty) && !b.mixes(ty) {
+        if ty.1 == a.width && !a.form().mixes(ty) && !b.form().mixes(ty) {
             return Class::Low;
         }
     }
-    let cost = |v: &Value, need| usize::from(v.constant.is_none() && !v.is(need));
+    let cost = |v: &Value, need| usize::from(v.constant.is_none() && !v.form().is(need));
     if cost(a, Class::Sign) + cost(b, Class::Sign) < cost(a, Class::Zero) + cost(b, Class::Zero) {
         Class::Sign
     } else {
@@ -1437,7 +1437,7 @@ impl Printer<'_> {
             return self.constant(bits.extract(offset, width), Class::Zero, false);
         }
         if offset == 0 {
-            let class = match (value.class, value.range()) {
+            let class = match (value.class, value.form().range()) {
                 (Class::Zero, Some(Range::Unsigned(bits))) if bits <= width => Class::Zero,
                 (Class::Sign, Some(Range::Signed(bits))) if bits <= width => Class::Sign,
                 _ => Class::Low,
@@ -1447,14 +1447,14 @@ impl Printer<'_> {
             return Ok(value);
         }
         let source = value.width;
-        let class = if offset + width == source && value.is(Class::Zero) {
+        let class = if offset + width == source && value.form().is(Class::Zero) {
             Class::Zero
-        } else if offset + width == source && value.is(Class::Sign) {
+        } else if offset + width == source && value.form().is(Class::Sign) {
             Class::Sign
         } else {
             Class::Low
         };
-        let value = if value.promoted().is_some_and(|ty| ty.1 <= offset) {
+        let value = if value.form().promoted().is_some_and(|ty| ty.1 <= offset) {
             let signed = class == Class::Sign;
             self.cast(
                 value,
@@ -1466,7 +1466,7 @@ impl Printer<'_> {
         } else {
             value
         };
-        let ty = value.promoted().unwrap_or((true, 32));
+        let ty = value.form().promoted().unwrap_or((true, 32));
         let amount = self.literal_number(u64::from(offset), false);
         let loads = value.loads;
         let (doc, depth) = self.binary_doc(value, ">>", Op::Shift, amount);
@@ -1483,14 +1483,14 @@ impl Printer<'_> {
         let low = self.int_view(low)?;
         let low_width = low.width;
         let wide = container(width).unwrap_or(128).max(32);
-        let class = if high.is(Class::Zero) {
+        let class = if high.form().is(Class::Zero) {
             Class::Zero
         } else {
             Class::Low
         };
         let mut high = match high.constant {
             Some(bits) => self.literal(bits, Class::Zero, (false, wide), false),
-            None if high.promoted().is_some_and(|ty| ty.1 < width) => self.cast(
+            None if high.form().promoted().is_some_and(|ty| ty.1 < width) => self.cast(
                 high,
                 CTy::Int {
                     signed: false,
@@ -1506,6 +1506,7 @@ impl Printer<'_> {
         // `high` below 2^(width - low_width): shifted, below 2^width.
         if class == Class::Zero
             && shifted
+                .form()
                 .promoted()
                 .is_some_and(|(signed, bits)| bits - u16::from(signed) >= width)
         {
@@ -1582,9 +1583,12 @@ impl Printer<'_> {
             let then = self.int_view(then)?;
             let otherwise = self.int_view(otherwise)?;
             let (then, otherwise, ty) = self.operands(then, otherwise, Class::Low, true, false)?;
-            let class = if then.is_in(ty, Class::Zero) && otherwise.is_in(ty, Class::Zero) {
+            let class = if then.form().is_in(ty, Class::Zero)
+                && otherwise.form().is_in(ty, Class::Zero)
+            {
                 Class::Zero
-            } else if then.is_in(ty, Class::Sign) && otherwise.is_in(ty, Class::Sign) {
+            } else if then.form().is_in(ty, Class::Sign) && otherwise.form().is_in(ty, Class::Sign)
+            {
                 Class::Sign
             } else {
                 Class::Low
