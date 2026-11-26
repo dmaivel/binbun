@@ -56,6 +56,17 @@ impl Lowering<'_, '_> {
         typing::arguments(&view, solved, &mut types)
     }
 
+    /// The signature [`Self::solve_types`] solved ([`typing::Signature`];
+    /// empty unless solved).
+    pub(super) fn signature_types(&self) -> typing::FunctionTypes {
+        let Some(solved) = self.solved.as_ref() else {
+            return typing::FunctionTypes::default();
+        };
+        let mut types = self.types.clone();
+        let view = self.rounding_view(&mut types);
+        typing::signature(&view, solved, &mut types)
+    }
+
     /// What [`Self::solve_types`] solved adds to the program's synthesised
     /// structs ([`typing::Contribution`]; nothing unless solved), with the
     /// declared structs its roots point to where the function has debug

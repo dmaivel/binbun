@@ -98,7 +98,10 @@
 //!   the result likewise; the others stay, so the arguments a scheme
 //!   types need no cast to an untyped parameter; a pointer-wide one
 //!   whose root the program's table has at a struct's start is a pointer
-//!   to that struct, as the callee's definition prints it.
+//!   to that struct, as the callee's definition prints it. Where no
+//!   instance of its scheme types a call, each `bits` or pointer
+//!   parameter and the result take the program's signature's type
+//!   ([`super::Schemes::signature`]) where it says more than a width.
 //! - A global object a family reaches (`Generated::objects`) is typed as
 //!   the struct the table has for it where the object is its size, or as
 //!   `S g[n]` where it is an array of struct elements `S` and `n` of them
@@ -127,7 +130,7 @@ use super::structs::{
     Contribution, Field, FieldType, Layout, StructId, bytes, counted, element, place, qualifies,
     uniform,
 };
-use super::{Argument, Arguments, Class, Root, strength as rank, strongest};
+use super::{Argument, Arguments, Class, FunctionTypes, Root, strength as rank, strongest};
 use crate::mapping::Source;
 
 /// A class of coalesced values (an L2 local or a parameter's variable).
@@ -352,6 +355,62 @@ pub(crate) fn arguments(
         }
     }
     arguments
+}
+
+/// The signature of the function `view` shows by `solution` of
+/// `generated` ([`FunctionTypes`]): each register parameter not declared as
+/// its values round together (its entry value's, its slot's), the return
+/// value not declared as its variable and the values returned round
+/// together, each portably ([`portable`]; `bits` where nothing says
+/// more); types interned in `types`.
+pub(crate) fn own_signature(
+    view: &View<'_>,
+    generated: &Generated,
+    solution: &Solution,
+    types: &mut Types,
+) -> FunctionTypes {
+    let mut state = Rounder::new(view, generated, solution, types);
+    let mut signature = FunctionTypes::default();
+    for parameter in &view.parameters {
+        if !matches!(parameter.evidence, Stated::Default | Stated::Deduced) {
+            continue;
+        }
+        let Some(width) = state.types.value_width(parameter.ty) else {
+            continue;
+        };
+        let vars: Vec<Var> = parameter
+            .values
+            .iter()
+            .filter_map(|&v| generated.var(v))
+            .chain(
+                parameter
+                    .slot
+                    .and_then(|slot| generated.slots.get(slot).copied().flatten()),
+            )
+            .collect();
+        let (ty, _) = state.join(vars.into_iter(), width);
+        let ty = ty.unwrap_or_else(|| state.types.intern(Type::Bits(width)));
+        if let Some(field) = portable(state.types, ty) {
+            signature.parameters.push((parameter.source, field));
+        }
+    }
+    let returns = &view.returns;
+    if matches!(
+        returns.evidence.unwrap_or(Stated::Default),
+        Stated::Default | Stated::Deduced
+    ) && let Some(var) = generated.returns
+    {
+        let returned = returns
+            .values
+            .iter()
+            .chain(&returns.registers)
+            .filter_map(|&v| generated.var(v));
+        let vars: Vec<Var> = core::iter::once(var).chain(returned).collect();
+        let (ty, _) = state.join(vars.into_iter(), returns.width);
+        let ty = ty.unwrap_or_else(|| state.types.intern(Type::Bits(returns.width)));
+        signature.returns = portable(state.types, ty);
+    }
+    signature
 }
 
 impl Rounder<'_, '_> {
@@ -787,6 +846,30 @@ impl<'r, 'a> Rounder<'r, 'a> {
         self.keep_declared(ty, parameter.evidence)
     }
 
+    /// The type the program's signature of the function at `entry`
+    /// ([`super::Schemes::signature`]) gives its parameter at `source`
+    /// (`None`: its return value), interned, where it says more than a
+    /// width and is `width` bits.
+    fn table_type(&mut self, entry: u64, source: Option<Source>, width: u16) -> Option<TypeId> {
+        let view = self.view;
+        let signature = view.schemes.signature(entry)?;
+        let field = match source {
+            Some(source) => signature.parameter(source),
+            None => signature.returns(),
+        }?;
+        let ty = view
+            .schemes
+            .structs()
+            .field_type(field, self.types, &mut self.interned);
+        (self.types.value_width(ty) == Some(width)).then_some(ty)
+    }
+
+    /// Whether a callee's parameter or result of type `ty` at a call takes
+    /// the program's signature: untyped bits, or a pointer.
+    fn open(&self, ty: TypeId) -> bool {
+        matches!(self.types.get(ty), Some(Type::Bits(_) | Type::Pointer(_)))
+    }
+
     /// `ty` where a declaration of `evidence` allows a deduced type.
     fn keep_declared(&self, ty: Option<TypeId>, evidence: Stated) -> Option<TypeId> {
         match evidence {
@@ -809,6 +892,9 @@ impl<'r, 'a> Rounder<'r, 'a> {
         let view = self.view;
         let none = Vec::new();
         let instances = generated.instances.get(&callee).unwrap_or(&none);
+        // A call no instance of its callee's scheme types takes the
+        // program's signature.
+        let unscheme = instances.is_empty();
         let mut typed = self.types.signature(signature)?.clone();
         let sources = &view
             .calls
@@ -821,6 +907,14 @@ impl<'r, 'a> Rounder<'r, 'a> {
                 continue;
             };
             let width = self.types.value_width(*slot).unwrap_or(0);
+            if unscheme
+                && self.open(*slot)
+                && let Some(ty) = self.table_type(callee, Some(source), width)
+            {
+                *slot = ty;
+                changed = true;
+                continue;
+            }
             if let Some(ty) = self.root_struct(callee, Root::Parameter(source, width), *slot) {
                 *slot = ty;
                 changed = true;
@@ -840,7 +934,14 @@ impl<'r, 'a> Rounder<'r, 'a> {
         }
         if let Some(returns) = typed.returns {
             let width = self.types.value_width(returns).unwrap_or(0);
-            if let Some(ty) = self.root_struct(callee, Root::Return(width), returns) {
+            let table = if unscheme && self.open(returns) {
+                self.table_type(callee, None, width)
+            } else {
+                None
+            };
+            if let Some(ty) =
+                table.or_else(|| self.root_struct(callee, Root::Return(width), returns))
+            {
                 typed.returns = Some(ty);
                 changed = true;
             }
@@ -3005,6 +3106,76 @@ pub(super) fn portable(types: &Types, ty: TypeId) -> Option<FieldType> {
         | Type::Array { .. }
         | Type::Vector { .. }
         | Type::Enum(_) => scalar(ty).map(FieldType::Scalar),
+    }
+}
+
+/// How wide a value of field type `ty` is (pointers `pointer` bits), if
+/// it says.
+pub(super) fn field_width(ty: &FieldType, pointer: u16) -> Option<u16> {
+    match ty {
+        FieldType::Scalar(scalar) => match *scalar {
+            Type::Bits(width) | Type::Int(width) | Type::UInt(width) | Type::Bool(width) => {
+                Some(width)
+            }
+            Type::Char { .. } => Some(8),
+            Type::Enum(Enumeration { width, .. }) => Some(width),
+            Type::Float(_)
+            | Type::Pointer(_)
+            | Type::Code(_)
+            | Type::Struct(_)
+            | Type::Union(_)
+            | Type::Array { .. }
+            | Type::Vector { .. } => None,
+        },
+        FieldType::Pointer(_)
+        | FieldType::Opaque
+        | FieldType::Struct(_)
+        | FieldType::Pointers(_)
+        | FieldType::ScalarPointers(_)
+        | FieldType::Code { .. } => Some(pointer),
+    }
+}
+
+/// Whether `typed`, a class its callers agree on, may stand for a
+/// parameter of field type `own` (its function's own): over `bits`, or
+/// of its kind with no more said (an integer of its width for an
+/// integer, a pointer to a scalar or to nothing for one), so the
+/// callers' agreement chooses what the body's evidence leaves open.
+pub(super) fn same_kind(own: &FieldType, typed: &FieldType) -> bool {
+    let integer = |ty: &Type| matches!(ty, Type::Int(_) | Type::UInt(_) | Type::Char { .. });
+    match (own, typed) {
+        (FieldType::Scalar(Type::Bits(_)), _)
+        | (FieldType::Pointer(_) | FieldType::Opaque, FieldType::Pointer(_)) => true,
+        (FieldType::Scalar(a), FieldType::Scalar(b)) => integer(a) && integer(b),
+        _ => false,
+    }
+}
+
+/// Class `class` as a field type of `width` bits (pointers `pointer`
+/// bits wide), where it is one that wide: a scalar, a pointer (to its
+/// scalar target); not code, whose signature a class does not say.
+pub(super) fn class_field(class: Class, width: u16, pointer: u16) -> Option<FieldType> {
+    match class {
+        Class::Scalar(atom) if atom.width() == width => scalar(atom).map(FieldType::Scalar),
+        Class::Pointer(target) if width == pointer => {
+            Some(FieldType::Pointer(target.and_then(scalar)))
+        }
+        Class::Scalar(_) | Class::Pointer(_) | Class::Code => None,
+    }
+}
+
+/// The class of field type `ty`, where it has one that says more than a
+/// width: a scalar's, a pointer's (to a scalar target, else to nothing
+/// known), code's.
+pub(super) fn field_class(ty: &FieldType) -> Option<Class> {
+    match ty {
+        FieldType::Scalar(scalar) => type_atom(scalar).map(Class::Scalar),
+        FieldType::Pointer(target) => Some(Class::Pointer(target.as_ref().and_then(type_atom))),
+        FieldType::Opaque
+        | FieldType::Struct(_)
+        | FieldType::Pointers(_)
+        | FieldType::ScalarPointers(_) => Some(Class::Pointer(None)),
+        FieldType::Code { .. } => Some(Class::Code),
     }
 }
 

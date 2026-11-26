@@ -1113,6 +1113,12 @@ pub struct Found {
     /// What it adds to the program's synthesised structs, by its solved
     /// types (from [`summarise`] only; empty where solving refused).
     pub structs: Contribution,
+    /// Its signature as its solved types round it (from [`summarise`]
+    /// only; empty where solving refused): the evidence of the program's
+    /// one signature per function, which types the calls to it no
+    /// instance of its scheme reaches
+    /// ([`Schemes::settle_signatures`](crate::typing::Schemes::settle_signatures)).
+    pub signature: crate::typing::FunctionTypes,
     /// Whether it makes a `futex` call whose operation's command its code
     /// does not settle ([`Context::assume_futex`]).
     pub unsettled_futex: bool,
@@ -1244,6 +1250,7 @@ pub fn interface(
         declared_reads,
         arguments: Arguments::new(),
         structs: Contribution::default(),
+        signature: crate::typing::FunctionTypes::default(),
         unsettled_futex: lowering.unsettled_futex,
         steps_back: lowering.frame.steps_back,
         assumed: None,
@@ -1284,6 +1291,7 @@ pub fn summarise(
         declared_reads,
         arguments: Arguments::new(),
         structs: Contribution::default(),
+        signature: crate::typing::FunctionTypes::default(),
         unsettled_futex: lowering.unsettled_futex,
         steps_back: lowering.frame.steps_back,
         assumed: None,
@@ -1294,10 +1302,12 @@ pub fn summarise(
     let summary = lowering.summary();
     let arguments = lowering.arguments();
     let structs = lowering.structs();
+    let signature = lowering.signature_types();
     Ok((
         Found {
             arguments,
             structs,
+            signature,
             ..found
         },
         summary,

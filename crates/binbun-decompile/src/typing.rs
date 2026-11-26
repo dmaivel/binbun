@@ -78,6 +78,13 @@
 //!      schemes are not instantiated, largest first. A declared
 //!      prototype outranks a scheme: such a call takes the declaration
 //!      only;
+//!    - the program's signatures ([`Schemes::signature`]): a call to a
+//!      function of the program with no prototype that no instance of
+//!      its scheme types (its callee later in a cycle of calls, a scheme
+//!      not kept, instances past [`INSTANCES`]) takes the callee's
+//!      signature instead, each parameter's class an upper bound on its
+//!      arguments and the return value's a lower bound on its result, at
+//!      Float strength;
 //!    - the function's own declared parameters and return type bound
 //!      their variables both ways (declared only a pointer: a pointer
 //!      lower bound at Access for a parameter, at Prior for the return
@@ -113,7 +120,9 @@
 //! Single-function decompilation equals the whole program's: generation
 //! reads only the function's own lowering and the program's [`Schemes`],
 //! computed once for the whole program (callees first) and read alike by
-//! both.
+//! both, with one signature per function ([`FunctionTypes`]) settled
+//! after the sweep
+//! ([`Schemes::settle_signatures`]).
 
 mod classes;
 mod declared;
@@ -140,7 +149,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
-use binbun_ast::types::{TypeId, Types};
+use binbun_ast::types::{Type, TypeId, Types};
 use binbun_ssa::ir::{InstId, Value};
 use binbun_typeinfer::{Atom, Budget, Scheme, Solution, Strength, Var};
 
@@ -397,6 +406,12 @@ pub(crate) fn contribution(view: &View<'_>, solved: &Solved, types: &mut Types) 
     round::contribution(view, &solved.generated, &solved.solution, types)
 }
 
+/// The signature the function `view` shows by `solved` ([`FunctionTypes`]);
+/// types interned in `types`.
+pub(crate) fn signature(view: &View<'_>, solved: &Solved, types: &mut Types) -> FunctionTypes {
+    round::own_signature(view, &solved.generated, &solved.solution, types)
+}
+
 /// Records in `contribution` the declared structs `roots` point to
 /// and the globals it reaches are or point to ([`declared::declare`]).
 pub(crate) fn declare(
@@ -502,6 +517,42 @@ impl Argument {
 /// scheme-typed call (no prototype), per parameter, over all its calls.
 pub type Arguments = BTreeMap<u64, Vec<(Source, Argument)>>;
 
+/// A function's signature, portably (no interned type): its register
+/// parameters not declared, by where they are, and its return value if
+/// not declared, each as its own solve rounds it (`bits` where nothing
+/// says more), for the program's table of signatures
+/// ([`Schemes::settle_signatures`]), which types the calls no instance of
+/// its scheme reaches.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FunctionTypes {
+    /// The parameters' types, by where they are.
+    pub parameters: Vec<(Source, FieldType)>,
+    /// The return value's type.
+    pub returns: Option<FieldType>,
+}
+
+impl FunctionTypes {
+    /// The type of the parameter at `source`, where it says more than a
+    /// width.
+    pub(crate) fn parameter(&self, source: Source) -> Option<&FieldType> {
+        self.parameters
+            .iter()
+            .find(|(at, _)| *at == source)
+            .map(|(_, ty)| ty)
+            .filter(|ty| informative(ty))
+    }
+
+    /// The return value's type, where it says more than a width.
+    pub(crate) fn returns(&self) -> Option<&FieldType> {
+        self.returns.as_ref().filter(|ty| informative(ty))
+    }
+}
+
+/// Whether field type `ty` says more than a width.
+fn informative(ty: &FieldType) -> bool {
+    !matches!(ty, FieldType::Scalar(Type::Bits(_)))
+}
+
 /// The schemes of a program's functions, with the order they were
 /// computed in (callees first): a call reads its callee's scheme only if
 /// the callee came before the caller ([`Schemes::before`]), so in a cycle
@@ -517,6 +568,8 @@ pub struct Schemes {
     structs: Structs,
     /// The program's global types ([`globals`]).
     globals: Globals,
+    /// The program's signatures ([`Self::settle_signatures`]), by entry.
+    signatures: BTreeMap<u64, FunctionTypes>,
 }
 
 impl Schemes {
@@ -527,6 +580,7 @@ impl Schemes {
             summaries: BTreeMap::new(),
             structs: Structs::new(),
             globals: Globals::new(),
+            signatures: BTreeMap::new(),
         }
     }
 
@@ -591,6 +645,67 @@ impl Schemes {
     /// the sweep.
     pub fn state_structs(&mut self, from: &Types, stated: &[(StructId, TypeId)]) {
         self.structs.state(from, stated);
+    }
+
+    /// Settles the program's one signature per function, which the calls
+    /// to it no instance of its scheme types take ([`crate::typing`]):
+    /// each function's own (`found`, by entry, as its sweep's solve rounds
+    /// it), a parameter that leaves `bits`, or an integer or a pointer to a
+    /// scalar or nothing, taking the class every caller passes there where
+    /// that is of its kind (`specialised`, the top-down specialisation:
+    /// those calls then pass what they hold), and a pointer-wide parameter
+    /// or return value whose root the program's table has at the start of
+    /// a struct a pointer to that struct (pointers `pointer` bits wide):
+    /// after the sweep and [`Self::settle_globals`], whose structs it reads.
+    pub fn settle_signatures(
+        &mut self,
+        found: BTreeMap<u64, FunctionTypes>,
+        specialised: &BTreeMap<u64, Vec<(Source, Class)>>,
+        pointer: u16,
+    ) {
+        let mut settled = BTreeMap::new();
+        for (entry, mut signature) in found {
+            let classes = specialised.get(&entry).map_or(&[][..], Vec::as_slice);
+            for (source, ty) in &mut signature.parameters {
+                if let Some(&(_, class)) = classes.iter().find(|(at, _)| at == source)
+                    && let Some(width) = round::field_width(ty, pointer)
+                    && let Some(typed) = round::class_field(class, width, pointer)
+                    && round::same_kind(ty, &typed)
+                {
+                    *ty = typed;
+                }
+                self.root_struct(entry, Root::Parameter(*source, pointer), ty, pointer);
+            }
+            if let Some(ty) = &mut signature.returns {
+                self.root_struct(entry, Root::Return(pointer), ty, pointer);
+            }
+            settled.insert(entry, signature);
+        }
+        self.signatures = settled;
+    }
+
+    /// `ty`, of root `root` of the function at `entry`, a pointer to the
+    /// struct whose start the program's table has the root point to,
+    /// where it is pointer-wide `bits` or a pointer.
+    fn root_struct(&self, entry: u64, root: Root, ty: &mut FieldType, pointer: u16) {
+        let open = match ty {
+            FieldType::Scalar(Type::Bits(width)) => *width == pointer,
+            FieldType::Pointer(_) | FieldType::Opaque => true,
+            FieldType::Scalar(_)
+            | FieldType::Struct(_)
+            | FieldType::Pointers(_)
+            | FieldType::ScalarPointers(_)
+            | FieldType::Code { .. } => false,
+        };
+        if open && let Some((id, 0)) = self.structs.root(entry, root) {
+            *ty = FieldType::Struct(id);
+        }
+    }
+
+    /// The program's signature of the function at `entry`
+    /// ([`Self::settle_signatures`]).
+    pub(crate) fn signature(&self, entry: u64) -> Option<&FunctionTypes> {
+        self.signatures.get(&entry)
     }
 
     /// Takes `classes` as the program's C++ classes, which name the

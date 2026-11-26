@@ -233,7 +233,7 @@ use binbun_decompile::data::Data;
 use binbun_decompile::lower::{Convention, Found, Interface, Passed, Read};
 use binbun_decompile::mapping::Source;
 use binbun_decompile::prototype::Prototypes;
-use binbun_decompile::typing::{Argument, Class, Schemes};
+use binbun_decompile::typing::{Argument, Class, FunctionTypes, Schemes};
 use binbun_loader::{Image, SymbolSource};
 use binbun_semantics::ir::RegisterId;
 
@@ -483,7 +483,16 @@ pub fn callers_for(
     let pointer = u16::from(data_model(image).pointer) * 8;
     views
         .into_iter()
-        .map(|known| typed(known, prototypes, data, pointer))
+        .map(|known| typed(known, own_signatures(&found), prototypes, data, pointer))
+        .collect()
+}
+
+/// Each function's signature as the sweep's solve rounds it, of those
+/// `found` (the schemes' solves, which both views read).
+fn own_signatures(found: &BTreeMap<u64, Found>) -> BTreeMap<u64, FunctionTypes> {
+    found
+        .iter()
+        .map(|(&entry, function)| (entry, function.signature.clone()))
         .collect()
 }
 
@@ -543,17 +552,21 @@ fn less(
 /// What callers read with the interfaces `known` settled: one type per
 /// global, joined from every function's evidence and the final
 /// interfaces of the functions stored in them (finding interfaces solves
-/// no types, so it reads neither; pointers `pointer` bits), then the
-/// user's versions of structs (`prototypes`): the table's structs stay
-/// the ones the sweep found, as the join left them.
+/// no types, so it reads neither; pointers `pointer` bits), then one
+/// signature per function from each one's own (`signatures`, as the
+/// sweep's solve rounds it) and its callers' agreement, then the user's
+/// versions of structs (`prototypes`): the table's structs stay the ones
+/// the sweep found, as the join left them.
 fn typed(
     mut known: Interfaces,
+    signatures: BTreeMap<u64, FunctionTypes>,
     prototypes: &dyn Prototypes,
     data: &dyn Data,
     pointer: u16,
 ) -> Callers {
     let schemes = Arc::make_mut(&mut known.callers.schemes);
     schemes.settle_globals(data, prototypes, &known.interfaces, pointer);
+    schemes.settle_signatures(signatures, &known.callers.specialised, pointer);
     if let Some((types, stated)) = prototypes.user_structs() {
         schemes.state_structs(&types, &stated);
     }

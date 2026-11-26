@@ -23,6 +23,7 @@ use binbun_decompile::itanium::NONE;
 use binbun_decompile::lower::{Context, Convention, Facts, Found, Interface, interface, lower};
 use binbun_decompile::mapping::{Piece, Source};
 use binbun_decompile::prototype::{Format, Open, Prototype, Prototypes};
+use binbun_decompile::typing::{FieldType, FunctionTypes, Schemes};
 use binbun_decompile::validate::{Hashed, Link, Setup, differential, random_states, structure};
 use binbun_semantics::bits::Bits;
 use binbun_semantics::core::pass::{Fuel, Manager};
@@ -678,4 +679,80 @@ fn a_declaration_not_its_own_says_what_a_function_takes_but_for_what_it_moves() 
     // No declaration: none.
     let none = found(&calling(TAKES_THREE, 1, Third::Entry), &Put);
     assert_eq!(none.declared_reads, None);
+}
+
+/// `l1` lowered with [`TAKES_THREE`] a function of the program with its
+/// interface and no scheme (as one later in a cycle of calls), its
+/// signature in the program's table `first` at its first parameter.
+fn without_scheme(l1: &Function, first: FieldType) -> Ast {
+    let convention = Convention {
+        arguments: vec![A, B, C],
+        results: vec![A],
+        long: 64,
+        ..Convention::default()
+    };
+    let whole = |register| Piece {
+        register,
+        offset: 0,
+        width: 64,
+    };
+    let interfaces = BTreeMap::from([(
+        TAKES_THREE,
+        Interface {
+            parameters: [A, B, C].map(|r| Source::Register(whole(r))).to_vec(),
+            returns: vec![whole(A)],
+            ..Interface::default()
+        },
+    )]);
+    let mut schemes = Schemes::new();
+    let signature = FunctionTypes {
+        parameters: vec![(Source::Register(whole(A)), first)],
+        returns: None,
+    };
+    schemes.settle_signatures(
+        BTreeMap::from([(TAKES_THREE, signature)]),
+        &BTreeMap::new(),
+        64,
+    );
+    let functions = BTreeSet::from([0x1000, TAKES_THREE]);
+    let context = Context {
+        data: &Image,
+        prototypes: &Put,
+        functions: &functions,
+        interfaces: &interfaces,
+        schemes: &schemes,
+        ..Context::new(&DECLARATIONS, SP, LINK, &convention)
+    };
+    let env = L1Env {
+        declarations: &DECLARATIONS,
+        memory: &NoMemory,
+        stack_pointer: SP,
+        arguments: &convention.arguments,
+        return_slot: Some(0),
+        thread_pointer: convention.thread_pointer,
+    };
+    let facts = Facts::of(&mut Manager::new(Fuel::new(0)), l1, &env);
+    let (l2, _) = lower(l1, &facts, &context).unwrap();
+    structure(l1, &l2, &NONE).unwrap();
+    l2
+}
+
+#[test]
+fn a_call_no_scheme_types_takes_its_callees_signature() {
+    // return takes_three(0x5000, b, c): no scheme of the callee reaches
+    // the call, but the program's signature has its first parameter a
+    // `char *`: the call declares it so (where it said only 64 bits).
+    let l1 = calling(TAKES_THREE, 0x5000, Third::Entry);
+    let string = FieldType::Pointer(Some(Type::Char { signed: true }));
+    let l2 = without_scheme(&l1, string);
+    let signature = l2.types.signature(call(&l2).signature).unwrap();
+    let first = l2.types.get(signature.parameters[0]);
+    let Some(&Type::Pointer(Some(target))) = first else {
+        panic!("{first:?}");
+    };
+    assert_eq!(l2.types.get(target), Some(&Type::Char { signed: true }));
+    // A signature that says only the width leaves it bits.
+    let l2 = without_scheme(&l1, FieldType::Scalar(Type::Bits(64)));
+    let signature = l2.types.signature(call(&l2).signature).unwrap();
+    assert_eq!(l2.types.get(signature.parameters[0]), Some(&Type::Bits(64)));
 }

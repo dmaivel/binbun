@@ -19,7 +19,10 @@ use binbun_typeinfer::{
 
 use super::evolution::Evolutions;
 use super::family::{Builder, Families, gcd};
-use super::{Class, FieldType, GlobalShape, INSTANCES, Reason, Root, Schemes, Summary, strength};
+use super::{
+    Class, FieldType, FunctionTypes, GlobalShape, INSTANCES, Reason, Root, Schemes, Summary, round,
+    strength,
+};
 use crate::data::{Data, Object};
 use crate::mapping::Source;
 use crate::prototype::AllocSize;
@@ -1922,6 +1925,10 @@ impl Generator<'_, '_> {
                 && let Some(summary) = view.schemes.before(view.l1.entry, callee)
             {
                 schemes.push((call, callee, summary));
+            } else if let Some(callee) = call.callee
+                && let Some(signature) = view.schemes.signature(callee)
+            {
+                self.signed(call, signature);
             }
         }
         let size = |&(_, _, summary): &(&Call, u64, &Summary)| summary.scheme().constraint_count();
@@ -1943,6 +1950,8 @@ impl Generator<'_, '_> {
         for ((call, callee, summary), dropped) in schemes.into_iter().zip(dropped) {
             if !dropped {
                 self.instance(call, callee, summary);
+            } else if let Some(signature) = view.schemes.signature(callee) {
+                self.signed(call, signature);
             }
         }
     }
@@ -2024,6 +2033,49 @@ impl Generator<'_, '_> {
                         self.edge(instance, returns, edge);
                     }
                 }
+            }
+        }
+    }
+
+    /// The program's signature of `call`'s callee
+    /// ([`Schemes::signature`](super::Schemes::signature)), for a call no
+    /// instance of its scheme types: each typed parameter's class an upper
+    /// bound on the arguments passed there (as wide; constants give
+    /// nothing), the return value's a lower bound on the call's result, at
+    /// [`strength::SCHEME`] (the callee's deduction is no declaration).
+    fn signed(&mut self, call: &Call, signature: &FunctionTypes) {
+        let view = self.view;
+        let pointer = view.types.pointer_width();
+        for (&source, values) in call.sources.iter().zip(&call.arguments) {
+            let Some(class) = signature.parameter(source).and_then(round::field_class) else {
+                continue;
+            };
+            let width = class_width(class, pointer);
+            for &argument in values {
+                if view.width(argument) != width || view.constant(argument).is_some() {
+                    continue;
+                }
+                let Some(var) = self.var(argument) else {
+                    continue;
+                };
+                let evidence = self.evidence(Reason::Scheme(call.target), strength::SCHEME);
+                let term = self.class_term(class, evidence);
+                self.out
+                    .system
+                    .constrain(Term::Var(var), demand(term), evidence);
+            }
+        }
+        let Some(class) = signature.returns().and_then(round::field_class) else {
+            return;
+        };
+        let width = class_width(class, pointer);
+        for &result in &call.result {
+            if view.width(result) == width
+                && let Some(var) = self.var(result)
+            {
+                let evidence = self.evidence(Reason::Scheme(call.target), strength::SCHEME);
+                let term = self.class_term(class, evidence);
+                self.out.system.constrain(term, Term::Var(var), evidence);
             }
         }
     }
