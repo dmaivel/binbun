@@ -17,7 +17,7 @@ use std::slice;
 
 use binbun_ast::interpret::{Outcome, run};
 use binbun_ast::ir::{Arm, Expr, ExprId, Function, Stmt, StmtId, VarId};
-use binbun_ast::types::{Type, TypeId};
+use binbun_ast::types::{Aggregate, Field, Type, TypeId};
 use binbun_print::style::{IntSpelling, Style};
 use binbun_semantics::IntrinsicId;
 use binbun_semantics::bits::Bits;
@@ -273,7 +273,12 @@ impl Cases {
         for ty in types {
             let id = b.ty(ty.clone());
             parameters.push(b.param(id));
-            widths.push(Some(b.f.types.value_width(id).unwrap()));
+            // A pointer is the buffer's address.
+            widths.push(if matches!(ty, Type::Pointer(_)) {
+                None
+            } else {
+                Some(b.f.types.value_width(id).unwrap())
+            });
         }
         let returns = b.ty(result);
         b.f.returns = Some(returns);
@@ -763,6 +768,121 @@ fn unsigned_literals(cases: &mut Cases) {
             b.bin(Binary::Xor, total, next)
         });
     }
+}
+
+/// Locals of each signedness (`uint32_t`, `int32_t`, untyped bits) read
+/// by operations that need the other (signed and unsigned comparisons,
+/// divisions, shifts, extensions, an equality across them, an unsigned
+/// comparison and division of a sum with a literal): the value each reads
+/// whatever the local's spelling.
+fn signs(cases: &mut Cases) {
+    let types = [Type::Int(32), Type::UInt(32)];
+    cases.add_body("signs", &types, Type::UInt(64), |b, p, _| {
+        let (uint, int, bits) = (b.uint(32), b.int(32), b.bits(32));
+        let (unsigned, signed, untyped) = (b.local(uint), b.local(int), b.local(bits));
+        let (first, second) = (b.read(p[0]), b.read(p[1]));
+        let mut body = vec![b.assign(unsigned, first), b.assign(signed, second)];
+        let first = b.read(p[0]);
+        body.push(b.assign(untyped, first));
+        let mut terms = Vec::new();
+        for (op, left, right) in [
+            (Binary::SLt, unsigned, signed),
+            (Binary::ULt, signed, untyped),
+            (Binary::SLe, untyped, unsigned),
+            (Binary::Eq, unsigned, signed),
+        ] {
+            let (left, right) = (b.read(left), b.read(right));
+            let bit = b.bin(op, left, right);
+            terms.push(b.ext(false, bit, 64));
+        }
+        for (op, var, constant) in [
+            (Binary::SDiv, unsigned, 7),
+            (Binary::UDiv, signed, 100),
+            (Binary::SRem, unsigned, 9),
+            (Binary::AShr, unsigned, 3),
+            (Binary::LShr, signed, 3),
+        ] {
+            let (read, constant) = (b.read(var), b.c(32, constant));
+            let value = b.bin(op, read, constant);
+            terms.push(b.ext(op == Binary::AShr, value, 64));
+        }
+        for (extend, var) in [(true, untyped), (false, signed), (true, unsigned)] {
+            let value = b.read(var);
+            terms.push(b.ext(extend, value, 64));
+        }
+        // `signed - 14U <= 1`, `(signed - 3U) / 100U`.
+        let (value, fourteen, one) = (b.read(signed), b.c(32, 14), b.c(32, 1));
+        let less = b.bin(Binary::Sub, value, fourteen);
+        let below = b.bin(Binary::ULe, less, one);
+        terms.push(b.ext(false, below, 64));
+        let (value, three, hundred) = (b.read(signed), b.c(32, 3), b.c(32, 100));
+        let less = b.bin(Binary::Sub, value, three);
+        let quotient = b.bin(Binary::UDiv, less, hundred);
+        terms.push(b.ext(false, quotient, 64));
+        let mut total = terms[0];
+        for (k, &term) in terms.iter().enumerate().skip(1) {
+            let rotated = b.c(64, k as u64);
+            let term = b.bin(Binary::Shl, term, rotated);
+            total = b.bin(Binary::Xor, total, term);
+        }
+        body.push(b.ret(total));
+        body
+    });
+}
+
+/// Reads of a struct's fields narrower than the fields (the low half of a
+/// 64-bit field at its offset, a byte of a pointer field, a byte inside a
+/// 32-bit field) beside reads of the whole fields, through a pointer
+/// typed as the struct.
+fn parts(cases: &mut Cases) {
+    let types = [Type::Pointer(None)];
+    cases.add_body("parts", &types, Type::UInt(64), |b, p, _| {
+        let (int32, int64, uint8, uint32) = (b.int(32), b.int(64), b.uint(8), b.uint(32));
+        let char_ty = b.ty(Type::Char { signed: true });
+        let chars = b.ty(Type::Pointer(Some(char_ty)));
+        let int16 = b.int(16);
+        let node = b.ty(Type::Struct(Aggregate {
+            name: Some("node".into()),
+            size: 32,
+            fields: [(0, chars), (16, int64), (24, int32)]
+                .into_iter()
+                .map(|(offset, ty)| Field {
+                    offset,
+                    ty,
+                    name: Some(format!("field_{offset:x}")),
+                })
+                .collect(),
+        }));
+        let to_node = b.ty(Type::Pointer(Some(node)));
+        let s = b.local(to_node);
+        let base = b.read(p[0]);
+        let mut body = vec![b.assign(s, base)];
+        let mut terms = Vec::new();
+        for (offset, ty, signed) in [
+            (16, uint32, false),
+            (16, int64, true),
+            (0, uint8, false),
+            (24, int16, true),
+            (25, uint8, false),
+            (0, int64, false),
+        ] {
+            let base = b.read(s);
+            let value = b.load_at(base, offset, ty);
+            terms.push(if width_of(b, value) == 64 {
+                value
+            } else {
+                b.ext(signed, value, 64)
+            });
+        }
+        let mut total = terms[0];
+        for (k, &term) in terms.iter().enumerate().skip(1) {
+            let rotated = b.c(64, k as u64 * 7);
+            let term = b.bin(Binary::Ror, term, rotated);
+            total = b.bin(Binary::Xor, total, term);
+        }
+        body.push(b.ret(total));
+        body
+    });
 }
 
 /// An IEEE operation of one lane on `operands`, rounded as `rounding`
@@ -1616,6 +1736,8 @@ fn cases() -> Vec<Case> {
     mixed(&mut cases);
     comparisons(&mut cases);
     unsigned_literals(&mut cases);
+    signs(&mut cases);
+    parts(&mut cases);
     selects(&mut cases);
     odd(&mut cases);
     floats(&mut cases);
