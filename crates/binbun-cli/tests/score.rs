@@ -217,3 +217,32 @@ fn a_declared_struct_is_its_definition() {
         (1, 1, 1, 1)
     );
 }
+
+/// A struct no translation unit defines (an opaque handle the library
+/// casts to its own struct: `sqlite3_stmt` to `Vdbe`) judges no pair: its
+/// pointers under the decompiler's name for `Vdbe` are not a merge.
+#[test]
+fn a_struct_no_unit_defines_is_left_out_of_the_pairs() {
+    let to = |name: &str, bytes: u64| Shape {
+        class: Class::Pointer,
+        bytes: Some(8),
+        target: Some(Box::new(Shape {
+            class: Class::Struct,
+            bytes: Some(bytes),
+            target: None,
+            identity: Some((name.to_owned(), bytes)),
+        })),
+        identity: None,
+    };
+    let mut tally = Tally::default();
+    tally.add(&to("struct_v_1", 8), &to("Vdbe", 304));
+    tally.add(&to("struct_v_1", 8), &to("Vdbe", 304));
+    tally.add(&to("struct_v_1", 8), &to("sqlite3_stmt", 0));
+    let errors = tally.identity_errors();
+    assert_eq!(errors.merged, []);
+    assert_eq!(
+        (errors.sources, errors.same_name, errors.both, errors.opaque),
+        (1, 1, 1, 1)
+    );
+    assert_eq!((errors.named, errors.pointers), (3, 3));
+}

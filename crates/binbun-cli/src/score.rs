@@ -447,10 +447,16 @@ impl Tally {
 
     /// The source structs the decompiler names several ways (split), and
     /// the decompiler's structs that are several source structs (merged),
-    /// each with what it is seen as; most first.
+    /// each with what it is seen as; most first. A struct no translation
+    /// unit defines (an opaque handle: `sqlite3_stmt`, which the library
+    /// casts to its `Vdbe`) says nothing of which struct its pointers
+    /// point to: they are left out ([`IdentityErrors::opaque`]).
     #[must_use]
     pub fn identity_errors(&self) -> IdentityErrors {
-        let identities = self.defined_identities();
+        let (opaque, identities): (BTreeMap<_, _>, BTreeMap<_, _>) = self
+            .defined_identities()
+            .into_iter()
+            .partition(|((_, size), _)| *size == 0);
         let mut sources: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
         let mut split = Vec::new();
         for ((source, _), names) in &identities {
@@ -499,7 +505,12 @@ impl Tally {
             same_name,
             both,
             pointers: self.struct_pointers,
-            named: identities.values().flat_map(BTreeMap::values).sum(),
+            named: identities
+                .values()
+                .chain(opaque.values())
+                .flat_map(BTreeMap::values)
+                .sum(),
+            opaque: opaque.values().flat_map(BTreeMap::values).sum(),
         }
     }
 
@@ -557,6 +568,9 @@ pub struct IdentityErrors {
     /// structs (the pairs' coverage: `void *` everywhere would be right
     /// and name nothing).
     pub named: usize,
+    /// Of them, those whose struct no translation unit defines (an
+    /// opaque handle), left out of the structs and the pairs.
+    pub opaque: usize,
 }
 
 impl IdentityErrors {
@@ -1713,7 +1727,7 @@ impl fmt::Display for Report {
         let identities = self.all_scores().identity_errors();
         writeln!(
             f,
-            "struct identities through mapped pointers: {} source structs as {} decompiler structs; split {} (+{} names), merged {}; pairs of pointers to one source struct under one name {}, under one name to one source struct {}; pointers to a named struct typed as one of the decompiler's {}/{} ({})",
+            "struct identities through mapped pointers: {} source structs as {} decompiler structs; split {} (+{} names), merged {}; pairs of pointers to one source struct under one name {}, under one name to one source struct {}; pointers to a named struct typed as one of the decompiler's {}/{} ({}), {} of them to a struct no unit defines (left out)",
             identities.sources,
             identities.decompiler,
             identities.split.len(),
@@ -1724,6 +1738,7 @@ impl fmt::Display for Report {
             identities.named,
             identities.pointers,
             percent(identities.named, identities.pointers),
+            identities.opaque,
         )?;
         for (source, names) in identities.split.iter().take(8) {
             writeln!(f, "  split {source}: {}", names.join(", "))?;
