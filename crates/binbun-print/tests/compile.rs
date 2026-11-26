@@ -413,6 +413,47 @@ fn arithmetic_on_a_void_pointer_counts_bytes_without_a_byte_pointer() {
 }
 
 #[test]
+fn an_index_into_a_global_array_is_scaled_to_its_element() {
+    // `&table + (i & 63) * 4` of an `int32_t table[64]`, held in a
+    // variable: `table + (i & 0x3f)`, scaled to the element, not a sum on
+    // a byte pointer cast back.
+    let mut b = Builder::new(0x92b0, "element");
+    let int32 = b.int(32);
+    let word = b.uint(64);
+    let elements = b.ty(Type::Array {
+        element: int32,
+        length: Some(64),
+    });
+    let ints = b.ty(Type::Pointer(Some(int32)));
+    b.f.returns = Some(int32);
+    let table = b.var(VarKind::Global(0x5f00), elements, None);
+    let index = b.param(word);
+    let at = b.local(ints);
+    let (read, mask) = (b.read(index), b.c(64, 63));
+    let masked = b.bin(Binary::And, read, mask);
+    let four = b.c(64, 4);
+    let scaled = b.bin(Binary::Mul, masked, four);
+    let base = b.e(Expr::AddressOf(table));
+    let sum = b.bin(Binary::Add, base, scaled);
+    let held = b.assign(at, sum);
+    let pointer = b.read(at);
+    let loaded = b.load_at(pointer, 0, int32);
+    let ret = b.ret(loaded);
+    let f = b.done(vec![held, ret]);
+    let (text, printed) = print_with(&f, &Style::kr(), &symbols);
+    assert!(text.contains("v2 = g_5f00 + (a1 & 0x3f);"), "{text}");
+    assert_eq!(printed.casts, 0, "{text}");
+    let scratch = Scratch::new("element");
+    scratch.write("out.c", &text);
+    for compiler in compilers() {
+        let stderr = scratch
+            .compile(compiler, &["-c", "-o", "out.o"], &["out.c"])
+            .unwrap_or_else(|e| panic!("{compiler} failed on\n{text}\n{e}"));
+        assert_eq!(warnings(&stderr), 0, "{compiler}:\n{text}\n{stderr}");
+    }
+}
+
+#[test]
 fn a_literal_printed_unsigned_gives_a_sum_its_unsigned_value() {
     // `x - 14` compared unsigned, `y - 1` shifted right logically and
     // `1 - x` zero-extended need their unsigned values: at 32 and 64 bits

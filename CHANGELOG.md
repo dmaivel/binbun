@@ -49,6 +49,7 @@ always read by later versions.
 - A stack slot in memory read and written in several widths at its first byte is a union of those views, each access naming its own: `frame.at_m28.w32 = v;` instead of `*(int32_t *)&frame.at_m28 = v;`.
 - Arithmetic on a `void *` is printed in bytes as GCC and Clang take it, without a byte pointer: `*(int32_t *)(v3 - 32)` instead of `*(int32_t *)((uint8_t *)v3 - 32)`.
 - A 32- or 64-bit sum or product with a literal that must be unsigned gets an unsigned literal instead of a cast: `v0 - 14U <= 1` instead of `(uint32_t)(v0 - 14) <= 1`.
+- A load or store at a constant base plus an index its own definition bounds (a mask, a narrow zero extension, a shift) is an element of the named object or of a table of the unnamed data it reaches: `is_basic_table[((uint8_t)c >> 5) & 7]` instead of `*(uint32_t *)((((uint8_t)c >> 5) & 7) * 4L + 0x102e40)`, `g_1b88a0[x & 0x3f]` instead of `*(int32_t *)((x & 0x3f) * 4 + 0x1b88a0)`.
 
 ### Fixed
 

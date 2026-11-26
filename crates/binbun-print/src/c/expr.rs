@@ -1914,14 +1914,21 @@ impl Printer<'_> {
     }
 
     /// What expression `id` points to: a pointer-typed variable, cast or
-    /// load's target.
+    /// load's target; for the address of a variable, the variable (its
+    /// element for an array, the pointer its address prints as).
     fn pointee_of(&self, id: ExprId) -> Option<TypeId> {
         let ty = match *self.f.expr(id)? {
             Expr::Var(var) => self.f.var(var)?.ty,
             Expr::Cast { ty, .. } | Expr::Load { ty, .. } => ty,
+            Expr::AddressOf(var) => {
+                let ty = self.f.var(var)?.ty;
+                if let &Type::Array { element, .. } = self.types.get(ty)? {
+                    return Some(element);
+                }
+                return Some(ty);
+            }
             Expr::Const(_)
             | Expr::Undefined(..)
-            | Expr::AddressOf(_)
             | Expr::Unary(..)
             | Expr::Binary(..)
             | Expr::Logical(..)

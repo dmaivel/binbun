@@ -11,8 +11,11 @@
 //! variable, a computed function entry passed on is the function; an
 //! immediate in a position-independent image, a store into read-only
 //! memory, and a pointer passed where no `char *` is declared stay
-//! numbers. Every result is checked against its L1 by structure and from
-//! random states.
+//! numbers. A constant base plus an index whose values keep the access in
+//! data no object names is an element of a table there (as is an access at
+//! a constant address inside it); one whose index nothing bounds, or whose
+//! bytes reach a named object, stays address arithmetic. Every result is
+//! checked against its L1 by structure and from random states.
 
 use binbun_ast::ir::{Callee, Expr, ExprId, Function as Ast, Place, Stmt, VarId, VarKind};
 use binbun_ast::types::{Signature, Type, Types};
@@ -369,6 +372,47 @@ fn calling(immediate: bool) -> Function {
     l1.f
 }
 
+/// `p = 0x3100 + (b & 7) * 4; *p = *p | 2; x = *(0x3108); y = *(0x3200 +
+/// b * 4); z = *(0x3008 + (b & 7) * 8); return x + y + z`, every base
+/// computed: the first a table of 8 elements (`x` its element 2), `y`'s
+/// index unbounded, `z`'s bytes reaching the named object at 0x3010.
+fn indexing() -> Function {
+    let (mut l1, [_, b, sp, memory]) = L1::new();
+    let seven = l1.constant(64, 7);
+    let four = l1.constant(64, 4);
+    let masked = l1.pure(Op::Binary(Binary::And, b, seven), 64);
+    let scaled = l1.pure(Op::Binary(Binary::Mul, masked, four), 64);
+    let table = l1.computed(0x3100, 0);
+    let element = l1.pure(Op::Binary(Binary::Add, table, scaled), 64);
+    let old = l1.load(memory, element, 4);
+    let two = l1.constant(32, 2);
+    let new = l1.pure(Op::Binary(Binary::Or, old, two), 32);
+    let memory = l1.store(memory, element, new);
+    let inside = l1.computed(0x3100, 8);
+    let x = l1.load(memory, inside, 4);
+    let unbounded = l1.pure(Op::Binary(Binary::Mul, b, four), 64);
+    let other = l1.computed(0x3200, 0);
+    let far = l1.pure(Op::Binary(Binary::Add, other, unbounded), 64);
+    let y = l1.load(memory, far, 4);
+    let before = l1.computed(0x3008, 0);
+    let eight = l1.constant(64, 8);
+    let again = l1.pure(Op::Binary(Binary::Mul, masked, eight), 64);
+    let overlapping = l1.pure(Op::Binary(Binary::Add, before, again), 64);
+    let z = l1.load(memory, overlapping, 4);
+    let sum = l1.pure(Op::Binary(Binary::Add, x, y), 32);
+    let sum = l1.pure(Op::Binary(Binary::Add, sum, z), 32);
+    let wide = l1.pure(
+        Op::Extend {
+            signed: false,
+            value: sum,
+            width: 64,
+        },
+        64,
+    );
+    l1.ret(wide, b, sp, memory);
+    l1.f
+}
+
 /// The variable at `address` of `l2`.
 fn global(l2: &Ast, address: u64) -> VarId {
     let index = l2
@@ -486,4 +530,65 @@ fn computed_strings_and_functions_are_variables_and_functions() {
 fn an_immediate_function_entry_stays_a_number() {
     let l2 = lowered(&calling(true));
     assert!(constant(&l2, returned(&l2), FUNCTION));
+}
+
+/// Whether `l2` has `a + b` with `a` matching `left` and `b` `right`.
+fn sum(l2: &Ast, left: impl Fn(ExprId) -> bool, right: impl Fn(ExprId) -> bool) -> bool {
+    l2.exprs
+        .iter()
+        .any(|expr| matches!(*expr, Expr::Binary(Binary::Add, a, b) if left(a) && right(b)))
+}
+
+#[test]
+fn a_bounded_index_into_unnamed_data_is_a_tables_element() {
+    let l2 = lowered(&indexing());
+    // The table: 8 elements of 32 bits, from the base to the last byte the
+    // index reaches.
+    let table = global(&l2, 0x3100);
+    let ty = l2.var(table).unwrap().ty;
+    let &Type::Array { element, length } = l2.types.get(ty).unwrap() else {
+        panic!("the table is {:?}", l2.types.get(ty));
+    };
+    assert_eq!((l2.types.width(element), length), (Some(32), Some(8)));
+    let at_table = |id: ExprId| l2.expr(id) == Some(&Expr::AddressOf(table));
+    // The indexed address: the table's address plus the index, a count of
+    // elements (the base is no number any more), for the load and the
+    // store alike.
+    let scaled = |id: ExprId| matches!(l2.expr(id), Some(&Expr::Binary(Binary::Mul, _, four)) if constant(&l2, four, 4));
+    assert!(sum(&l2, at_table, scaled));
+    // The constant address inside it: its element at offset 8, no
+    // variable of its own.
+    assert!(sum(&l2, at_table, |id| constant(&l2, id, 8)));
+    assert!(
+        l2.variables
+            .iter()
+            .all(|variable| variable.kind != VarKind::Global(0x3108))
+    );
+}
+
+#[test]
+fn unbounded_and_overlapping_indices_stay_address_arithmetic() {
+    let l2 = lowered(&indexing());
+    for base in [0x3200, 0x3008] {
+        // No variable at the base: an index nothing bounds may reach any
+        // byte, and the one at 0x3008 reaches the named object at 0x3010.
+        assert!(
+            l2.variables
+                .iter()
+                .all(|variable| variable.kind != VarKind::Global(base)),
+            "a variable at {base:#x}"
+        );
+        let at_base = |id: ExprId| constant(&l2, id, base);
+        let any = |_: ExprId| true;
+        assert!(
+            sum(&l2, at_base, any) || sum(&l2, any, at_base),
+            "no {base:#x} + index"
+        );
+    }
+    // Nor is the named object a variable of these accesses.
+    assert!(
+        l2.variables
+            .iter()
+            .all(|variable| variable.kind != VarKind::Global(0x3010))
+    );
 }
