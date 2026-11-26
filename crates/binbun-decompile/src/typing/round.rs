@@ -551,6 +551,8 @@ struct Rounder<'r, 'a> {
     fields: BTreeMap<InstId, (StructId, i64, u16)>,
     /// The structs interned in `types`.
     interned: BTreeMap<StructId, TypeId>,
+    /// The families holding allocations of a known size ([`allocations`]).
+    allocations: BTreeMap<usize, Option<(i64, u64)>>,
 }
 
 /// What rounding makes of a pointer family (one object).
@@ -628,6 +630,7 @@ impl<'r, 'a> Rounder<'r, 'a> {
             identities: Vec::new(),
             fields: BTreeMap::new(),
             interned: BTreeMap::new(),
+            allocations: allocations(view, generated),
         };
         rounder.identified(identities);
         rounder
@@ -799,7 +802,7 @@ impl<'r, 'a> Rounder<'r, 'a> {
     }
 
     /// The struct and offset the values returned point into, if they all
-    /// point into one at one offset.
+    /// point into one at one offset (a null returned, no object, aside).
     fn returned_root(&mut self) -> Option<(StructId, i64)> {
         let view = self.view;
         let generated = self.generated;
@@ -808,6 +811,10 @@ impl<'r, 'a> Rounder<'r, 'a> {
         }
         let mut found = None;
         for &value in &view.returns.values {
+            // A null returned is no object: it says nothing of the struct.
+            if view.constant(value) == Some(0) {
+                continue;
+            }
             let (index, offset, modulus) = generated.families.of(generated.var(value)?)?;
             let ((id, base), stride) = self.struct_of(index, modulus)?;
             let at = (id, place(offset, base, stride));
@@ -1143,14 +1150,33 @@ impl<'r, 'a> Rounder<'r, 'a> {
             return known;
         }
         let mut rounded = self.own(var, width);
+        // A `void *` takes the target of the place it is stored to, but an
+        // allocation of known size never a type larger than it.
         if let Some((ty, strength)) = rounded
             && matches!(self.types.get(ty), Some(Type::Pointer(None)))
             && let Some(target) = self.cell_target(var)
+            && self.allocated_bytes(var).is_none_or(|size| {
+                self.types
+                    .width(target)
+                    .is_none_or(|bits| bits <= size.saturating_mul(8))
+            })
         {
             rounded = Some((self.types.intern(Type::Pointer(Some(target))), strength));
         }
         self.memo.insert((var, width), rounded);
         rounded
+    }
+
+    /// The size in bytes of the allocation `var` is the start of, where a
+    /// call of known size makes it ([`allocations`]).
+    fn allocated_bytes(&self, var: Var) -> Option<u64> {
+        let (index, offset, 0) = self.generated.families.of(var)? else {
+            return None;
+        };
+        let &Some((at, size)) = self.allocations.get(&index)? else {
+            return None;
+        };
+        (at == offset).then_some(size)
     }
 
     /// The target of the pointers stored to and loaded from a place

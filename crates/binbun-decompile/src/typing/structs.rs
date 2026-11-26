@@ -8,7 +8,10 @@
 //!   own where that member is a parameter's value or a loaded pointer (an
 //!   object, not a scalar pointer), unless they are all one byte wide
 //!   ([`bytes`]: a string's characters tested one by one are no
-//!   members). A family with a stride (a loop's
+//!   members); nor is a struct whose fields, over the program, are all
+//!   bytes (a buffer read at `[0]`, `[1]`, `[8]`): its values are a
+//!   string's characters, and a field pointing to it a `char *`. A family
+//!   with a stride (a loop's
 //!   step: `p + d·i`) is an array; its element is a struct of the stride's
 //!   size where its accesses are not one scalar width at multiples of it
 //!   ([`element`]: an array of structs, its fields at offsets modulo the
@@ -26,7 +29,12 @@
 //!   for the object. Structs claiming one family at one offset, or met at
 //!   one pointer field, are one ([`Structs::find`]: united where their
 //!   layouts agree and are one size, named by the deepest function, ties
-//!   by address); at different offsets the first is kept and the
+//!   by address), but the structs one function shows met at a field are
+//!   judged whole: where any two are not views of one struct (fields
+//!   overlapping other than as one's view of the other's, or one
+//!   pointing to a struct where the other points to a scalar), the field
+//!   holds several types (a parser's value stack) and is generic;
+//!   at different offsets the first is kept and the
 //!   disagreement counted. After the sweep, a struct refused only for its
 //!   size, with one struct and no other, that is smaller and has no size
 //!   of its own is a partial view of it and one with it
@@ -870,10 +878,51 @@ impl Structs {
         met.append(&mut layout.unify);
         self.conflicts += kept.conflicts - before + layout.conflicts;
         kept.conflicts += layout.conflicts;
+        // The structs one field holds, judged whole: where any two of them
+        // are not one struct's views (fields overlapping other than as one
+        // view of the other, or pointing to a struct in one and to a
+        // scalar in the other), they are several types the field holds (a
+        // parser's value stack: a word, a list of words, a command): it is
+        // generic, and none is united through it.
+        let mut held: BTreeMap<u64, BTreeSet<StructId>> = BTreeMap::new();
+        for &(a, b, offset) in &met {
+            held.entry(offset)
+                .or_default()
+                .extend([self.find(a), self.find(b)]);
+        }
+        let several: BTreeSet<u64> = held
+            .into_iter()
+            .filter(|(_, ids)| !self.views_of_one(ids))
+            .map(|(offset, _)| offset)
+            .collect();
         for (a, b, offset) in met {
+            if several.contains(&offset) {
+                if let Some(holder) = self.layouts.get_mut(&id) {
+                    holder.make_generic(offset);
+                }
+                continue;
+            }
             self.meets.push((id, offset, a, b));
             work.push((a, b));
         }
+    }
+
+    /// Whether the structs `ids` may be views of one struct: every two
+    /// overlap as one type's ([`overlap`], both ways) and point alike
+    /// ([`pointers_agree`]).
+    fn views_of_one(&self, ids: &BTreeSet<StructId>) -> bool {
+        let empty = Layout::default();
+        let layouts: Vec<&Layout> = ids
+            .iter()
+            .map(|id| self.layouts.get(id).unwrap_or(&empty))
+            .collect();
+        layouts.iter().enumerate().all(|(k, first)| {
+            layouts.iter().skip(k + 1).all(|second| {
+                overlap(first, second, true)
+                    && overlap(second, first, true)
+                    && pointers_agree(first, second)
+            })
+        })
     }
 
     /// Makes generic the fields structs `a` and `b` (as they are now) met
@@ -1225,6 +1274,7 @@ impl Structs {
             .iter()
             .find(|&&(at, _, _)| at == root)
             .map(|&(_, id, offset)| (self.find(id), offset))
+            .filter(|&(id, _)| !self.characters(id))
     }
 
     /// The struct access `inst` of the function at `entry` is into, with
@@ -1233,6 +1283,7 @@ impl Structs {
         self.accesses
             .get(&(entry, inst))
             .map(|&(id, base)| (self.find(id), base))
+            .filter(|&(id, _)| !self.characters(id))
     }
 
     /// The struct the global object at `start` is, with the offset of its
@@ -1241,6 +1292,21 @@ impl Structs {
         self.globals
             .get(&start)
             .map(|&(id, at)| (self.find(id), at))
+            .filter(|&(id, _)| !self.characters(id))
+    }
+
+    /// Whether struct `id` (as it is now) is a string's characters, not a
+    /// struct: every field a byte (a buffer read at `[0]`, `[1]`, `[8]`),
+    /// none a pointer, and no declared type says otherwise. Its values are
+    /// bytes' addresses, no struct's.
+    fn characters(&self, id: StructId) -> bool {
+        let byte = |field: &Field| field.bits == 8 && matches!(field.ty, FieldType::Scalar(_));
+        !self.identities.contains_key(&id)
+            && self.layouts.get(&id).is_some_and(|layout| {
+                !layout.fields.is_empty()
+                    && layout.arrays.values().all(byte)
+                    && layout.fields.values().all(byte)
+            })
     }
 
     /// Struct `id` interned in `types` (once per table: `interned`), with
@@ -1364,6 +1430,11 @@ impl Structs {
                 types.intern(Type::Pointer(target))
             }
             FieldType::Opaque => types.intern(Type::Pointer(None)),
+            // A string's characters are no struct ([`Self::characters`]).
+            &FieldType::Struct(id) if self.characters(self.find(id)) => {
+                let target = types.intern(Type::Char { signed: true });
+                types.intern(Type::Pointer(Some(target)))
+            }
             &FieldType::Struct(id) => {
                 let target = self.intern(id, types, interned);
                 types.intern(Type::Pointer(target))
@@ -1434,6 +1505,22 @@ fn compatible(a: &Layout, b: &Layout) -> bool {
         return false;
     }
     overlap(a, b, true)
+}
+
+/// Whether no field of `a` points to a struct where `b` has one as wide
+/// pointing to a scalar, or the other way: a `char *` is no struct's
+/// link (a word's string and a list's next are two types' fields).
+fn pointers_agree(a: &Layout, b: &Layout) -> bool {
+    a.fields.iter().all(|(offset, field)| {
+        b.fields.get(offset).is_none_or(|other| {
+            other.bits != field.bits
+                || !matches!(
+                    (&field.ty, &other.ty),
+                    (FieldType::Struct(_), FieldType::Pointer(Some(_)))
+                        | (FieldType::Pointer(Some(_)), FieldType::Struct(_))
+                )
+        })
+    })
 }
 
 /// How many fields two views of a struct must show alike to be one
@@ -2231,6 +2318,92 @@ mod tests {
         assert_ne!(structs.find(b), structs.find(a));
         structs.unite_partial_views();
         assert_eq!(structs.find(b), structs.find(a));
+    }
+
+    /// A parser's value stack holds a word (64 then 32 untyped bits), a
+    /// list of words (a link, then 64 untyped bits) and a command (three
+    /// `int`s first): the word and the list alone could be views of one
+    /// 16-byte struct, but the command is no view of the list, so the
+    /// field holds several types: it is generic, and none is united.
+    #[test]
+    fn a_field_holding_a_word_and_a_list_is_generic() {
+        let (word, list, command, stack) = (
+            StructId {
+                function: 0x10,
+                k: 1,
+            },
+            StructId {
+                function: 0x20,
+                k: 1,
+            },
+            StructId {
+                function: 0x28,
+                k: 1,
+            },
+            StructId {
+                function: 0x30,
+                k: 1,
+            },
+        );
+        let mut words = Layout::default();
+        words.add(0, field(64, Type::Bits(64), 4));
+        words.add(8, field(32, Type::Bits(32), 4));
+        let mut lists = Layout::default();
+        lists.add(0, link(list));
+        lists.add(8, field(64, Type::Bits(64), 4));
+        let mut commands = Layout::default();
+        for offset in [0, 4, 8] {
+            commands.add(offset, field(32, Type::Int(32), 4));
+        }
+        let mut slots = Layout::default();
+        for id in [word, list, command] {
+            slots.add(0, link(id));
+        }
+        let mut structs = Structs::default();
+        structs.add(0x10, None, born(word, words, Vec::new()));
+        structs.add(0x20, None, born(list, lists, Vec::new()));
+        structs.add(0x28, None, born(command, commands, Vec::new()));
+        structs.add(0x30, None, born(stack, slots, vec![0x10, 0x20, 0x28]));
+        assert_ne!(structs.find(word), structs.find(list));
+        assert_ne!(structs.find(command), structs.find(list));
+        let held = structs.layout(stack).unwrap().fields.get(&0).unwrap();
+        assert_eq!(held.ty, FieldType::Pointer(None));
+    }
+
+    /// A buffer read a byte at a time at `[0]`, `[1]` and `[8]` (a string)
+    /// is no struct: its accesses and roots are none, and a field
+    /// pointing to it is a `char *`; a struct with a wider field stays one.
+    #[test]
+    fn a_struct_of_bytes_is_a_string() {
+        let (string, record) = (
+            StructId {
+                function: 0x10,
+                k: 1,
+            },
+            StructId {
+                function: 0x20,
+                k: 1,
+            },
+        );
+        let mut bytes = Layout::default();
+        for offset in [0, 1, 8] {
+            bytes.add(offset, field(8, Type::UInt(8), 4));
+        }
+        let mut fields = Layout::default();
+        fields.add(0, field(8, Type::UInt(8), 4));
+        fields.add(4, field(32, Type::Int(32), 4));
+        let mut structs = Structs::default();
+        for (entry, id, layout) in [(0x10, string, bytes), (0x20, record, fields)] {
+            let mut contribution = born(id, layout, Vec::new());
+            contribution.accesses = vec![(InstId(1), id, 0)];
+            structs.add(entry, None, contribution);
+        }
+        assert_eq!(structs.access(0x10, InstId(1)), None);
+        assert_eq!(structs.access(0x20, InstId(1)), Some((record, 0)));
+        let mut types = Types::new(64);
+        let ty = structs.field_type(&FieldType::Struct(string), &mut types, &mut BTreeMap::new());
+        let char_ty = types.intern(Type::Char { signed: true });
+        assert_eq!(types.get(ty), Some(&Type::Pointer(Some(char_ty))));
     }
 
     #[test]
