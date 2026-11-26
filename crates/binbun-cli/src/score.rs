@@ -450,9 +450,10 @@ impl Tally {
     /// each with what it is seen as; most first.
     #[must_use]
     pub fn identity_errors(&self) -> IdentityErrors {
+        let identities = self.defined_identities();
         let mut sources: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
         let mut split = Vec::new();
-        for ((source, _), names) in &self.identities {
+        for ((source, _), names) in &identities {
             for name in names.keys() {
                 sources.entry(name).or_default().insert(source);
             }
@@ -481,7 +482,7 @@ impl Tally {
         let pairs = |count: usize| count * count.saturating_sub(1) / 2;
         let mut by_name: BTreeMap<&str, usize> = BTreeMap::new();
         let (mut same_source, mut both) = (0, 0);
-        for names in self.identities.values() {
+        for names in identities.values() {
             same_source += pairs(names.values().sum());
             for (name, &count) in names {
                 both += pairs(count);
@@ -490,7 +491,7 @@ impl Tally {
         }
         let same_name = by_name.values().map(|&count| pairs(count)).sum();
         IdentityErrors {
-            sources: self.identities.len(),
+            sources: identities.len(),
             decompiler,
             split,
             merged,
@@ -498,8 +499,35 @@ impl Tally {
             same_name,
             both,
             pointers: self.struct_pointers,
-            named: self.identities.values().flat_map(BTreeMap::values).sum(),
+            named: identities.values().flat_map(BTreeMap::values).sum(),
         }
+    }
+
+    /// [`Self::identities`] with each struct only declared where a pointer
+    /// points to it (size 0: a translation unit that sees no definition,
+    /// `struct lua_State;`) counted as the one struct of its name that is
+    /// defined, where there is one: one source struct, not two.
+    fn defined_identities(&self) -> BTreeMap<(String, u64), BTreeMap<String, usize>> {
+        let mut sizes: BTreeMap<&str, BTreeSet<u64>> = BTreeMap::new();
+        for (name, size) in self.identities.keys() {
+            if *size > 0 {
+                sizes.entry(name).or_default().insert(*size);
+            }
+        }
+        let mut out: BTreeMap<(String, u64), BTreeMap<String, usize>> = BTreeMap::new();
+        for ((name, size), names) in &self.identities {
+            let size = match sizes.get(name.as_str()) {
+                Some(defined) if *size == 0 && defined.len() == 1 => {
+                    defined.first().copied().unwrap_or(0)
+                }
+                Some(_) | None => *size,
+            };
+            let kept = out.entry((name.clone(), size)).or_default();
+            for (decompiled, count) in names {
+                *kept.entry(decompiled.clone()).or_default() += count;
+            }
+        }
+        out
     }
 }
 

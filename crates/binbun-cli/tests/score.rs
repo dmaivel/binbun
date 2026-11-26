@@ -185,3 +185,30 @@ fn identities_split_and_merged() {
     // decompiler's (the `void *` one not).
     assert_eq!((errors.named, errors.pointers), (4, 5));
 }
+
+/// A pointer to `lua_State` where a translation unit only declares it
+/// (size 0) points to the one `lua_State` defined: two pointers the
+/// decompiler types alike are one struct's, not a merge of two.
+#[test]
+fn a_declared_struct_is_its_definition() {
+    let to = |name: &str, bytes: u64| Shape {
+        class: Class::Pointer,
+        bytes: Some(8),
+        target: Some(Box::new(Shape {
+            class: Class::Struct,
+            bytes: Some(bytes),
+            target: None,
+            identity: Some((name.to_owned(), bytes)),
+        })),
+        identity: None,
+    };
+    let mut tally = Tally::default();
+    tally.add(&to("struct_a_1", 8), &to("lua_State", 208));
+    tally.add(&to("struct_a_1", 8), &to("lua_State", 0));
+    let errors = tally.identity_errors();
+    assert_eq!(errors.merged, []);
+    assert_eq!(
+        (errors.sources, errors.same_source, errors.same_name, errors.both),
+        (1, 1, 1, 1)
+    );
+}
