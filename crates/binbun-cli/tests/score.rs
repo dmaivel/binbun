@@ -54,6 +54,25 @@ fn program_parameters_map_by_register() {
     );
 }
 
+/// `loop_sum`'s `sum` and `i` live in registers (`rbx`, `r12` across the
+/// loop, by the DWARF's location lists), not on the stack: each maps to
+/// the L2 local held in its register where the loop reads and assigns it,
+/// one apiece, and both are 32-bit there (not the 64-bit locals held in
+/// the same registers).
+#[test]
+fn register_locals_map_by_register_and_address() {
+    let data = fixture("program-x86_64.elf");
+    let model = binbun_debuginfo::info::read(&fixture("program-x86_64.debug"), &data).unwrap();
+    let image = Image::parse(&data).unwrap();
+    let database = Database::new(&image, Seeds::ALL).unwrap();
+    let report = score(&database, &model, &Setup::new(&database)).unwrap();
+    assert_eq!((report.registers.truth, report.registers.mapped), (2, 2));
+    assert_eq!(report.register_shared, 0);
+    assert_eq!(report.unmapped_locals, 0);
+    let scores = &report.register_scores;
+    assert_eq!((scores.mapped, scores.width), (2, 2));
+}
+
 /// `stacked-x86_64.elf` is `tests/fixtures/stacked.c`: `seventh` takes
 /// its seventh parameter on the stack, which the DWARF states at the
 /// canonical frame address, the L2 parameter's slot at the entry stack

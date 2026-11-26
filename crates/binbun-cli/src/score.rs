@@ -15,7 +15,13 @@
 //!   canonical frame address is the entry stack pointer + 8, AArch64's is
 //!   the entry stack pointer), or the field of a frame struct
 //!   ([`Ast::frames`]) made from that slot;
-//! - register locals are not mapped (L2 variables carry no address ranges).
+//! - register locals by register and address: a source local in a
+//!   register for some of its stated ranges (not in one stack slot for
+//!   all of them) against the L2 local held in that register
+//!   ([`Origin::Held`]) at the most of the instructions in those ranges
+//!   that read or assign it (by the provenance of the statements and
+//!   expressions that do, [`held_at`]); none on a tie. Several source
+//!   locals may map to one L2 local ([`Report::register_shared`]).
 //!
 //! **Scores** per mapped variable: kind, width, signedness, pointer target,
 //! and the distance, interval and conservativeness of TIE (Lee et al., NDSS
@@ -614,8 +620,14 @@ pub struct Report {
     pub returns: Coverage,
     /// Stack variables (in one stack slot for their whole life).
     pub stack: Coverage,
-    /// Source locals not in a stack slot (registers, split, optimised out):
-    /// not mapped.
+    /// Register locals (in a register for some of their life, not in one
+    /// stack slot for all of it).
+    pub registers: Coverage,
+    /// Register locals mapped to an L2 local another register local of the
+    /// function mapped to before.
+    pub register_shared: usize,
+    /// Source locals neither in one stack slot nor ever in a register
+    /// (split, computed, frame-base relative, optimised out): not mapped.
     pub unmapped_locals: usize,
     /// The parameters' scores.
     pub parameter_scores: Tally,
@@ -629,6 +641,8 @@ pub struct Report {
     pub void_missed: usize,
     /// The stack variables' scores.
     pub stack_scores: Tally,
+    /// The register locals' scores.
+    pub register_scores: Tally,
     /// Fields through pointers to structs.
     pub fields: FieldScore,
     /// Casts in the C of the decompiled functions.
@@ -962,6 +976,7 @@ fn score_function(
     score_return(report, problem, model, function, ast, setup);
     let void_extra = report.void_extra > extra;
     score_stack(report, problem, model, function, ast, setup);
+    score_registers(report, problem, model, function, ast, setup);
     let mapped = ast.parameters.iter().map(|id| used.contains(id)).collect();
     (mapped, void_extra)
 }
@@ -1155,7 +1170,6 @@ fn score_stack(
     let mut used = BTreeSet::new();
     for local in &function.locals {
         let Some(slot) = local.stack_slot() else {
-            report.unmapped_locals += 1;
             continue;
         };
         report.stack.truth += 1;
@@ -1174,6 +1188,183 @@ fn score_stack(
         );
     }
     report.stack.extra += by_slot.len() - used.len().min(by_slot.len());
+}
+
+/// Register locals: each source local not in one stack slot, by the
+/// registers it is stated in over its ranges, against the L2 locals held
+/// in them ([`held_at`]).
+fn score_registers(
+    report: &mut Report,
+    problem: &mut Problem,
+    model: &DebugModel,
+    function: &DebugFunction,
+    ast: &Ast,
+    setup: &Setup,
+) {
+    let held = held_locals(ast, setup);
+    let mut locals = Vec::new();
+    for local in function
+        .locals
+        .iter()
+        .filter(|local| local.stack_slot().is_none())
+    {
+        let spans: Vec<_> = local
+            .location
+            .iter()
+            .filter_map(|span| match span.place {
+                Place::Register(register) => Some((&span.range, register_key(register))),
+                Place::Stack(_) | Place::Relative { .. } | Place::Other => None,
+            })
+            .collect();
+        if spans.is_empty() {
+            report.unmapped_locals += 1;
+        } else {
+            locals.push((local, spans));
+        }
+    }
+    report.registers.truth += locals.len();
+    if locals.is_empty() {
+        report.registers.extra += held.len();
+        return;
+    }
+    let at = held_at(ast, &held);
+    let mut by_register: BTreeMap<&str, Vec<(VarId, &BTreeSet<u64>)>> = BTreeMap::new();
+    for (var, addresses) in &at {
+        if let Some(&register) = held.get(var) {
+            by_register
+                .entry(register)
+                .or_default()
+                .push((*var, addresses));
+        }
+    }
+    let mut used: BTreeMap<VarId, usize> = BTreeMap::new();
+    for (local, spans) in locals {
+        let mut pairs: BTreeMap<VarId, usize> = BTreeMap::new();
+        for (range, register) in spans {
+            for (var, addresses) in by_register.get(register.as_str()).into_iter().flatten() {
+                let inside = addresses.range(range.start..range.end).count();
+                if inside > 0 {
+                    *pairs.entry(*var).or_default() += inside;
+                }
+            }
+        }
+        let Some(var) = most(&pairs) else {
+            continue;
+        };
+        let Some(variable) = ast.var(var) else {
+            continue;
+        };
+        let mappings = used.entry(var).or_default();
+        if *mappings > 0 {
+            report.register_shared += 1;
+        }
+        *mappings += 1;
+        report.registers.mapped += 1;
+        let what = format!("register local {}", local.name.as_deref().unwrap_or("?"));
+        problem.compare(
+            &mut report.register_scores,
+            &what,
+            &l2_shape(ast, variable.ty),
+            &debug_shape(model, local.ty),
+        );
+    }
+    report.registers.extra += held.len() - used.len().min(held.len());
+}
+
+/// `ast`'s locals held in a register ([`Origin::Held`]), by the register's
+/// lifter name.
+fn held_locals<'s>(ast: &Ast, setup: &'s Setup) -> BTreeMap<VarId, &'s str> {
+    ast.variables
+        .iter()
+        .enumerate()
+        .filter(|(_, variable)| variable.kind == VarKind::Local)
+        .filter_map(|(index, variable)| {
+            let register = variable.origins.iter().find_map(|origin| {
+                if let Origin::Held(register) = origin {
+                    setup.registers.get(usize::from(register.0))
+                } else {
+                    None
+                }
+            })?;
+            Some((VarId(u32::try_from(index).ok()?), register.as_str()))
+        })
+        .collect()
+}
+
+/// The key with the greatest count, if one has it alone.
+fn most(counts: &BTreeMap<VarId, usize>) -> Option<VarId> {
+    let mut best: Option<(VarId, usize)> = None;
+    let mut tied = false;
+    for (&var, &count) in counts {
+        match best {
+            Some((_, top)) if count < top => {}
+            Some((_, top)) if count == top => tied = true,
+            Some(_) | None => {
+                best = Some((var, count));
+                tied = false;
+            }
+        }
+    }
+    best.filter(|_| !tied).map(|(var, _)| var)
+}
+
+/// The instruction addresses at which each of the `held` locals is read or
+/// assigned: the instructions of the statements that assign it
+/// ([`Stmt::places`]), and of the expressions that read it
+/// ([`Expr::Var`]) or assign it ([`Expr::Assign`]), an expression without
+/// instructions of its own taking those of the expression or statement
+/// it is in (a variable's read is its user's instruction's).
+fn held_at(ast: &Ast, held: &BTreeMap<VarId, &str>) -> BTreeMap<VarId, BTreeSet<u64>> {
+    let mut at: BTreeMap<VarId, BTreeSet<u64>> = BTreeMap::new();
+    let mut note = |var: VarId, origins: &[Origin]| {
+        if held.contains_key(&var) {
+            at.entry(var).or_default().extend(instructions(origins));
+        }
+    };
+    let mut blocks = vec![&ast.body];
+    let mut exprs = Vec::new();
+    while let Some(block) = blocks.pop() {
+        for &id in block {
+            let Some(stmt) = ast.stmt(id) else {
+                continue;
+            };
+            blocks.extend(stmt.blocks());
+            let origins = ast.provenance.stmt(id);
+            for place in stmt.places() {
+                if let AstPlace::Var(var) = *place {
+                    note(var, origins);
+                }
+            }
+            exprs.extend(stmt.roots().into_iter().map(|expr| (expr, origins)));
+            while let Some((id, outer)) = exprs.pop() {
+                let own = ast.provenance.expr(id);
+                let origins = if instructions(own).next().is_some() {
+                    own
+                } else {
+                    outer
+                };
+                let Some(expr) = ast.expr(id) else {
+                    continue;
+                };
+                if let Expr::Var(var) | Expr::Assign { var, .. } = *expr {
+                    note(var, origins);
+                }
+                exprs.extend(expr.operands(ast).map(|operand| (operand, origins)));
+            }
+        }
+    }
+    at
+}
+
+/// The instruction addresses among `origins`.
+fn instructions(origins: &[Origin]) -> impl Iterator<Item = u64> + '_ {
+    origins.iter().filter_map(|origin| {
+        if let Origin::Instruction(address) = origin {
+            Some(*address)
+        } else {
+            None
+        }
+    })
 }
 
 /// (offset, width) pairs in bytes.
@@ -1422,11 +1613,13 @@ impl Report {
         )
     }
 
-    /// The parameters', returns' and stack variables' scores together.
+    /// The parameters', returns', stack variables' and register locals'
+    /// scores together.
     fn all_scores(&self) -> Tally {
         let mut all = self.parameter_scores.clone();
         all.merge(&self.return_scores);
         all.merge(&self.stack_scores);
+        all.merge(&self.register_scores);
         all
     }
 }
@@ -1459,15 +1652,18 @@ impl fmt::Display for Report {
             "returns: void agreed {}, value missed {}, value extra {}",
             self.void_agree, self.void_missed, self.void_extra
         )?;
+        writeln!(f, "stack variables: {}", coverage(&self.stack))?;
         writeln!(
             f,
-            "stack variables: {}; register/other locals not mapped {}",
-            coverage(&self.stack),
+            "register locals: {} ({} to an L2 local another maps to); other locals not mapped {}",
+            coverage(&self.registers),
+            self.register_shared,
             self.unmapped_locals
         )?;
         self.parameter_scores.write(f, "parameters")?;
         self.return_scores.write(f, "returns")?;
         self.stack_scores.write(f, "stack variables")?;
+        self.register_scores.write(f, "register locals")?;
         let fields = &self.fields;
         writeln!(
             f,
