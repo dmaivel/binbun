@@ -1076,6 +1076,29 @@ fn rules_rewrite_flag_conditions_and_keep_faults() {
 }
 
 #[test]
+fn a_choice_by_a_constant_is_its_arm() {
+    // return select(c, p + 1, p - 1), `c` a constant (`rep stos`'s step
+    // by the direction flag the convention clears): the arm it chooses;
+    // the other, never taken, goes.
+    for (condition, expected) in [(0, "Sub(v0, 0x1)"), (1, "Add(v0, 0x1)")] {
+        let mut b = Builder::new();
+        let p = b.var(VarKind::Parameter, 32);
+        let (x, y, one) = (b.read(p), b.read(p), b.c(32, 1));
+        let (up, down) = (b.bin(Binary::Add, x, one), b.bin(Binary::Sub, y, one));
+        let flag = b.c(1, condition);
+        let chosen = b.e(Expr::Select {
+            condition: flag,
+            then: up,
+            otherwise: down,
+        });
+        let ret = b.ret(chosen);
+        let refusals = b.run(&mut [&mut Rewrite::default()], 64);
+        assert_eq!(refusals, []);
+        assert_eq!(b.returned(ret), expected);
+    }
+}
+
+#[test]
 fn out_of_fuel_the_passes_refuse_and_change_nothing() {
     let mut b = Builder::new();
     let p = b.var(VarKind::Parameter, 32);

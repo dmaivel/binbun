@@ -13,6 +13,7 @@ use binbun_ssa::condition::{Relation, comparison};
 use binbun_ssa::ir::{BlockId, Definition, InstId, Op, Terminator, Value, ValueInfo};
 
 use super::facts::{Kind, Lowering, Site};
+use super::frame::Home;
 use super::needed::Role;
 use crate::mapping::Source;
 use crate::typing::{
@@ -220,7 +221,7 @@ impl Lowering<'_, '_> {
             .iter()
             .map(|slot| {
                 let bits = u16::try_from(slot.bytes().saturating_mul(8)).ok()?;
-                slot.shape.then_some(bits)
+                (slot.shape || slot.home == Home::Local).then_some(bits)
             })
             .collect();
         let parts = self.low_parts();

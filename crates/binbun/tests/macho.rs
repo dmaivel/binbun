@@ -109,11 +109,26 @@ fn printf_takes_the_one_argument_its_format_says_where_the_convention_passes_it(
             .lines()
             .find(|line| line.contains("printf(\"%d\\n\", "))
             .unwrap_or_else(|| panic!("{arch}: no printf of the format:\n{}", text(&main)));
-        // The format and one argument: no argument registers past them.
-        assert_eq!(call.matches(',').count(), 1, "{arch}: {call}");
+        // The format and one argument: no argument registers past them
+        // (the commas of `printf`'s own list, not of a call in it).
+        let start = call.find("printf(").unwrap() + "printf(".len();
+        let mut depth = 0usize;
+        let mut separators = 0;
+        for c in call[start..].chars() {
+            match c {
+                '(' => depth += 1,
+                ')' if depth == 0 => break,
+                ')' => depth -= 1,
+                ',' if depth == 0 => separators += 1,
+                _ => {}
+            }
+        }
+        assert_eq!(separators, 1, "{arch}: {call}");
         // Apple's arm64 passes the unnamed argument on the stack, where
-        // `main` stored it; x86-64 in a register.
-        assert_eq!(call.contains("frame"), arch != "x86_64", "{arch}: {call}");
+        // `main` stored it (8 bytes, of which `%d` reads 4); x86-64 in a
+        // register: either way the value itself, not the frame's bytes.
+        assert!(!call.contains("frame"), "{arch}: {call}");
+        assert!(call.contains("loop_sum("), "{arch}: {call}");
     }
 }
 

@@ -5,11 +5,11 @@
 //! rule as data ([`RULES`]), its matcher, and the rules filed by the kind
 //! of their left side's root.
 //!
-//! 122 rules:
+//! 124 rules:
 //! - `algebra`: 45
 //! - `compare`: 43
 //! - `extend`: 25
-//! - `select`: 9
+//! - `select`: 11
 
 use super::{
     Apply, Constraint, Literal, Matcher, Node, Relation, Rule, Shape, Width, WidthVar, bin,
@@ -18,7 +18,7 @@ use super::{
 use binbun_ast::ir::{Expr, ExprId};
 use binbun_semantics::ir::{Binary, Flag, Unary};
 /// The rules, in the order they are tried.
-pub static RULES: [Rule; 122] = [
+pub static RULES: [Rule; 124] = [
     Rule {
         name: "add-0",
         group: "algebra",
@@ -5659,6 +5659,98 @@ pub static RULES: [Rule; 122] = [
         holds: &[],
     },
     Rule {
+        name: "select-true",
+        group: "select",
+        text: "rule select-true: select(1:1, x:W, y) => x widths W in 1 8 16 32 64 128",
+        widths: &[WidthVar {
+            name: "W",
+            claimed: &[1, 8, 16, 32, 64, 128],
+        }],
+        vars: &[
+            (
+                "x",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+            (
+                "y",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+        ],
+        constants: &[],
+        lhs: &[
+            Node::Literal {
+                value: Literal::Int(1),
+                width: Width {
+                    constant: 1,
+                    terms: &[],
+                },
+            },
+            Node::Var(0),
+            Node::Var(1),
+            Node::Select {
+                condition: 0,
+                then: 1,
+                otherwise: 2,
+            },
+        ],
+        rhs: &[Node::Var(0)],
+        constraints: &[],
+        conditions: &[],
+        holds: &[],
+    },
+    Rule {
+        name: "select-false",
+        group: "select",
+        text: "rule select-false: select(0:1, x:W, y) => y widths W in 1 8 16 32 64 128",
+        widths: &[WidthVar {
+            name: "W",
+            claimed: &[1, 8, 16, 32, 64, 128],
+        }],
+        vars: &[
+            (
+                "x",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+            (
+                "y",
+                Width {
+                    constant: 0,
+                    terms: &[(0, 1)],
+                },
+            ),
+        ],
+        constants: &[],
+        lhs: &[
+            Node::Literal {
+                value: Literal::Int(0),
+                width: Width {
+                    constant: 1,
+                    terms: &[],
+                },
+            },
+            Node::Var(0),
+            Node::Var(1),
+            Node::Select {
+                condition: 0,
+                then: 1,
+                otherwise: 2,
+            },
+        ],
+        rhs: &[Node::Var(1)],
+        constraints: &[],
+        conditions: &[],
+        holds: &[],
+    },
+    Rule {
         name: "neg-of-bit",
         group: "select",
         text: "rule neg-of-bit: neg(zext(b:1, W)) => sext(b, W)",
@@ -5753,7 +5845,7 @@ pub static RULES: [Rule; 122] = [
     },
 ];
 /// Each rule's matcher, by index into [`RULES`].
-pub(super) static MATCHERS: [Apply; 122] = [
+pub(super) static MATCHERS: [Apply; 124] = [
     rule_0, rule_1, rule_2, rule_3, rule_4, rule_5, rule_6, rule_7, rule_8, rule_9, rule_10,
     rule_11, rule_12, rule_13, rule_14, rule_15, rule_16, rule_17, rule_18, rule_19, rule_20,
     rule_21, rule_22, rule_23, rule_24, rule_25, rule_26, rule_27, rule_28, rule_29, rule_30,
@@ -5766,7 +5858,7 @@ pub(super) static MATCHERS: [Apply; 122] = [
     rule_91, rule_92, rule_93, rule_94, rule_95, rule_96, rule_97, rule_98, rule_99, rule_100,
     rule_101, rule_102, rule_103, rule_104, rule_105, rule_106, rule_107, rule_108, rule_109,
     rule_110, rule_111, rule_112, rule_113, rule_114, rule_115, rule_116, rule_117, rule_118,
-    rule_119, rule_120, rule_121,
+    rule_119, rule_120, rule_121, rule_122, rule_123,
 ];
 /// The rules by the kind of their left side's root.
 pub(super) static DISPATCH: [(Shape, &[usize]); 23] = [
@@ -5779,14 +5871,14 @@ pub(super) static DISPATCH: [(Shape, &[usize]); 23] = [
         &[2, 15, 21, 24, 27, 35, 36, 40, 44],
     ),
     (Shape::Binary(Binary::Mul), &[3, 4, 5, 29, 37]),
-    (Shape::Binary(Binary::And), &[6, 7, 16, 30, 121]),
+    (Shape::Binary(Binary::And), &[6, 7, 16, 30, 123]),
     (Shape::Binary(Binary::Or), &[8, 9, 17, 31, 54, 55, 56, 57]),
     (Shape::Binary(Binary::Xor), &[10, 14, 25, 32]),
     (Shape::Binary(Binary::Shl), &[11]),
     (Shape::Binary(Binary::LShr), &[12]),
     (Shape::Binary(Binary::AShr), &[13]),
     (Shape::Unary(Unary::Not), &[22, 62, 63, 64, 65, 66, 67]),
-    (Shape::Unary(Unary::Neg), &[23, 120]),
+    (Shape::Unary(Unary::Neg), &[23, 122]),
     (
         Shape::Binary(Binary::Ne),
         &[45, 48, 50, 52, 58, 69, 81, 83, 84, 87],
@@ -5810,7 +5902,10 @@ pub(super) static DISPATCH: [(Shape, &[usize]); 23] = [
     (Shape::Binary(Binary::SLe), &[73]),
     (Shape::Extend, &[88, 89, 90]),
     (Shape::Concat, &[99]),
-    (Shape::Select, &[113, 114, 115, 116, 117, 118, 119]),
+    (
+        Shape::Select,
+        &[113, 114, 115, 116, 117, 118, 119, 120, 121],
+    ),
 ];
 /// `add-0` (algebra).
 fn rule_0(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
@@ -9142,8 +9237,64 @@ fn rule_119(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let r3 = m.select(r0, r1, r2)?;
     Some(r3)
 }
-/// `neg-of-bit` (select).
+/// `select-true` (select).
 fn rule_120(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+    let Expr::Select {
+        condition: e0,
+        then: e1,
+        otherwise: e2,
+    } = m.expr(root)?
+    else {
+        return None;
+    };
+    let v0 = e1;
+    let v1 = e2;
+    let w_w = m.width(v0)?;
+    if !claimed(w_w, &[1, 8, 16, 32, 64, 128]) {
+        return None;
+    }
+    if m.width(v1)? != w_w {
+        return None;
+    }
+    if !m.literal(e0, 1i64, 1i64) {
+        return None;
+    }
+    if !m.harmless(v1) {
+        return None;
+    }
+    let r0 = v0;
+    Some(r0)
+}
+/// `select-false` (select).
+fn rule_121(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+    let Expr::Select {
+        condition: e0,
+        then: e1,
+        otherwise: e2,
+    } = m.expr(root)?
+    else {
+        return None;
+    };
+    let v0 = e1;
+    let v1 = e2;
+    let w_w = m.width(v0)?;
+    if !claimed(w_w, &[1, 8, 16, 32, 64, 128]) {
+        return None;
+    }
+    if m.width(v1)? != w_w {
+        return None;
+    }
+    if !m.literal(e0, 1i64, 0i64) {
+        return None;
+    }
+    if !m.harmless(v0) {
+        return None;
+    }
+    let r0 = v1;
+    Some(r0)
+}
+/// `neg-of-bit` (select).
+fn rule_122(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Unary(Unary::Neg, e1) = m.expr(root)? else {
         return None;
     };
@@ -9168,7 +9319,7 @@ fn rule_120(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     Some(r1)
 }
 /// `and-1-of-bit` (select).
-fn rule_121(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
+fn rule_123(m: &mut Matcher<'_>, root: ExprId) -> Option<ExprId> {
     let Expr::Binary(Binary::And, e1, e2) = m.expr(root)? else {
         return None;
     };

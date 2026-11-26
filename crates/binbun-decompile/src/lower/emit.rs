@@ -1669,13 +1669,28 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
 
     /// The bytes of slot `slot` (a stack access of `bytes` bytes at
     /// `offset`) read, by load `inst` if one (the frame's bytes then take
-    /// its solved type).
+    /// its solved type); of a local read in part, those bits of it.
     fn slot_read(&mut self, slot: usize, offset: i64, bytes: u16, inst: Option<InstId>) -> ExprId {
         let lw = self.lw;
         let width = bytes.saturating_mul(8);
         match lw.home(slot) {
             Home::Local => match self.slots.get(&slot) {
-                Some(&var) => self.read(var),
+                Some(&var) => {
+                    let read = self.read(var);
+                    let start = lw.frame.slots.get(slot).map_or(offset, |slot| slot.offset);
+                    let from = u16::try_from(offset.saturating_sub(start).saturating_mul(8));
+                    match from {
+                        Ok(from) if self.width_of(read) != width => self.add(
+                            Expr::Extract {
+                                value: read,
+                                offset: from,
+                                width,
+                            },
+                            width,
+                        ),
+                        Ok(_) | Err(_) => read,
+                    }
+                }
                 None => self.undefined(width, Unknown::Unwritten),
             },
             Home::Parameter => {

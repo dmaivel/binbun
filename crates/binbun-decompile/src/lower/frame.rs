@@ -455,6 +455,18 @@ fn steps_back(reach: &BTreeMap<i64, i64>) -> bool {
         .any(|(&offset, &far)| offset < 0 && far == i64::MAX)
 }
 
+/// Whether every access of `members`, the slot `offset..end`, is of the
+/// whole slot but reads of its parts as calls' stack arguments (pushed as
+/// 8 bytes, passed as 4): a variable's value, the arguments its bits. A
+/// spill slot a function also loads in part is often one several values
+/// share, and stays memory.
+fn passed_in_parts(members: &[&Access], offset: i64, end: i64) -> bool {
+    members.iter().all(|access| {
+        let whole = access.offset == offset && access.offset + i64::from(access.bytes) == end;
+        whole || (!access.write && matches!(access.at, At::Argument(..)))
+    })
+}
+
 impl Lowering<'_, '_> {
     /// The frame: its accesses, slots and regions. `bounded`: addresses
     /// known to reach only as far as a given byte (a recognised
@@ -506,6 +518,7 @@ impl Lowering<'_, '_> {
             let is_whole = |a: &&Access| a.offset == offset && a.offset + i64::from(a.bytes) == end;
             let (shape, whole) = (members.iter().all(is_whole), members.iter().any(is_whole));
             let written = members.iter().any(|a| a.write);
+            let parts = written && passed_in_parts(&members, offset, end);
             let mut register = None;
             let saves = members.iter().filter(|a| a.write).all(|a| {
                 a.value
@@ -524,7 +537,7 @@ impl Lowering<'_, '_> {
             let own = end <= 0 || (offset >= link && end <= shadow);
             let home = if in_link || end - offset > 64 {
                 Home::Frame
-            } else if !reached && shape && own && written {
+            } else if !reached && (shape || parts) && own && written {
                 Home::Local
             } else if !reached
                 && shape

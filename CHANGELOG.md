@@ -43,6 +43,8 @@ always read by later versions.
 - Vector constants of floats print their lanes as float literals (`(f32x4){1.0f, 0.5f, -0.0f, 3.0f}`) where every lane is a number.
 - Nested loops that walk a matrix with pointers (a row pointer stepped beside its loop's counter, a column pointer stepped at the start of its body) are `for` loops of two indices reading `a[i + j * 4]`, where they were pointer loops whose offsets did not cancel.
 - Sums print with their constants together (`p + i * 4` instead of `(p + 64) + i * 4 - 64`).
+- A call's stack arguments pushed as 8 bytes and passed as 4 are passed as their values (`f(…, 4, p, 4)`) instead of through `uint8_t var_98[8]` and `*(int32_t *)var_98`.
+- A choice by a constant condition is the arm it chooses: `rep stos`'s step prints `p = p + 1`, not `p = 0 ? p - 1 : p + 1`.
 
 ### Fixed
 

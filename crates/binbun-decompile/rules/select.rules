@@ -11,6 +11,13 @@ rule select-ones: select(b, -1:W, 0) => sext(b, W)
 rule select-not: select(not(b), x:W, y) => select(b, y, x)
   widths W in 1 8 16 32 64 128
 
+# A choice by a constant (`rep stos`'s step by the direction flag the
+# convention clears).
+rule select-true: select(1:1, x:W, y) => x
+  widths W in 1 8 16 32 64 128
+rule select-false: select(0:1, x:W, y) => y
+  widths W in 1 8 16 32 64 128
+
 # Booleans as numbers.
 rule neg-of-bit: neg(zext(b:1, W)) => sext(b, W)
 rule and-1-of-bit: and(zext(b:1, W), 1) => zext(b, W)

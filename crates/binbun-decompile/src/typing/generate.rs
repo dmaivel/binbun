@@ -139,7 +139,8 @@ pub(crate) struct View<'a> {
     pub(crate) variables: Vec<bool>,
     /// Per stack slot: its width in bits where every access is the whole
     /// slot (an abstract location, whether lowering makes it a variable or
-    /// bytes of the frame's memory).
+    /// bytes of the frame's memory), or where lowering makes it a variable
+    /// read in parts (only its whole accesses relate to it).
     pub(crate) slots: Vec<Option<u16>>,
     /// Per stack slot: whether it is memory an address used as a value
     /// may reach (a store through a pointer may change it unseen).
@@ -696,7 +697,9 @@ impl Generator<'_, '_> {
             kept.then_some(slot)
         };
         for (inst, value) in loads {
-            if let Some(slot) = slot(&inst) {
+            if let Some(slot) = slot(&inst)
+                && view.width(value) == pointer
+            {
                 reads.entry(slot).or_default().push((inst, value));
             }
         }
@@ -1763,6 +1766,10 @@ impl Generator<'_, '_> {
     /// written) of `bits` bits at `address`, `value` its variable.
     fn access(&mut self, inst: InstId, address: Value, bits: u16, value: Option<Var>, side: Side) {
         if let Some(&slot) = self.view.slot_of.get(&inst) {
+            // A part of a variable's slot says nothing of the variable.
+            if self.view.slots.get(slot).copied().flatten() != Some(bits) {
+                return;
+            }
             let slot = self.out.slots.get(slot).copied().flatten();
             if let (Some(slot), Some(value)) = (slot, value) {
                 let evidence = self.evidence(Reason::Slot(inst), strength::PRIOR);

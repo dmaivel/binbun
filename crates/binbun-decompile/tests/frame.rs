@@ -75,6 +75,9 @@ const STATE: [L1Type; 5] = [
 
 /// `int fill(struct pair *)`, `struct pair { int64_t a, b; }`.
 const FILL: u64 = 0x6000;
+/// `int four(int64_t, int64_t, int64_t, int32_t)`: its last argument on
+/// the stack.
+const FOUR: u64 = 0x6100;
 /// A function nothing is known about.
 const UNKNOWN: u64 = 0x7000;
 
@@ -104,16 +107,22 @@ struct Fill;
 
 impl Prototypes for Fill {
     fn of(&self, address: u64, types: &mut Types) -> Option<Prototype> {
-        if address != FILL {
-            return None;
-        }
-        let pair = pair(types);
-        let pointer = types.intern(Type::Pointer(Some(pair)));
         let int = types.intern(Type::Int(32));
+        let parameters = match address {
+            FILL => {
+                let pair = pair(types);
+                vec![types.intern(Type::Pointer(Some(pair)))]
+            }
+            FOUR => {
+                let long = types.intern(Type::Int(64));
+                vec![long, long, long, int]
+            }
+            _ => return None,
+        };
         Some(Prototype {
-            name: Some("fill".to_owned()),
+            name: Some(if address == FILL { "fill" } else { "four" }.to_owned()),
             signature: types.intern(Type::Code(Signature {
-                parameters: vec![pointer],
+                parameters,
                 returns: Some(int),
                 variadic: false,
             })),
@@ -575,6 +584,26 @@ fn the_functions_own_step_back_keeps_the_slots_below_in_memory() {
     let value = l1.load(memory, back);
     let l2 = lowered_assuming(&l1.finish(memory, value), true);
     assert_eq!(frame_slots(&l2), ["at_m30", "at_m20"]);
+}
+
+#[test]
+fn a_slot_written_whole_and_read_in_part_is_a_local() {
+    // *(sp − 0x30) = b; four(a, b, c, (int32_t)*(sp − 0x30)): a slot
+    // written whole and read in part as a call's stack argument (pushed
+    // as 8 bytes, passed as 4) is a variable, the argument its bits, in no
+    // memory.
+    let mut l1 = L1::new();
+    let [a, b, _, _, memory] = l1.entry;
+    let slot = l1.below(0x30);
+    let memory = l1.store(memory, slot, b);
+    let memory = l1.call(memory, FOUR, a);
+    let l2 = lowered(&l1.finish(memory, b));
+    assert!(
+        !l2.variables
+            .iter()
+            .any(|variable| matches!(variable.kind, VarKind::Frame(offset) if offset < 0)),
+        "a frame variable below the entry"
+    );
 }
 
 #[test]

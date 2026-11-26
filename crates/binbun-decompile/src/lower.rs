@@ -63,7 +63,10 @@
 //!    above it. A slot no such address reaches is
 //!    as in a frame where none escapes: read only, at or above the stack
 //!    arguments, with one shape, a stack parameter; written, of one shape,
-//!    below the entry stack pointer, a local variable; else a
+//!    below the entry stack pointer, a local variable, as is one written
+//!    whole only and read in parts only as calls' stack arguments (pushed
+//!    as 8 bytes and passed as 4: the arguments are the variable's bits);
+//!    else a
 //!    `Frame(offset)` variable of its own. The slots reached are memory:
 //!    one `Frame` variable from the lowest address that may reach any byte
 //!    above it, spanning every accessed and address-taken byte above it
