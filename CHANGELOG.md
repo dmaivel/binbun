@@ -56,6 +56,7 @@ always read by later versions.
 - A call to a function of the program whose type summary does not reach it (in a cycle of calls, or past the summaries' limits) passes and takes the types the callee's own code gives its parameters and return value: `bind_variable("_", "", 0)` instead of `(int32_t *)bind_variable(0xedb47, 0xee82b, 0)`.
 - A load or store at a constant base plus an index its own definition bounds (a mask, a narrow zero extension, a shift) is an element of the named object or of a table of the unnamed data it reaches: `is_basic_table[((uint8_t)c >> 5) & 7]` instead of `*(uint32_t *)((((uint8_t)c >> 5) & 7) * 4L + 0x102e40)`, `g_1b88a0[x & 0x3f]` instead of `*(int32_t *)((x & 0x3f) * 4 + 0x1b88a0)`.
 - A local integer is signed or unsigned as more of its comparisons, divisions, shifts and extensions read it (and to agree with the locals it is compared with by `==` and `!=`), instead of as its strongest evidence says: `uint32_t v8 = a1->field_8; if (v8 > 6) … v8 * 4L` instead of `int32_t v8 = a1->field_8; if ((uint32_t)v8 > 6) … (uint32_t)v8 * 4L`.
+- A struct field read narrower than it is somewhere (`(int)p->len` loads the low half of a `long`) keeps its width, instead of becoming the narrower field and turning every other access into a cast; and two views of one struct where one reads a field narrower, or copies two fields at once, are one struct instead of two names. On bash built with debug information, pairs of pointers to one source struct under one name rise from 23% to 43%.
 
 ### Fixed
 

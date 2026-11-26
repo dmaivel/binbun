@@ -2342,7 +2342,8 @@ pub(crate) fn contribution(
         kept.set_element(layout.element);
         kept.set_allocated(layout.allocated);
         kept.unify.append(&mut layout.unify);
-        for (offset, field) in layout.fields {
+        let parts = layout.parts.into_values().flatten();
+        for (offset, field) in layout.fields.into_iter().chain(parts) {
             kept.add(offset, field);
         }
         for (offset, element) in layout.arrays {

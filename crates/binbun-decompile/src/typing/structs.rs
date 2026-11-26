@@ -194,6 +194,10 @@ pub struct Layout {
     /// by the array's first byte: where no field covers that byte, the
     /// bytes from it to the next field are that array ([`Structs::intern`]).
     pub arrays: BTreeMap<u64, Field>,
+    /// The narrower accesses at a field's offset that read part of it
+    /// ([`Self::add`]), each at its offset, by the field's offset: fields
+    /// again where it goes.
+    pub parts: BTreeMap<u64, Vec<(u64, Field)>>,
 }
 
 impl Layout {
@@ -287,6 +291,12 @@ impl Layout {
     /// stays (on a tie, the narrower: a wide access over two fields, as a
     /// copy of both reads them, says less than the fields; else those
     /// already there), a conflict where they differ;
+    /// but a narrower access at a field's offset that overlaps no other
+    /// field reads part of it, whatever their strengths (an access never
+    /// reaches past its field, so the wider shows the field's width:
+    /// `(int)p->len` loads the low half of a `long`): the wider stays,
+    /// the narrower kept as its part ([`Self::parts`]), a field again
+    /// where the wider goes;
     /// one past an array's element is a conflict, not kept. Where it is
     /// as wide as a field at its offset: pointers to two structs are one
     /// struct ([`Self::unify`], the field kept), and a pointer with a
@@ -362,6 +372,9 @@ impl Layout {
         if same {
             return;
         }
+        let Some(field) = self.take_part(&overlapping, offset, field) else {
+            return;
+        };
         let stronger = overlapping.iter().all(|at| {
             self.fields.get(at).is_none_or(|kept| {
                 field.strength > kept.strength
@@ -372,12 +385,55 @@ impl Layout {
             self.conflicts += 1;
         }
         if stronger {
+            let mut parts = Vec::new();
             for at in overlapping {
                 self.fields.remove(&at);
+                if let Some(lost) = self.parts.remove(&at) {
+                    parts.extend(lost);
+                }
             }
             self.fields.insert(offset, field);
+            for (at, part) in parts {
+                self.add(at, part);
+            }
         }
     }
+
+    /// Takes `field` (at `offset`, overlapping the fields at
+    /// `overlapping`) as a part of the one field it overlaps, or that
+    /// field as a part of it ([`part_of`], [`Self::parts`]); gives it
+    /// back where neither is.
+    fn take_part(&mut self, overlapping: &[u64], offset: u64, field: Field) -> Option<Field> {
+        let (&[at], Some(kept)) = (
+            overlapping,
+            overlapping.first().and_then(|at| self.fields.get(at)),
+        ) else {
+            return Some(field);
+        };
+        if part_of(kept, at, &field, offset) {
+            self.parts.entry(at).or_default().push((offset, field));
+            return None;
+        }
+        if part_of(&field, offset, kept, at)
+            && let Some(narrow) = self.fields.remove(&at)
+        {
+            let mut parts = self.parts.remove(&at).unwrap_or_default();
+            parts.push((at, narrow));
+            self.fields.insert(offset, field);
+            self.parts.insert(offset, parts);
+            return None;
+        }
+        Some(field)
+    }
+}
+
+/// Whether `narrow` (at byte `offset`) reads part of `wide` (at byte
+/// `at`): narrower, at its offset, and neither a float (read whole). Not
+/// a narrower access inside it elsewhere (a flags word tested a byte at
+/// a time): that byte stays a field of its own, read with no cast.
+fn part_of(wide: &Field, at: u64, narrow: &Field, offset: u64) -> bool {
+    let float = |field: &Field| matches!(field.ty, FieldType::Scalar(Type::Float(_)));
+    !float(wide) && !float(narrow) && wide.bits > narrow.bits && at == offset
 }
 
 /// What one function adds to the program's table of structs.
@@ -694,12 +750,14 @@ impl Structs {
         }
     }
 
-    /// Adds `layout`'s fields to struct `id`'s (by [`Layout::add`], its
-    /// pointers' structs as they are now), the pairs of structs that
-    /// meet at a field to `work`.
+    /// Adds `layout`'s fields and parts to struct `id`'s (by
+    /// [`Layout::add`], its pointers' structs as they are now), the pairs
+    /// of structs that meet at a field to `work`.
     fn absorb(&mut self, id: StructId, mut layout: Layout, work: &mut Vec<(StructId, StructId)>) {
+        let parts = core::mem::take(&mut layout.parts).into_values().flatten();
         let fields: Vec<(u64, Field)> = core::mem::take(&mut layout.fields)
             .into_iter()
+            .chain(parts)
             .map(|(offset, mut field)| {
                 if let FieldType::Struct(target) = field.ty {
                     field.ty = FieldType::Struct(self.find(target));
@@ -780,7 +838,7 @@ impl Structs {
             return;
         }
         let mut fields = self.layouts.remove(&lose).unwrap_or_default();
-        if !sized && let Some(kept) = self.layouts.get_mut(&keep) {
+        if let Some(kept) = self.layouts.get_mut(&keep) {
             fit(kept, &fields);
             fit(&mut fields, kept);
         }
@@ -1197,20 +1255,22 @@ fn plain(name: Option<&str>) -> Option<String> {
 /// Whether two layouts may be one struct's: they are one size (as C
 /// lays them out: a struct that is a prefix of another, a generic list
 /// node's link alone, is not the other, or every list would be one), and
-/// every field of one that overlaps a field of the other is at its
-/// offset and as wide (types may differ: the stronger stays).
+/// every field of one that overlaps a field of the other is one view of
+/// it ([`overlap`] as one type's: as wide at its offset, types may
+/// differ and the stronger stays; a part of it; or a copy holding it).
 fn compatible(a: &Layout, b: &Layout) -> bool {
     if a.natural_size() != b.natural_size() {
         return false;
     }
-    overlap(a, b, false)
+    overlap(a, b, true)
 }
 
 /// Whether every field of `b` that overlaps a field of `a` is at its
 /// offset and as wide; where `one` (the evidence says they are one type),
 /// also two scalars of different widths at one offset (one a part of the
-/// other: [`fit`]), or one of them untyped bits holding the other whole
-/// (a copy of it).
+/// other: [`fit`]; not a scalar at a pointer's, the mark of another
+/// type: a `char *` where another has an `int`), or one of them untyped
+/// bits holding the other whole (a copy of it).
 fn overlap(a: &Layout, b: &Layout, one: bool) -> bool {
     let scalar = |field: &Field| matches!(field.ty, FieldType::Scalar(_));
     b.fields.iter().all(|(&offset, field)| {
@@ -1868,6 +1928,9 @@ mod tests {
 
     #[test]
     fn at_a_tie_the_narrower_fields_stay() {
+        // Two 32-bit fields over a 64-bit access: a copy of both, the
+        // narrower fields stay whichever comes first (a 32-bit access at
+        // 8 first a part of the 64-bit one, a field again when it goes).
         let mut wide_first = Layout::default();
         wide_first.add(8, field(64, Type::Int(64), 4));
         wide_first.add(8, field(32, Type::Int(32), 4));
@@ -1892,6 +1955,34 @@ mod tests {
             field(64, Type::Float(binbun_semantics::ir::Format::Double), 5),
         );
         assert_eq!(layout.fields.get(&8).map(|field| field.bits), Some(64));
+    }
+
+    #[test]
+    fn a_narrower_read_at_a_fields_offset_is_part_of_it() {
+        // `(int)p->len` beside `p->len`, a byte read at a pointer's
+        // offset: the wider field, whichever comes first, no conflict.
+        let target = StructId {
+            function: 0x10,
+            k: 1,
+        };
+        for (wide, narrow) in [
+            (field(64, Type::Int(64), 3), field(32, Type::Int(32), 4)),
+            (link(target), field(8, Type::UInt(8), 4)),
+        ] {
+            for wide_first in [true, false] {
+                let mut layout = Layout::default();
+                let order = if wide_first {
+                    [wide.clone(), narrow.clone()]
+                } else {
+                    [narrow.clone(), wide.clone()]
+                };
+                for field in order {
+                    layout.add(16, field);
+                }
+                assert_eq!(layout.fields.get(&16), Some(&wide));
+                assert_eq!((layout.fields.len(), layout.conflicts), (1, 0));
+            }
+        }
     }
 
     #[test]
@@ -1930,10 +2021,13 @@ mod tests {
             structs
         };
         // Met otherwise (a family, a field), a prefix of another is not
-        // it, nor one whose field at 32 is of another width.
+        // it; one of its size is, its byte at 32 a part of the 32-bit
+        // field there and its 128 bits at 16 a copy of two fields.
         let mut sized = table();
         sized.unite_all(vec![(whole, prefix), (whole, copied)]);
-        assert_eq!(sized.len(), 3);
+        assert_eq!(sized.len(), 2);
+        assert_eq!(sized.find(copied), sized.find(whole));
+        assert_ne!(sized.find(prefix), sized.find(whole));
         // One type whatever the sizes: one struct, the copy's fields the
         // narrower ones, the byte at 32 a part of the 32-bit field there
         // (no conflict).
