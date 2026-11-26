@@ -267,6 +267,7 @@ impl Printer<'_> {
             loads,
             depth,
             address_of: None,
+            unsigned_literal: None,
         })
     }
 
@@ -455,6 +456,7 @@ impl Printer<'_> {
                 loads,
                 depth,
                 address_of: None,
+                unsigned_literal: None,
             };
         }
         Some(value)
@@ -480,6 +482,7 @@ impl Printer<'_> {
                 loads: false,
                 depth: 0,
                 address_of: None,
+                unsigned_literal: None,
             });
         }
         let value = self.int_view(value)?;

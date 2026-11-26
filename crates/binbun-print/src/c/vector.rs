@@ -80,6 +80,7 @@ fn vector_value(
         loads,
         depth,
         address_of: None,
+        unsigned_literal: None,
     }
 }
 
@@ -471,6 +472,7 @@ impl Printer<'_> {
             loads,
             depth,
             address_of: None,
+            unsigned_literal: None,
         }
     }
 

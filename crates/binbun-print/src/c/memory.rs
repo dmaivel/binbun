@@ -107,6 +107,7 @@ impl Printer<'_> {
             loads: matches!(kind, VarKind::Global(_) | VarKind::Frame(_)),
             depth: 0,
             address_of: None,
+            unsigned_literal: None,
         })
     }
 
@@ -140,6 +141,7 @@ impl Printer<'_> {
                 loads: false,
                 depth: 0,
                 address_of: None,
+                unsigned_literal: None,
             });
         }
         self.used.insert(id);
@@ -163,6 +165,7 @@ impl Printer<'_> {
             loads: false,
             depth: 0,
             address_of: Some(id),
+            unsigned_literal: None,
         })
     }
 
@@ -251,6 +254,7 @@ impl Printer<'_> {
             loads: false,
             depth: 0,
             address_of: None,
+            unsigned_literal: None,
         }))
     }
 
@@ -755,6 +759,7 @@ impl Printer<'_> {
             loads,
             depth,
             address_of: None,
+            unsigned_literal: None,
         })
     }
 
@@ -840,6 +845,7 @@ impl Printer<'_> {
             loads: true,
             depth,
             address_of: None,
+            unsigned_literal: None,
         }
     }
 
@@ -1004,6 +1010,7 @@ impl Printer<'_> {
             loads,
             depth,
             address_of: None,
+            unsigned_literal: None,
         })
     }
 
@@ -1096,6 +1103,7 @@ impl Printer<'_> {
             loads: false,
             depth: 0,
             address_of: None,
+            unsigned_literal: None,
         }
     }
 
@@ -1271,6 +1279,7 @@ impl Printer<'_> {
             loads,
             depth,
             address_of: None,
+            unsigned_literal: None,
         }
     }
 

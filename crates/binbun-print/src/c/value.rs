@@ -15,7 +15,7 @@ use binbun_semantics::ir::Format;
 
 use super::types::{CTy, VectorTy, common, container, native};
 use super::{PrintError, Printer, error, number, string_literal};
-use crate::document::{Doc, TokenKind};
+use crate::document::{Doc, Token, TokenKind};
 
 /// What a C value is, of the L2 value `x` of width `w` it stands for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,6 +74,19 @@ pub(super) struct Value {
     pub depth: u8,
     /// For `&v` (or an array `v` decayed): `v`.
     pub address_of: Option<VarId>,
+    /// For `x + k`, `k - x` or `x * k` computed in the signed type of
+    /// exactly the L2 width (32 or 64 bits), `k` a literal of a signed
+    /// type and not negative: where `k` is, to print it unsigned
+    /// ([`Printer::unsigned_literal`]).
+    pub unsigned_literal: Option<EndLiteral>,
+}
+
+/// A literal operand at one end of a value's tokens: the last (else the
+/// first), and its L2 constant.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct EndLiteral {
+    pub last: bool,
+    pub bits: Bits,
 }
 
 /// The values of a C integer value's range: `[0, 2^n)` or
@@ -266,6 +279,28 @@ fn first_token(docs: &[Doc]) -> Option<&str> {
     None
 }
 
+/// The first (`last`: the last) token of `docs`, inside its groups.
+fn end_token(docs: &mut [Doc], last: bool) -> Option<&mut Token> {
+    let doc = if last {
+        docs.last_mut()?
+    } else {
+        docs.first_mut()?
+    };
+    match doc {
+        Doc::Token(token) => Some(token),
+        Doc::Group(items) => end_token(items, last),
+        Doc::Space
+        | Doc::Line
+        | Doc::SoftLine
+        | Doc::HardLine
+        | Doc::BlankLine
+        | Doc::Nest(_)
+        | Doc::Outdent(_)
+        | Doc::Block { .. }
+        | Doc::AfterBlock => None,
+    }
+}
+
 /// Whether an operand with top operator `child` needs parentheses under
 /// `parent` (on its right: `right`), by precedence or because compilers
 /// warn that the precedence is easy to misread.
@@ -427,6 +462,7 @@ impl Printer<'_> {
             loads,
             depth,
             address_of: None,
+            unsigned_literal: None,
         }
     }
 
@@ -447,6 +483,7 @@ impl Printer<'_> {
             loads: false,
             depth: 0,
             address_of: None,
+            unsigned_literal: None,
         }
     }
 
@@ -490,6 +527,7 @@ impl Printer<'_> {
             loads: false,
             depth: 0,
             address_of: None,
+            unsigned_literal: None,
         }
     }
 
@@ -578,6 +616,7 @@ impl Printer<'_> {
             loads,
             depth,
             address_of: None,
+            unsigned_literal: None,
         }
     }
 
@@ -742,6 +781,7 @@ impl Printer<'_> {
             loads: false,
             depth: 0,
             address_of: None,
+            unsigned_literal: None,
         })
     }
 
@@ -765,6 +805,7 @@ impl Printer<'_> {
             loads,
             depth,
             address_of: None,
+            unsigned_literal: None,
         }
     }
 
@@ -773,6 +814,10 @@ impl Printer<'_> {
     /// a mask or `sext_n`.
     pub(super) fn coerce(&mut self, value: Value, need: Class) -> Result<Value, PrintError> {
         if value.is(need) {
+            return Ok(value);
+        }
+        let mut value = value;
+        if need == Class::Zero && self.unsigned_literal(&mut value) {
             return Ok(value);
         }
         let width = value.width;
@@ -838,6 +883,7 @@ impl Printer<'_> {
             loads: value.loads,
             depth,
             address_of: None,
+            unsigned_literal: None,
         })
     }
 
@@ -849,6 +895,10 @@ impl Printer<'_> {
         if value.ty == ty {
             return value;
         }
+        let mut value = value;
+        if !signed && bits == value.width && self.unsigned_literal(&mut value) {
+            return value;
+        }
         if let Some(constant) = value.constant {
             let class = if signed { Class::Sign } else { Class::Zero };
             if bits >= 32 {
@@ -856,6 +906,47 @@ impl Printer<'_> {
             }
         }
         self.cast(value, ty)
+    }
+
+    /// `value`, `x + k`, `k - x` or `x * k` in the signed type of its
+    /// width, made its zero value by printing the literal `k` unsigned
+    /// (`x - 14U`, not `(uint32_t)(x - 14)`), where it is such a value
+    /// ([`Value::unsigned_literal`]): C then converts `x` to the unsigned
+    /// type of the width and computes in it, modulo 2^width. Gives
+    /// whether it did.
+    pub(super) fn unsigned_literal(&mut self, value: &mut Value) -> bool {
+        let Some(end) = value.unsigned_literal else {
+            return false;
+        };
+        let width = value.width;
+        let signed = CTy::Int {
+            signed: true,
+            bits: width,
+        };
+        if value.ty != signed
+            || !matches!(width, 32 | 64)
+            || !matches!(value.op, Op::Additive | Op::Multiplicative)
+        {
+            return false;
+        }
+        let literal = self.literal(end.bits, Class::Zero, (false, width), false);
+        let [Doc::Token(spelled)] = literal.doc.as_slice() else {
+            return false;
+        };
+        let Some(token) = end_token(&mut value.doc, end.last) else {
+            return false;
+        };
+        if token.kind != TokenKind::Number {
+            return false;
+        }
+        token.text.clone_from(&spelled.text);
+        value.ty = CTy::Int {
+            signed: false,
+            bits: width,
+        };
+        value.class = Class::Zero;
+        value.unsigned_literal = None;
+        true
     }
 
     /// `value` (an integer of its width's class `need`) as exactly the
@@ -1027,6 +1118,7 @@ impl Printer<'_> {
                 loads: false,
                 depth: 0,
                 address_of: None,
+                unsigned_literal: None,
             };
             let keeps = other.is_in(common, need)
                 && probe.is_in(common, need)
@@ -1065,6 +1157,7 @@ impl Printer<'_> {
             loads: parts.iter().any(|part| part.loads),
             depth,
             address_of: None,
+            unsigned_literal: None,
         }
     }
 }

@@ -46,6 +46,7 @@ always read by later versions.
 - A call's stack arguments pushed as 8 bytes and passed as 4 are passed as their values (`f(…, 4, p, 4)`) instead of through `uint8_t var_98[8]` and `*(int32_t *)var_98`.
 - A choice by a constant condition is the arm it chooses: `rep stos`'s step prints `p = p + 1`, not `p = 0 ? p - 1 : p + 1`.
 - A stack slot the compiler reuses for values of different types (an `int` spilled there, a pointer later) is a local per value instead of one variable read through casts (`*(int32_t *)&frame_m10 = result;`); a spill and its reload around a call disappear.
+- A 32- or 64-bit sum or product with a literal that must be unsigned gets an unsigned literal instead of a cast: `v0 - 14U <= 1` instead of `(uint32_t)(v0 - 14) <= 1`.
 
 ### Fixed
 

@@ -713,6 +713,39 @@ fn odd(cases: &mut Cases) {
     );
 }
 
+/// Sums, differences and products of a literal whose unsigned value is
+/// needed (compared, divided, shifted right, zero-extended): at 32 and 64
+/// bits the literal printed unsigned, at 16 bits cast.
+fn unsigned_literals(cases: &mut Cases) {
+    for width in [16, 32, 64] {
+        let ty = Type::Int(width);
+        cases.add("ulit", &[ty.clone(), ty], Type::UInt(64), |b, p| {
+            let wide = |b: &mut Builder, value| {
+                if width_of(b, value) == 64 {
+                    value
+                } else {
+                    b.ext(false, value, 64)
+                }
+            };
+            let (x, fourteen, one) = (b.read(p[0]), b.c(width, 14), b.c(width, 1));
+            let less = b.bin(Binary::Sub, x, fourteen);
+            let below = b.bin(Binary::ULe, less, one);
+            let (y, three, two) = (b.read(p[1]), b.c(width, 3), b.c(width, 2));
+            let tripled = b.bin(Binary::Mul, y, three);
+            let shifted = b.bin(Binary::LShr, tripled, two);
+            let (five, x, seven) = (b.c(width, 5), b.read(p[0]), b.c(width, 7));
+            let from = b.bin(Binary::Sub, five, x);
+            let quotient = b.bin(Binary::UDiv, from, seven);
+            let sum = b.bin(Binary::Add, shifted, quotient);
+            let (y, nine) = (b.read(p[1]), b.c(width, 9));
+            let next = b.bin(Binary::Add, y, nine);
+            let (below, sum, next) = (wide(b, below), wide(b, sum), wide(b, next));
+            let total = b.bin(Binary::Add, below, sum);
+            b.bin(Binary::Xor, total, next)
+        });
+    }
+}
+
 /// An IEEE operation of one lane on `operands`, rounded as `rounding`
 /// (a 2-bit constant) says.
 fn float(
@@ -1563,6 +1596,7 @@ fn cases() -> Vec<Case> {
     }
     mixed(&mut cases);
     comparisons(&mut cases);
+    unsigned_literals(&mut cases);
     selects(&mut cases);
     odd(&mut cases);
     floats(&mut cases);

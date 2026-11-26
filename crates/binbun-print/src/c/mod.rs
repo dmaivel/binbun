@@ -22,6 +22,11 @@
 //!   values; signed ones need sign values. A value that is not is cast to
 //!   the `w`-bit type of that signedness (`(uint8_t)(a + b) < a`), or
 //!   masked or sign-extended by a helper at widths C lacks.
+//!   A `+`, `-` or `*` of a literal computed in the signed type of
+//!   exactly `w` bits (32 or 64: narrower operands are promoted to
+//!   `int`) is made a zero value by printing the literal unsigned
+//!   instead (`x - 14U <= 1`, not `(uint32_t)(x - 14) <= 1`): C then
+//!   computes in the unsigned type of `w` bits.
 //! - `==` and `!=` need nothing more where C compares at exactly `w` bits,
 //!   else two zero or two sign values (whichever costs fewer casts). No
 //!   comparison or `?:` mixes a signed operand C would convert to

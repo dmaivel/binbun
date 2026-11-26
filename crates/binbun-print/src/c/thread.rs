@@ -214,6 +214,7 @@ impl Printer<'_> {
             loads: false,
             depth,
             address_of: None,
+            unsigned_literal: None,
         }))
     }
 

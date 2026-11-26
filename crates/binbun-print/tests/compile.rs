@@ -369,6 +369,54 @@ fn byte_offsets_are_byte_pointer_sums_and_accesses_cast_the_pointer_itself() {
 }
 
 #[test]
+fn a_literal_printed_unsigned_gives_a_sum_its_unsigned_value() {
+    // `x - 14` compared unsigned, `y - 1` shifted right logically and
+    // `1 - x` zero-extended need their unsigned values: at 32 and 64 bits
+    // the literal printed unsigned makes C compute them in the unsigned
+    // type (`a1 - 14U`), with no cast; at 16 bits C computes in `int`,
+    // and the cast stays.
+    let mut b = Builder::new(0x92c0, "unsigned");
+    let (int16, int32, int64, word) = (b.int(16), b.int(32), b.int(64), b.uint(64));
+    b.f.returns = Some(word);
+    let (int, long, short) = (b.param(int32), b.param(int64), b.param(int16));
+    let (read, fourteen, one) = (b.read(int), b.c(32, 14), b.c(32, 1));
+    let less = b.bin(Binary::Sub, read, fourteen);
+    let below = b.bin(Binary::ULe, less, one);
+    let two = b.c(64, 2);
+    let early = b.ret(two);
+    let first = b.when(below, vec![early]);
+    let (read, fourteen, one) = (b.read(short), b.c(16, 14), b.c(16, 1));
+    let less = b.bin(Binary::Sub, read, fourteen);
+    let below = b.bin(Binary::ULe, less, one);
+    let three = b.c(64, 3);
+    let early = b.ret(three);
+    let second = b.when(below, vec![early]);
+    let (read, one, three) = (b.read(long), b.c(64, 1), b.c(64, 3));
+    let less = b.bin(Binary::Sub, read, one);
+    let shifted = b.bin(Binary::LShr, less, three);
+    let (one, read) = (b.c(32, 1), b.read(int));
+    let from = b.bin(Binary::Sub, one, read);
+    let wide = b.ext(false, from, 64);
+    let total = b.bin(Binary::Add, shifted, wide);
+    let ret = b.ret(total);
+    let f = b.done(vec![first, second, ret]);
+    let (text, printed) = print_with(&f, &Style::kr(), &symbols);
+    assert!(text.contains("if (a1 - 14U <= 1)"), "{text}");
+    assert!(text.contains("if ((uint16_t)(a3 - 14) <= 1)"), "{text}");
+    assert!(text.contains("(a2 - 1UL) >> 3"), "{text}");
+    assert!(text.contains("1U - a1"), "{text}");
+    assert_eq!(printed.casts, 1, "{text}");
+    let scratch = Scratch::new("unsigned");
+    scratch.write("out.c", &text);
+    for compiler in compilers() {
+        let stderr = scratch
+            .compile(compiler, &["-c", "-o", "out.o"], &["out.c"])
+            .unwrap_or_else(|e| panic!("{compiler} failed on\n{text}\n{e}"));
+        assert_eq!(warnings(&stderr), 0, "{compiler}:\n{text}\n{stderr}");
+    }
+}
+
+#[test]
 fn a_pointer_selected_against_zero_keeps_its_type() {
     // `c ? p : 0` and `c ? 0 : p`, of a data pointer and of a function
     // pointer: C's null pointer constant needs no cast, and the select is

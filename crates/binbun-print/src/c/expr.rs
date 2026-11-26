@@ -14,7 +14,9 @@ use binbun_ssa::ir::Unknown;
 use super::chars::Spelling;
 use super::enums::Context;
 use super::types::{CTy, common, container, native};
-use super::value::{Class, Op, Range, Value, constant_value, int_of, parenthesized, promote};
+use super::value::{
+    Class, EndLiteral, IntTy, Op, Range, Value, constant_value, int_of, parenthesized, promote,
+};
 use super::{PrintError, Printer, error};
 use crate::document::Doc;
 
@@ -650,6 +652,7 @@ impl Printer<'_> {
             loads: true,
             depth,
             address_of: None,
+            unsigned_literal: None,
             ..lhs
         })
     }
@@ -1041,10 +1044,33 @@ impl Printer<'_> {
             | Op::Postfix => Class::Low,
         };
         let loads = a.loads || b.loads;
+        let unsigned_literal = Self::end_literal(kind, &a, &b, ty, width);
         let (doc, depth) = self.binary_doc(a, text, kind, b);
         let mut value = Self::built(doc, kind, ty, class, width, &[], depth);
         value.loads = loads;
+        value.unsigned_literal = unsigned_literal;
         Ok(value)
+    }
+
+    /// For `a op b` (`+`, `-` or `*`) computed in `ty`: its literal
+    /// operand, if it is one that printed unsigned makes C compute in the
+    /// unsigned type of the width ([`Value::unsigned_literal`]). The
+    /// integer promotions make that `int` below 32 bits.
+    fn end_literal(kind: Op, a: &Value, b: &Value, ty: IntTy, width: u16) -> Option<EndLiteral> {
+        if !matches!(kind, Op::Additive | Op::Multiplicative)
+            || ty != (true, width)
+            || !matches!(width, 32 | 64)
+        {
+            return None;
+        }
+        [(b, true), (a, false)]
+            .into_iter()
+            .find_map(|(operand, last)| {
+                let bits = operand.constant?;
+                let signed = int_of(operand.ty).is_some_and(|(signed, _)| signed);
+                (signed && operand.class == Class::Zero && operand.op == Op::Postfix)
+                    .then_some(EndLiteral { last, bits })
+            })
     }
 
     fn divide(&mut self, op: Binary, a: Value, b: Value, width: u16) -> Result<Value, PrintError> {
@@ -1591,6 +1617,7 @@ impl Printer<'_> {
             loads,
             depth: depth.saturating_add(1),
             address_of: None,
+            unsigned_literal: None,
         })
     }
 
