@@ -17,6 +17,7 @@
 
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use binbun_ast::ir::{Function, Node, StmtId, VarId};
@@ -57,6 +58,9 @@ pub(super) struct Two {
 enum Entry {
     One(One),
     Two(Box<Two>),
+    /// A cast the printer writes itself (to a pointer, an integer view, a
+    /// pun): at the node being printed, to the type spelled.
+    Cast(Option<Node>, String),
 }
 
 impl Entry {
@@ -74,6 +78,8 @@ impl Entry {
                 .iter()
                 .filter(|(_, conversion)| conversion.shows())
                 .count(),
+            // Counted as a cast ([`Cost::casts`]).
+            Self::Cast(..) => 0,
         }
     }
 }
@@ -237,6 +243,19 @@ impl Ledger {
         }
     }
 
+    /// A cast the printer writes itself at `node`, to the type `spelled`:
+    /// noted, or checked against the plan.
+    pub(super) fn note_cast(&mut self, node: Option<Node>, spelled: &[Doc]) {
+        let mut text = String::new();
+        spelling(spelled, &mut text);
+        match self.mode {
+            Mode::Record => self.push(Entry::Cast(node, text)),
+            Mode::Follow => self.check(
+                |planned| matches!(planned, Entry::Cast(at, p) if *at == node && *p == text),
+            ),
+        }
+    }
+
     /// `entry` noted in the statement being printed.
     fn push(&mut self, entry: Entry) {
         let id = self.open.last().copied();
@@ -311,6 +330,28 @@ fn casts(docs: &[Doc]) -> usize {
         .sum()
 }
 
+/// The text of the tokens of `docs`, appended to `out`, a space after each.
+fn spelling(docs: &[Doc], out: &mut String) {
+    for doc in docs {
+        match doc {
+            Doc::Token(token) => {
+                out.push_str(&token.text);
+                out.push(' ');
+            }
+            Doc::Group(items)
+            | Doc::Nest(items)
+            | Doc::Outdent(items)
+            | Doc::Block { body: items, .. } => spelling(items, out),
+            Doc::Space
+            | Doc::Line
+            | Doc::SoftLine
+            | Doc::HardLine
+            | Doc::BlankLine
+            | Doc::AfterBlock => {}
+        }
+    }
+}
+
 /// A function's conversion plan as it is made: the body printed once,
 /// its tokens discarded; then statements planned again under other types
 /// for variables.
@@ -367,13 +408,21 @@ impl<'a> Planner<'a> {
         self.printer.f
     }
 
-    /// Whether variable `var` prints now as an integer of type `ty` would:
-    /// the same C integer type.
+    /// Whether variable `var` prints now as one of type `ty` would: the
+    /// same C type, spelled the same.
     pub(super) fn spelled_as(&mut self, var: VarId, ty: &Type) -> bool {
         let printer = &mut self.printer;
         let id = printer.types.intern(ty.clone());
-        let now = printer.var_ty(var).and_then(|now| printer.int_rep(now));
-        now.is_some() && now == printer.int_rep(id)
+        let Some(now) = printer.var_ty(var) else {
+            return false;
+        };
+        if now == id {
+            return true;
+        }
+        let (Ok(now), Ok(ty)) = (printer.cty(now), printer.cty(id)) else {
+            return false;
+        };
+        matches!((printer.key(now), printer.key(ty)), (Ok(a), Ok(b)) if a == b)
     }
 
     /// Variable `var` printed as of type `ty` from now on (`None`: its L2

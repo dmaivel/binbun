@@ -325,7 +325,8 @@ fn byte_offsets_are_byte_pointer_sums_and_accesses_cast_the_pointer_itself() {
     // bytes, not on `p`'s integer value: on the `void *` `p` itself (GNU
     // C's arithmetic), on a byte pointer for the `int32_t *` `q`; `n + q`
     // puts the pointer first; a load at `p` itself casts `p` to the type
-    // read, with no byte pointer between.
+    // read, with no byte pointer between. The local `v3` it is copied to
+    // points to what is loaded through it (its pointee is free): `*v3`.
     let mut b = Builder::new(0x9280, "bytes");
     let (word, int32) = (b.uint(64), b.int(32));
     let void = b.ty(Type::Pointer(None));
@@ -357,8 +358,9 @@ fn byte_offsets_are_byte_pointer_sums_and_accesses_cast_the_pointer_itself() {
         "{text}"
     );
     assert!(text.contains("return *(binbun_u64_u *)a1;"), "{text}");
-    assert!(text.contains("return *(binbun_u64_u *)v3;"), "{text}");
-    assert_eq!(printed.casts, 4, "{text}");
+    assert!(text.contains("binbun_u64_u *v3;"), "{text}");
+    assert!(text.contains("return *v3;"), "{text}");
+    assert_eq!(printed.casts, 3, "{text}");
     let scratch = Scratch::new("bytes");
     scratch.write("out.c", &text);
     for compiler in compilers() {

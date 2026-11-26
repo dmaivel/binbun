@@ -626,10 +626,8 @@ impl Printer<'_> {
     fn assign_value(&mut self, var: VarId, operands: Vec<Value>) -> Result<Value, PrintError> {
         let [value] = take(operands)?;
         let ty = self
-            .f
-            .var(var)
-            .ok_or_else(|| error(Some(Node::Var(var)), "no such variable"))?
-            .ty;
+            .var_ty(var)
+            .ok_or_else(|| error(Some(Node::Var(var)), "no such variable"))?;
         let storing = core::mem::replace(&mut self.storing, true);
         let lhs = self.var_value(var);
         self.storing = storing;

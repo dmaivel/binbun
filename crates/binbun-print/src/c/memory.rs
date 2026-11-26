@@ -20,7 +20,7 @@ use binbun_semantics::ir::Binary;
 use super::convert::{Class, constant_value};
 use super::expr::Shape;
 use super::types::{CTy, FieldName, field_names};
-use super::value::{Op, Value, cast_parentheses};
+use super::value::{Op, Value};
 use super::{PrintError, Printer, error};
 use crate::document::{Doc, TokenKind};
 
@@ -1408,7 +1408,7 @@ impl Printer<'_> {
             Some(_) | None => self.expr(id)?,
         };
         let void = vec![Doc::token(TokenKind::BuiltinType, "void", self.node)];
-        let mut doc = cast_parentheses(void, self.node);
+        let mut doc = self.cast_of(void);
         doc.extend(self.operand(value, Op::Unary, false));
         Ok(doc)
     }

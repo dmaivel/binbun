@@ -770,6 +770,61 @@ fn unsigned_literals(cases: &mut Cases) {
     }
 }
 
+/// A `void *` local and a byte pointer local loaded through at offsets
+/// that are and are not multiples of what they load (`int32_t` at 4 and
+/// 8, at 6 and 3; `uint16_t` at 2, a byte at 5), one at an index, and the
+/// second stepped from the first: the bytes each reads whatever the
+/// pointers are printed as pointing to.
+fn pointees(cases: &mut Cases) {
+    let types = [Type::Pointer(None), Type::UInt(64)];
+    cases.add_body("pointees", &types, Type::UInt(64), |b, p, _| {
+        let void = b.ty(Type::Pointer(None));
+        let byte = b.uint(8);
+        let bytes = b.ty(Type::Pointer(Some(byte)));
+        let (int32, uint16) = (b.int(32), b.uint(16));
+        let (v, w) = (b.local(void), b.local(bytes));
+        let base = b.read(p[0]);
+        let mut body = vec![b.assign(v, base)];
+        let read = b.read(v);
+        let one = b.c(64, 1);
+        let stepped = b.bin(Binary::Add, read, one);
+        body.push(b.assign(w, stepped));
+        let mut terms = Vec::new();
+        for (var, offset, ty) in [
+            (v, 4, int32),
+            (v, 8, int32),
+            (v, 6, int32),
+            (v, 3, int32),
+            (v, 2, uint16),
+            (v, 5, byte),
+            (w, 3, int32),
+            (w, 7, int32),
+        ] {
+            let base = b.read(var);
+            let value = b.load_at(base, offset, ty);
+            terms.push(b.ext(ty == int32, value, 64));
+        }
+        // `v` at an index of words: `v[i & 7]`.
+        let (base, i, seven, four) = (b.read(v), b.read(p[1]), b.c(64, 7), b.c(64, 4));
+        let index = b.bin(Binary::And, i, seven);
+        let scaled = b.bin(Binary::Mul, index, four);
+        let at = b.bin(Binary::Add, base, scaled);
+        let word = b.e(Expr::Load {
+            address: at,
+            ty: int32,
+        });
+        terms.push(b.ext(true, word, 64));
+        let mut total = terms[0];
+        for (k, &term) in terms.iter().enumerate().skip(1) {
+            let rotated = b.c(64, k as u64 * 5);
+            let term = b.bin(Binary::Ror, term, rotated);
+            total = b.bin(Binary::Xor, total, term);
+        }
+        body.push(b.ret(total));
+        body
+    });
+}
+
 /// Locals of each signedness (`uint32_t`, `int32_t`, untyped bits) read
 /// by operations that need the other (signed and unsigned comparisons,
 /// divisions, shifts, extensions, an equality across them, an unsigned
@@ -1737,6 +1792,7 @@ fn cases() -> Vec<Case> {
     comparisons(&mut cases);
     unsigned_literals(&mut cases);
     signs(&mut cases);
+    pointees(&mut cases);
     parts(&mut cases);
     selects(&mut cases);
     odd(&mut cases);

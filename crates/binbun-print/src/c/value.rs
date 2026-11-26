@@ -472,6 +472,14 @@ impl Printer<'_> {
     /// `(T)` for C type `ty`.
     pub(super) fn cast_tokens(&mut self, ty: CTy) -> Vec<Doc> {
         let spelled = self.declare_c(ty, Vec::new()).unwrap_or_default();
+        self.cast_of(spelled)
+    }
+
+    /// A cast's parentheses around the type name `spelled`
+    /// ([`cast_parentheses`]), the cast noted in the plan as one to that
+    /// type ([`super::plan::Ledger::note_cast`]).
+    pub(super) fn cast_of(&mut self, spelled: Vec<Doc>) -> Vec<Doc> {
+        self.ledger.note_cast(self.node, &spelled);
         cast_parentheses(spelled, self.node)
     }
 
@@ -507,7 +515,7 @@ impl Printer<'_> {
         volatile: bool,
     ) -> Result<Vec<Doc>, PrintError> {
         let spelled = self.pointer_to(pointee, volatile)?;
-        Ok(cast_parentheses(spelled, self.node))
+        Ok(self.cast_of(spelled))
     }
 
     /// `(T *)` for an access of `pointee` at an address the program
@@ -538,7 +546,7 @@ impl Printer<'_> {
             Doc::Space,
             Doc::op("*", None),
         ]);
-        Ok(cast_parentheses(spelled, self.node))
+        Ok(self.cast_of(spelled))
     }
 
     /// `value` as an integer: pointers through `uintptr_t`'s width,

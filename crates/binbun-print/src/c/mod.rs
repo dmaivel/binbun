@@ -82,7 +82,8 @@
 //! ([`Planner`]: the printer's own walk, noting each conversion C's rules
 //! decide and each statement's casts), so that a choice of presentation
 //! can be costed in casts first (each local's signedness, where L2 leaves
-//! it free: [`Planner::choose_signs`]); printing follows the plan
+//! it free: [`Planner::choose_signs`]; what a local byte or `void` pointer
+//! points to: [`Planner::choose_pointees`]); printing follows the plan
 //! ([`planned`]),
 //! still deciding each conversion by the rules, and counts any the plan
 //! lacks ([`Counts::unplanned`]).
@@ -143,13 +144,13 @@
 //! print as `0`, counted.
 
 mod chars;
+mod choose;
 mod convert;
 mod enums;
 mod expr;
 mod float;
 mod memory;
 mod plan;
-mod signs;
 mod stmt;
 mod thread;
 mod types;
@@ -381,7 +382,9 @@ impl Image for Unnamed {
 /// `image`; its instructions without semantics as `opaque` says. Its
 /// conversions are planned first ([`Planner`]), each local's signedness
 /// chosen on the plan where L2 leaves it free
-/// ([`Planner::choose_signs`]), then printed as planned ([`planned`]).
+/// ([`Planner::choose_signs`]) and each local byte or `void` pointer's
+/// pointee ([`Planner::choose_pointees`]), then printed as planned
+/// ([`planned`]).
 ///
 /// # Errors
 ///
@@ -397,6 +400,7 @@ pub fn function(
     let function = shown(function, opaque);
     let mut planner = Planner::new(&function, declarations, style, image, opaque)?;
     planner.choose_signs()?;
+    planner.choose_pointees()?;
     planned(
         &function,
         declarations,
