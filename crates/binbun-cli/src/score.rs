@@ -1619,7 +1619,15 @@ impl Report {
         let mut all = self.parameter_scores.clone();
         all.merge(&self.return_scores);
         all.merge(&self.stack_scores);
-        all.merge(&self.register_scores);
+        // A register local is mapped by the addresses where its register
+        // holds an L2 local, too loosely to say which struct a pointer is
+        // (a register reused for another local's value): its types count,
+        // not its struct identities.
+        let mut registers = self.register_scores.clone();
+        registers.identities.clear();
+        registers.struct_pointers = 0;
+        registers.struct_identity = 0;
+        all.merge(&registers);
         all
     }
 }
