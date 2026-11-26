@@ -109,6 +109,7 @@ fn bare_comma(docs: &[Doc]) -> bool {
                 | Doc::SoftLine
                 | Doc::HardLine
                 | Doc::BlankLine
+                | Doc::Gap
                 | Doc::AfterBlock => {}
             }
         }

@@ -2133,8 +2133,8 @@ impl Workspace {
         {
             session.relist(options);
         }
-        // The C options (`c.types`, `c.declarations`, `c.names`): the C
-        // panes print again at once.
+        // The C options (`c.types`, `c.declarations`, `c.names`,
+        // `c.spacing`): the C panes print again at once.
         if let Some(session) = &self.session {
             session.set_style(self.settings.c_style(session.style()));
         }

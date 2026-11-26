@@ -16,7 +16,7 @@ use core::ops::Range;
 use binbun_ast::ir::Node;
 
 use crate::document::{BlockKind, Braces, Doc, Document, Token, TokenKind};
-use crate::style::{BraceStyle, Indent, SingleStatementBraces, Style};
+use crate::style::{BraceStyle, Indent, SingleStatementBraces, Spacing, Style};
 
 /// Where a token was rendered.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -162,6 +162,8 @@ impl<'a> Engine<'a> {
                 self.newline(indent);
                 self.newline(indent);
             }
+            // A block's gaps are its body's lines ([`Self::block`]).
+            Doc::Gap => {}
             Doc::Group(items) => {
                 let flat = mode == Mode::Flat || self.fits(doc, stack);
                 let mode = if flat { Mode::Flat } else { Mode::Break };
@@ -245,6 +247,15 @@ impl<'a> Engine<'a> {
             node,
         });
         for item in body.iter().rev() {
+            // A gap is an empty line under paragraph spacing, else nothing.
+            if matches!(item, Doc::Gap) {
+                if self.style.spacing == Spacing::Paragraphs {
+                    stack.push(Cmd::Newline {
+                        indent: column + width,
+                    });
+                }
+                continue;
+            }
             stack.push(Cmd::Doc {
                 indent: column + width,
                 mode: Mode::Break,
@@ -286,7 +297,7 @@ impl<'a> Engine<'a> {
                     Mode::Flat => 0,
                     Mode::Break => return true,
                 },
-                Doc::HardLine | Doc::BlankLine | Doc::Block { .. } | Doc::AfterBlock => {
+                Doc::HardLine | Doc::BlankLine | Doc::Gap | Doc::Block { .. } | Doc::AfterBlock => {
                     return !inside;
                 }
                 Doc::Group(items) | Doc::Nest(items) | Doc::Outdent(items) => {

@@ -123,6 +123,7 @@ fn first_token(docs: &[Doc]) -> Option<&str> {
             | Doc::SoftLine
             | Doc::HardLine
             | Doc::BlankLine
+            | Doc::Gap
             | Doc::Block { .. }
             | Doc::AfterBlock => {}
         }
@@ -145,6 +146,7 @@ fn end_token(docs: &mut [Doc], last: bool) -> Option<&mut Token> {
         | Doc::SoftLine
         | Doc::HardLine
         | Doc::BlankLine
+        | Doc::Gap
         | Doc::Nest(_)
         | Doc::Outdent(_)
         | Doc::Block { .. }
@@ -165,6 +167,7 @@ fn end_number(docs: &[Doc], last: bool) -> bool {
             | Doc::SoftLine
             | Doc::HardLine
             | Doc::BlankLine
+            | Doc::Gap
             | Doc::Nest(_)
             | Doc::Outdent(_)
             | Doc::Block { .. }

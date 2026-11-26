@@ -159,6 +159,11 @@ pub enum Doc {
     HardLine,
     /// An empty line (between top-level declarations).
     BlankLine,
+    /// Where a block's statements part into paragraphs (an item of a
+    /// [`Doc::Block`]'s body, between two others): an empty line under
+    /// [`Spacing::Paragraphs`](crate::style::Spacing::Paragraphs), else
+    /// nothing.
+    Gap,
     /// Laid out on one line if it fits, else with its lines broken.
     Group(Vec<Self>),
     /// Lines broken inside are indented one more level.
@@ -268,6 +273,7 @@ impl Doc {
             | Self::SoftLine
             | Self::HardLine
             | Self::BlankLine
+            | Self::Gap
             | Self::AfterBlock => {}
         }
     }
@@ -309,6 +315,7 @@ fn collect<'a>(doc: &'a Doc, out: &mut Vec<&'a Token>) {
         | Doc::SoftLine
         | Doc::HardLine
         | Doc::BlankLine
+        | Doc::Gap
         | Doc::AfterBlock => {}
     }
 }

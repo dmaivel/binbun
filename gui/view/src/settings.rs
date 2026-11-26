@@ -15,7 +15,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use binbun_print::style::{IntSpelling, Naming, Placement, Style};
+use binbun_print::style::{IntSpelling, Naming, Placement, Spacing, Style};
 use binbun_session::signatures::Options as SignatureOptions;
 use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 
@@ -303,6 +303,24 @@ fn naming_from_name(name: &str) -> Option<Naming> {
         _ => None,
     }
 }
+
+/// `c.spacing`' name of `spacing`.
+fn spacing_name(spacing: Spacing) -> &'static str {
+    match spacing {
+        Spacing::Paragraphs => "paragraphs",
+        Spacing::Compact => "compact",
+    }
+}
+
+/// The spacing `c.spacing` names `name`.
+fn spacing_from_name(name: &str) -> Option<Spacing> {
+    match name {
+        "paragraphs" => Some(Spacing::Paragraphs),
+        "compact" => Some(Spacing::Compact),
+        _ => None,
+    }
+}
+
 /// Whether debug information is fetched from symbol servers: a request
 /// tells the server which binary is open.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -494,6 +512,9 @@ pub struct Settings {
     /// How the C names variables with no name of their own (`c.names`,
     /// default numbered: `a1`, `v7`; registers: `arg1`, `rax`, `var_58`).
     pub names: Naming,
+    /// Whether empty lines part a block's statements (`c.spacing`,
+    /// default paragraphs; compact: none).
+    pub spacing: Spacing,
     /// Whether the shown function is verified once the cursor rests
     /// (`c.auto_verify`, default true).
     pub auto_verify: bool,
@@ -566,6 +587,7 @@ impl Default for Settings {
             c_types: CTypes::Fixed,
             declarations: Placement::Scoped,
             names: Naming::Numbered,
+            spacing: Spacing::Paragraphs,
             auto_verify: true,
             islands: false,
             drop: Dropped::Replace,
@@ -646,6 +668,7 @@ const C_VIEWS: &[&str] = &["reading", "exact"];
 const C_TYPES: &[&str] = &["fixed", "plain"];
 const DECLARATIONS: &[&str] = &["scoped", "top"];
 const NAMES: &[&str] = &["numbered", "registers"];
+const SPACINGS: &[&str] = &["paragraphs", "compact"];
 const LISTING_VIEWS: &[&str] = &["last", "text", "graph"];
 const DROPS: &[&str] = &["replace", "new window"];
 const FEATURE_MAPS: &[&str] = &["top", "right", "off"];
@@ -885,6 +908,13 @@ pub const SETTINGS: &[Info] = &[
         kind: Kind::Choice(NAMES),
     },
     Info {
+        key: "c.spacing",
+        group: "C",
+        name: "Spacing",
+        tooltip: "Whether empty lines part a block's statements: paragraphs (after declarations, after an if, a loop or a switch that another statement follows, and before a label) or compact (none).",
+        kind: Kind::Choice(SPACINGS),
+    },
+    Info {
         key: "c.auto_verify",
         group: "C",
         name: "Verify automatically",
@@ -995,6 +1025,7 @@ enum Slot<'a> {
     CTypes(&'a mut CTypes),
     Placement(&'a mut Placement),
     Naming(&'a mut Naming),
+    Spacing(&'a mut Spacing),
     ListingView(&'a mut ListingView),
     Download(&'a mut SymbolDownload),
     Updates(&'a mut UpdateCheck),
@@ -1034,6 +1065,7 @@ impl Settings {
             "c.types" => name(self.c_types.name()),
             "c.declarations" => name(placement_name(self.declarations)),
             "c.names" => name(naming_name(self.names)),
+            "c.spacing" => name(spacing_name(self.spacing)),
             "c.auto_verify" => Setting::Bool(self.auto_verify),
             "scrolling.smooth" => Setting::Bool(self.smooth_scroll),
             "scrolling.smooth_ms" => whole(self.smooth_scroll_ms),
@@ -1091,6 +1123,7 @@ impl Settings {
             Slot::CTypes(field) => *field = choose(info, value, CTypes::from_name)?,
             Slot::Placement(field) => *field = choose(info, value, placement_from_name)?,
             Slot::Naming(field) => *field = choose(info, value, naming_from_name)?,
+            Slot::Spacing(field) => *field = choose(info, value, spacing_from_name)?,
             Slot::ListingView(field) => *field = choose(info, value, ListingView::from_name)?,
             Slot::Download(field) => *field = choose(info, value, SymbolDownload::from_name)?,
             Slot::Updates(field) => *field = choose(info, value, UpdateCheck::from_name)?,
@@ -1127,6 +1160,7 @@ impl Settings {
             "c.types" => Slot::CTypes(&mut self.c_types),
             "c.declarations" => Slot::Placement(&mut self.declarations),
             "c.names" => Slot::Naming(&mut self.names),
+            "c.spacing" => Slot::Spacing(&mut self.spacing),
             "c.auto_verify" => Slot::Bool(&mut self.auto_verify),
             "scrolling.smooth" => Slot::Bool(&mut self.smooth_scroll),
             "scrolling.smooth_ms" => Slot::Whole(&mut self.smooth_scroll_ms),
@@ -1152,8 +1186,8 @@ impl Settings {
     }
 
     /// `style` with the C options these settings set (`c.types`,
-    /// `c.declarations`, `c.names`): what a session's C is laid out in
-    /// ([`crate::session::Session::set_style`]).
+    /// `c.declarations`, `c.names`, `c.spacing`): what a session's C is
+    /// laid out in ([`crate::session::Session::set_style`]).
     pub fn c_style(&self, style: Style) -> Style {
         style
             .with_int_spelling(match self.c_types {
@@ -1162,6 +1196,7 @@ impl Settings {
             })
             .with_declarations(self.declarations)
             .with_naming(self.names)
+            .with_spacing(self.spacing)
     }
 }
 

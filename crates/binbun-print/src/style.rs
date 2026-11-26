@@ -1,8 +1,9 @@
 //! Layout and presentation options.
 //!
 //! - **Layout** options change only whitespace and line breaks: the
-//!   indentation ([`Indent`], width, tab width), the [`BraceStyle`] and the
-//!   column limit. Rendering one document under any two layouts and
+//!   indentation ([`Indent`], width, tab width), the [`BraceStyle`], the
+//!   column limit and the empty lines between a block's statements
+//!   ([`Spacing`]). Rendering one document under any two layouts and
 //!   dropping the whitespace gives the same text (tested).
 //! - **Presentation** options change tokens but never meaning: how
 //!   integer types are spelled ([`IntSpelling`]), from what magnitude
@@ -52,6 +53,21 @@ pub enum SingleStatementBraces {
     /// Braces only where needed: a body of one simple statement (not a
     /// compound statement, nor a `do` loop's) has none.
     WhenNeeded,
+}
+
+/// Whether empty lines part a block's statements into paragraphs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Spacing {
+    /// An empty line after a run of declarations, after a compound
+    /// statement (`if`, a loop, `switch`) that another statement follows,
+    /// and before a label (not right after another): where the code's
+    /// structure parts it, as the kernel's `checkpatch` asks after
+    /// declarations. Every preset's.
+    #[default]
+    Paragraphs,
+    /// No empty line between a block's statements (only after the
+    /// locals declared at the top of a function).
+    Compact,
 }
 
 /// How integer types are spelled.
@@ -114,6 +130,8 @@ pub struct Style {
     pub braces: BraceStyle,
     /// The column a line should not pass (where breaks allow).
     pub column_limit: u16,
+    /// Whether empty lines part a block's statements.
+    pub spacing: Spacing,
     /// Whether single simple statements keep their braces (presentation).
     pub single_statement_braces: SingleStatementBraces,
     /// How integer types are spelled (presentation).
@@ -144,6 +162,7 @@ impl Style {
             tab_width: 8,
             braces: BraceStyle::KernighanRitchie,
             column_limit: 80,
+            spacing: Spacing::Paragraphs,
             single_statement_braces: SingleStatementBraces::WhenNeeded,
             int_spelling: IntSpelling::Fixed,
             declarations: Placement::Scoped,
@@ -160,6 +179,7 @@ impl Style {
             tab_width: 8,
             braces: BraceStyle::Attach,
             column_limit: 80,
+            spacing: Spacing::Paragraphs,
             single_statement_braces: SingleStatementBraces::WhenNeeded,
             int_spelling: IntSpelling::Fixed,
             declarations: Placement::Scoped,
@@ -177,6 +197,7 @@ impl Style {
             tab_width: 8,
             braces: BraceStyle::Linux,
             column_limit: 80,
+            spacing: Spacing::Paragraphs,
             single_statement_braces: SingleStatementBraces::WhenNeeded,
             int_spelling: IntSpelling::Fixed,
             declarations: Placement::Scoped,
@@ -193,6 +214,7 @@ impl Style {
             tab_width: 8,
             braces: BraceStyle::Allman,
             column_limit: 100,
+            spacing: Spacing::Paragraphs,
             single_statement_braces: SingleStatementBraces::Always,
             int_spelling: IntSpelling::Fixed,
             declarations: Placement::Scoped,
@@ -244,6 +266,13 @@ impl Style {
     #[must_use]
     pub const fn with_column_limit(mut self, limit: u16) -> Self {
         self.column_limit = limit;
+        self
+    }
+
+    /// With a block's statements parted by empty lines as `spacing` says.
+    #[must_use]
+    pub const fn with_spacing(mut self, spacing: Spacing) -> Self {
+        self.spacing = spacing;
         self
     }
 

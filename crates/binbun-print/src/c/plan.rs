@@ -325,6 +325,7 @@ fn casts(docs: &[Doc]) -> usize {
             | Doc::SoftLine
             | Doc::HardLine
             | Doc::BlankLine
+            | Doc::Gap
             | Doc::AfterBlock => 0,
         })
         .sum()
@@ -347,6 +348,7 @@ fn spelling(docs: &[Doc], out: &mut String) {
             | Doc::SoftLine
             | Doc::HardLine
             | Doc::BlankLine
+            | Doc::Gap
             | Doc::AfterBlock => {}
         }
     }

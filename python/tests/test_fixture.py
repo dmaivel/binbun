@@ -357,3 +357,22 @@ def test_braces_set_the_next_documents_layout(fixture_path) -> None:
             db.set_style(braces="nope")
         db.set_style(braces="kr")
         assert db.decompile(loop_sum).text == kr
+
+
+def test_spacing_parts_statements_or_not(fixture_path) -> None:
+    def body(text: str) -> str:
+        return text[text.index("\n{\n") :]
+
+    with binbun.open(fixture_path, project=False, debug="none") as db:
+        loop_sum = by_name(db, "loop_sum")
+        paragraphs = db.decompile(loop_sum).text
+        db.set_style(spacing="compact")
+        compact = db.decompile(loop_sum).text
+        # The same tokens; empty lines only between paragraphs.
+        assert "".join(compact.split()) == "".join(paragraphs.split())
+        assert body(paragraphs).count("\n\n") > body(compact).count("\n\n"), paragraphs
+        # A preset changes the layout but keeps the spacing set.
+        db.set_style(braces="llvm")
+        assert db.decompile(loop_sum).text.count("\n\n") == compact.count("\n\n")
+        with pytest.raises(ValueError):
+            db.set_style(spacing="airy")

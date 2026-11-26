@@ -706,6 +706,7 @@ fn segments(document: &Document) -> Vec<Vec<&Token>> {
             | Doc::SoftLine
             | Doc::HardLine
             | Doc::BlankLine
+            | Doc::Gap
             | Doc::AfterBlock => {}
         }
     }
@@ -828,6 +829,7 @@ fn flatten<'d>(doc: &'d Doc, out: &mut Vec<&'d Token>) {
         | Doc::SoftLine
         | Doc::HardLine
         | Doc::BlankLine
+        | Doc::Gap
         | Doc::AfterBlock => {}
     }
 }

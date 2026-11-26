@@ -21,13 +21,14 @@ usage:
                    [--view exact|reading] [--symbols[=always|never]]
                    [--types fixed|plain] [--declarations scoped|top]
                    [--names numbered|registers]
+                   [--spacing paragraphs|compact]
   binbun strings FILE [--min N] [--referenced]
   binbun xrefs FILE TARGET
   binbun xrefs FILE --from FUNCTION
   binbun run FILE FUNCTION --state STATE.toml [--view exact|reading]
              [--types fixed|plain] [--declarations scoped|top]
-             [--names numbered|registers] [--depth N] [--steps N]
-             [--profile NAME|PATH]
+             [--names numbered|registers] [--spacing paragraphs|compact]
+             [--depth N] [--steps N] [--profile NAME|PATH]
   binbun verify FILE [FUNCTION] [--view exact|reading] [--states N] [--shaped N]
                 [--seed N] [--fuel N] [--project DIR] [--profile NAME|PATH]
   binbun verify FILE [FUNCTION] --compare PROFILE,PROFILE... [--states N] [--shaped N]
@@ -39,7 +40,8 @@ usage:
   binbun origin FILE --sample N [--seed S] [--view exact|reading]
   binbun stages FILE FUNCTION [--view exact|reading] [--stage NAME] [--diff]
                 [--types fixed|plain] [--declarations scoped|top]
-                [--names numbered|registers] [--profile NAME|PATH]
+                [--names numbered|registers] [--spacing paragraphs|compact]
+                [--profile NAME|PATH]
   binbun sig make --library NAME --version V --licence SPDX [--build ID] [--toolchain T]
                   [--flags F] [--code] [--no-separators] [--add-to PACK] INPUT...
                   -o PACK.jsonl.zst [--plain: -o PACK.jsonl]
@@ -113,6 +115,7 @@ binbun decompile FILE [FUNCTION...] [--style PRESET] [--l2] [--stats]
                  [--view exact|reading] [--symbols[=always|never]]
                  [--types fixed|plain] [--declarations scoped|top]
                  [--names numbered|registers]
+                 [--spacing paragraphs|compact]
 ```
 
 ### binbun strings
@@ -133,8 +136,8 @@ binbun xrefs FILE --from FUNCTION
 ```text
 binbun run FILE FUNCTION --state STATE.toml [--view exact|reading]
            [--types fixed|plain] [--declarations scoped|top]
-           [--names numbered|registers] [--depth N] [--steps N]
-           [--profile NAME|PATH]
+           [--names numbered|registers] [--spacing paragraphs|compact]
+           [--depth N] [--steps N] [--profile NAME|PATH]
 ```
 
 ### binbun verify
@@ -166,7 +169,8 @@ binbun origin FILE --sample N [--seed S] [--view exact|reading]
 ```text
 binbun stages FILE FUNCTION [--view exact|reading] [--stage NAME] [--diff]
               [--types fixed|plain] [--declarations scoped|top]
-              [--names numbered|registers] [--profile NAME|PATH]
+              [--names numbered|registers] [--spacing paragraphs|compact]
+              [--profile NAME|PATH]
 ```
 
 ### binbun sig

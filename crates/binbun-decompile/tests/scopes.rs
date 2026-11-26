@@ -391,7 +391,10 @@ fn the_first_assignment_initializes_and_a_conditional_one_does_not() {
     let after = placed(&b.done(vec![early, branch, back]));
     assert_eq!(declared_at(&after, v), Some(branch));
     let text = c(&after, Placement::Scoped);
-    assert!(text.contains("    int32_t v1;\n    if (a1 < 5)"), "{text}");
+    assert!(
+        text.contains("    int32_t v1;\n\n    if (a1 < 5)"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -450,7 +453,10 @@ fn a_counter_only_its_for_uses_is_declared_in_the_header() {
         if used_after {
             // Used after the loop: declared before it, not in its header.
             assert_eq!(declared_at(&after, i), Some(looped));
-            assert!(text.contains("    int32_t v2;\n    for (v2 = 0;"), "{text}");
+            assert!(
+                text.contains("    int32_t v2;\n\n    for (v2 = 0;"),
+                "{text}"
+            );
         } else {
             assert_eq!(declared_at(&after, i), Some(init));
             assert!(

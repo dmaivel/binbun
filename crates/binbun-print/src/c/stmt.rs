@@ -32,11 +32,55 @@ use crate::document::{BlockKind, Braces, Doc, TokenKind};
 pub(super) const MAX_NESTING: usize = 100;
 
 /// A block's items, whether it is one simple statement, and whether its
-/// last item is a label (which needs a statement after it).
+/// last item is a label (which needs a statement after it); and what its
+/// last item is ([`Part`]).
 struct Items {
     docs: Vec<Doc>,
     simple: bool,
     label_last: bool,
+    last: Option<Part>,
+}
+
+/// What an item of a block is, as far as paragraphs go ([`Items::push`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Part {
+    /// Declarations of locals with no value yet.
+    Declarations,
+    /// A simple statement (a declaration with a value among them).
+    Simple,
+    /// A compound statement: `if`, a loop, `switch`, an `__asm` block.
+    Compound,
+    /// A label.
+    Label,
+}
+
+impl Items {
+    /// Appends `docs`, a `part`, after a [`Doc::Gap`] where it starts a
+    /// paragraph: after declarations, after a compound statement, and a
+    /// label but right after another.
+    fn push(&mut self, part: Part, docs: impl IntoIterator<Item = Doc>) {
+        let mut docs = docs.into_iter().peekable();
+        if docs.peek().is_none() {
+            return;
+        }
+        let gap = match (self.last, part) {
+            (None, _)
+            | (Some(Part::Declarations), Part::Declarations)
+            | (Some(Part::Label), Part::Label)
+            | (
+                Some(Part::Simple | Part::Label),
+                Part::Declarations | Part::Simple | Part::Compound,
+            ) => false,
+            (Some(Part::Compound), _)
+            | (Some(Part::Declarations), Part::Simple | Part::Compound | Part::Label)
+            | (Some(Part::Simple), Part::Label) => true,
+        };
+        if gap {
+            self.docs.push(Doc::Gap);
+        }
+        self.docs.extend(docs);
+        self.last = Some(part);
+    }
 }
 
 /// A statement's items, whether it is simple, and whether it is a label.
@@ -64,6 +108,7 @@ impl Printer<'_> {
             docs: Vec::new(),
             simple: false,
             label_last: false,
+            last: None,
         };
         let mut simple_count = 0;
         let mut position = 0;
@@ -86,13 +131,14 @@ impl Printer<'_> {
                 }
                 if !declared.is_empty() {
                     after_label(&mut items);
-                    items.docs.extend(declared);
+                    items.push(Part::Declarations, declared);
                 }
                 let run: Vec<StmtId> = run
                     .into_iter()
                     .filter(|&next| self.unlifted_at(next))
                     .collect();
-                items.docs.extend(self.asm_block(&run)?);
+                let asm = self.asm_block(&run)?;
+                items.push(Part::Compound, asm);
                 items.label_last = false;
                 simple_count += 2;
                 continue;
@@ -107,15 +153,21 @@ impl Printer<'_> {
                 after_label(&mut items);
                 simple_count += 2;
             }
-            items.docs.extend(declared);
+            items.push(Part::Declarations, declared);
             if docs.is_empty() {
                 continue;
             }
             simple_count += if simple { docs.len() } else { 2 };
             items.label_last = label;
-            items.docs.extend(docs);
+            let part = match (simple, label) {
+                (_, true) => Part::Label,
+                (true, false) => Part::Simple,
+                (false, false) => Part::Compound,
+            };
+            items.push(part, docs);
             if let Some(name) = self.break_labels.get(&id).cloned() {
-                items.docs.push(self.label(name));
+                let label = self.label(name);
+                items.push(Part::Label, [label]);
                 items.label_last = true;
                 simple_count += 2;
             }
@@ -1430,7 +1482,12 @@ impl Printer<'_> {
         if !extra.is_empty() {
             items.simple = false;
             label_last = matches!(extra.last(), Some(Doc::Outdent(_)));
-            items.docs.extend(extra);
+            // A `continue` target's label, then a late step's statements.
+            let mut extra = extra.into_iter().peekable();
+            if let Some(label) = extra.next_if(|doc| matches!(doc, Doc::Outdent(_))) {
+                items.push(Part::Label, [label]);
+            }
+            items.push(Part::Simple, extra);
         }
         if label_last {
             items.docs.push(Doc::Group(vec![Doc::punct(";", None)]));
@@ -1831,6 +1888,7 @@ fn after_label(items: &mut Items) {
     if items.label_last {
         items.docs.push(Doc::Group(vec![Doc::punct(";", None)]));
         items.label_last = false;
+        items.last = Some(Part::Simple);
     }
 }
 

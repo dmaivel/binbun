@@ -165,7 +165,11 @@ fn a_branch_reads_what_an_instruction_without_semantics_leaves() {
 
     let (reading, asm) = c("opaque-x86_64.elf", "first_difference", View::Reading);
     assert_eq!(asm, 1, "{reading}");
-    let lines: Vec<&str> = reading.lines().map(str::trim).collect();
+    let lines: Vec<&str> = reading
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
     let block = lines
         .iter()
         .position(|&line| line == "__asm {")

@@ -21,13 +21,14 @@
 //!                  [--view exact|reading] [--symbols[=always|never]]
 //!                  [--types fixed|plain] [--declarations scoped|top]
 //!                  [--names numbered|registers]
+//!                  [--spacing paragraphs|compact]
 //! binbun strings FILE [--min N] [--referenced]
 //! binbun xrefs FILE TARGET           references to a name or address
 //! binbun xrefs FILE --from FUNCTION  what a function refers to
 //! binbun run FILE FUNCTION --state STATE.toml [--view exact|reading]
 //!            [--types fixed|plain] [--declarations scoped|top]
-//!            [--names numbered|registers] [--depth N] [--steps N]
-//!            [--profile NAME|PATH]
+//!            [--names numbered|registers] [--spacing paragraphs|compact]
+//!            [--depth N] [--steps N] [--profile NAME|PATH]
 //!                                    one function run from an example
 //!                                    state, its C with each line's values,
 //!                                    on a processor's profile if given
@@ -223,7 +224,7 @@ use binbun_decompile::typing::Kind;
 use binbun_loader::{Clause, Format, Image, Machine, Referent, TypeInfo};
 use binbun_paths::{Dir, Platform};
 use binbun_print::c::{HEADER, Unknowns};
-use binbun_print::style::{IntSpelling, Naming, Placement, Style};
+use binbun_print::style::{IntSpelling, Naming, Placement, Spacing, Style};
 use binbun_semantics::core::Memory;
 use binbun_x86::decode;
 
@@ -242,13 +243,14 @@ const USAGE: &str = "usage:
                    [--view exact|reading] [--symbols[=always|never]]
                    [--types fixed|plain] [--declarations scoped|top]
                    [--names numbered|registers]
+                   [--spacing paragraphs|compact]
   binbun strings FILE [--min N] [--referenced]
   binbun xrefs FILE TARGET
   binbun xrefs FILE --from FUNCTION
   binbun run FILE FUNCTION --state STATE.toml [--view exact|reading]
              [--types fixed|plain] [--declarations scoped|top]
-             [--names numbered|registers] [--depth N] [--steps N]
-             [--profile NAME|PATH]
+             [--names numbered|registers] [--spacing paragraphs|compact]
+             [--depth N] [--steps N] [--profile NAME|PATH]
   binbun verify FILE [FUNCTION] [--view exact|reading] [--states N] [--shaped N]
                 [--seed N] [--fuel N] [--project DIR] [--profile NAME|PATH]
   binbun verify FILE [FUNCTION] --compare PROFILE,PROFILE... [--states N] [--shaped N]
@@ -260,7 +262,8 @@ const USAGE: &str = "usage:
   binbun origin FILE --sample N [--seed S] [--view exact|reading]
   binbun stages FILE FUNCTION [--view exact|reading] [--stage NAME] [--diff]
                 [--types fixed|plain] [--declarations scoped|top]
-                [--names numbered|registers] [--profile NAME|PATH]
+                [--names numbered|registers] [--spacing paragraphs|compact]
+                [--profile NAME|PATH]
   binbun sig make --library NAME --version V --licence SPDX [--build ID] [--toolchain T]
                   [--flags F] [--code] [--no-separators] [--add-to PACK] INPUT...
                   -o PACK.jsonl.zst [--plain: -o PACK.jsonl]
@@ -952,7 +955,7 @@ fn eval_types(args: &[String]) -> Result<String, String> {
 /// `decompile FILE [FUNCTION...] [--style PRESET] [--l2] [--stats]
 /// [--disable-pass NAME]... [--debug PATH] [--view exact|reading]
 /// [--types fixed|plain] [--declarations scoped|top]
-/// [--names numbered|registers]`: the
+/// [--names numbered|registers] [--spacing paragraphs|compact]`: the
 /// functions named (by name or address; each printed as it is asked for
 /// alone, in the order asked, the file read once), or every function, as
 /// C (or L2's text), without the passes
@@ -964,8 +967,9 @@ fn eval_types(args: &[String]) -> Result<String, String> {
 /// using them (`scoped`, the default) or all at the top of each function
 /// (`top`), its variables with no name of their own named by kind and
 /// number (`numbered`, the default: `a1`, `v7`) or by where the machine
-/// code kept them (`registers`: `arg1`, `rax`, `var_58`). With
-/// `--stats`, a comment before each function counts
+/// code kept them (`registers`: `arg1`, `rax`, `var_58`), its blocks'
+/// statements parted by empty lines (`paragraphs`, the default) or not
+/// (`compact`). With `--stats`, a comment before each function counts
 /// its gotos, escapes and casts, compiles it, and gives each pass's runs,
 /// changes and refusals, how often each analysis was computed and how
 /// much of its machine code its lines came from
@@ -1001,6 +1005,7 @@ fn decompile(args: &[String]) -> Result<String, String> {
         types: flags.types,
         declarations: flags.declarations,
         names: flags.names,
+        spacing: flags.spacing,
     };
     let reading = if flags.view == decompile::View::Reading {
         format!(
@@ -1203,6 +1208,19 @@ pub(crate) fn naming(value: Option<&String>) -> Result<Naming, String> {
     }
 }
 
+/// `--spacing`' value: `paragraphs` or `compact`.
+///
+/// # Errors
+///
+/// None given, or another: the usage.
+pub(crate) fn spacing(value: Option<&String>) -> Result<Spacing, String> {
+    match value.map(String::as_str) {
+        Some("paragraphs") => Ok(Spacing::Paragraphs),
+        Some("compact") => Ok(Spacing::Compact),
+        _ => Err(USAGE.to_owned()),
+    }
+}
+
 /// What `binbun decompile` prints, and how.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Flags {
@@ -1226,6 +1244,8 @@ struct Flags {
     declarations: Placement,
     /// How the C names variables with no name of their own.
     names: Naming,
+    /// Whether empty lines part a block's statements.
+    spacing: Spacing,
 }
 
 /// The flags, the file and the functions (none for every one) of
@@ -1242,6 +1262,7 @@ fn decompile_arguments(args: &[String]) -> Result<(Flags, &str, Vec<&str>), Stri
         types: IntSpelling::Fixed,
         declarations: Placement::Scoped,
         names: Naming::Numbered,
+        spacing: Spacing::Paragraphs,
     };
     let mut positional = Vec::new();
     let mut args = args.iter();
@@ -1269,6 +1290,7 @@ fn decompile_arguments(args: &[String]) -> Result<(Flags, &str, Vec<&str>), Stri
             "--types" => flags.types = int_spelling(args.next())?,
             "--declarations" => flags.declarations = placement(args.next())?,
             "--names" => flags.names = naming(args.next())?,
+            "--spacing" => flags.spacing = spacing(args.next())?,
             "--disable-pass" => {
                 let name = args.next().ok_or_else(|| USAGE.to_owned())?;
                 let passes = decompile::passes();

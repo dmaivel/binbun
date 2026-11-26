@@ -14,7 +14,9 @@ use binbun_ast::types::{Aggregate, Evidence, Field, Type, TypeId};
 use binbun_print::c::{self, Printed};
 use binbun_print::document::Document;
 use binbun_print::layout::{render, render_items, render_spans};
-use binbun_print::style::{BraceStyle, Indent, IntSpelling, Naming, SingleStatementBraces, Style};
+use binbun_print::style::{
+    BraceStyle, Indent, IntSpelling, Naming, SingleStatementBraces, Spacing, Style,
+};
 use binbun_semantics::ir::{Binary, RegisterId};
 use common::samples::{branches, calls, escapes, loops, memory, symbols, wide_literals};
 use common::{Builder, DECLARATIONS, LLP64, LP64, Platform};
@@ -135,6 +137,11 @@ fn random_style(seed: &mut u64) -> Style {
         .with_tab_width(u16::try_from(next() % 8).unwrap() + 1)
         .with_braces(braces[usize::try_from(next() % 5).unwrap()])
         .with_column_limit(u16::try_from(next() % 160).unwrap() + 10)
+        .with_spacing(if next() % 2 == 0 {
+            Spacing::Paragraphs
+        } else {
+            Spacing::Compact
+        })
         .with_single_statement_braces(SingleStatementBraces::Always)
 }
 
@@ -224,6 +231,32 @@ fn presets_look_like_their_namesakes() {
             .unwrap();
         assert!(longest <= limit, "{longest} > {limit}:\n{text}");
     }
+}
+
+/// Paragraph spacing (every preset's) parts a block's statements after a
+/// compound statement another follows; compact spacing parts none; and
+/// neither changes a token, leaves an empty line at a block's start or
+/// end, or two in a row.
+#[test]
+fn paragraphs_part_statements_after_compound_ones() {
+    for f in [loops(), memory(), calls(), escapes(), branches()] {
+        let document = printed(&f, &Style::kr()).document;
+        let paragraphs = render(&document, &Style::kr());
+        let compact = render(&document, &Style::kr().with_spacing(Spacing::Compact));
+        assert_eq!(strip(&paragraphs), strip(&compact));
+        let body = |text: &str| text[text.find("\n{\n").unwrap()..].to_owned();
+        // Compact: an empty line only after the locals declared at the top.
+        assert!(body(&compact).matches("\n\n").count() <= 1, "{compact}");
+        let spaced = body(&paragraphs);
+        for wrong in ["\n\n\n", "{\n\n", "\n\n}", "\n\n    }"] {
+            assert!(!spaced.contains(wrong), "{wrong:?}:\n{paragraphs}");
+        }
+    }
+    // `branches`: an `if` chain, a `do` loop, a `return`.
+    let f = branches();
+    let kr = render(&printed(&f, &Style::kr()).document, &Style::kr());
+    assert!(kr.contains("\n\n    do {\n"), "{kr}");
+    assert!(kr.contains("} while (v2 < 10);\n\n    return"), "{kr}");
 }
 
 #[test]

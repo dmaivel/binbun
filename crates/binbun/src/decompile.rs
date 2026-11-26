@@ -44,7 +44,7 @@ use binbun_decompile::validate::{self, Link};
 use binbun_loader::{CallSite, Catch, Clause, HandlerTable, Image, ScopeAction, TypeInfo};
 use binbun_print::c::{Image as Printing, Opaque, Unknowns};
 use binbun_print::layout;
-use binbun_print::style::{IntSpelling, Naming, Placement, Style};
+use binbun_print::style::{IntSpelling, Naming, Placement, Spacing, Style};
 use binbun_semantics::Declarations;
 use binbun_semantics::core::pass::{Broken, Changed, Fuel, Manager, Pass, PassStats, Refusal};
 use binbun_semantics::ir::RegisterId;
@@ -104,6 +104,9 @@ pub struct Options {
     /// number (`a1`, `v7`, the default), or by where the machine code kept
     /// them (`arg1`, `rax`, `var_58`).
     pub names: Naming,
+    /// Whether empty lines part a block's statements into paragraphs
+    /// (the default) or none do.
+    pub spacing: Spacing,
 }
 
 /// Which C decompilation makes: the exact C or the reading view.
@@ -777,7 +780,8 @@ pub fn decompile(
                 .ok_or_else(|| format!("no style preset {style:?}"))?
                 .with_int_spelling(options.types)
                 .with_declarations(options.declarations)
-                .with_naming(options.names);
+                .with_naming(options.names)
+                .with_spacing(options.spacing);
             let mut c = print(&l2, declarations, &style, data, options.view.opaque())?;
             if options.view == View::Reading && !stats.assumed.is_empty() {
                 c.text.insert_str(0, &reading_comment(&stats.assumed));

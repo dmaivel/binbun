@@ -42,7 +42,7 @@ use binbun_decompile::pass::{Feeds, L2Env};
 use binbun_decompile::structure::Rotated;
 use binbun_print::c::function as print_c;
 use binbun_print::layout::{Span, render_spans};
-use binbun_print::style::{IntSpelling, Naming, Placement, Style};
+use binbun_print::style::{IntSpelling, Naming, Placement, Spacing, Style};
 use binbun_semantics::core::pass::{PassStats, Refusal};
 use binbun_semantics::ir::Declarations;
 use binbun_ssa::ir::{Definition, Function, Value};
@@ -72,6 +72,9 @@ pub struct Options {
     /// How the C names variables with no name of their own
     /// ([`crate::decompile::Options::names`]).
     pub names: Naming,
+    /// Whether empty lines part a block's statements
+    /// ([`crate::decompile::Options::spacing`]).
+    pub spacing: Spacing,
 }
 
 impl Default for Options {
@@ -83,6 +86,7 @@ impl Default for Options {
             types: IntSpelling::Fixed,
             declarations: Placement::Scoped,
             names: Naming::Numbered,
+            spacing: Spacing::Paragraphs,
         }
     }
 }
@@ -440,7 +444,8 @@ impl Maker<'_, '_> {
             .ok_or_else(|| format!("no style preset {:?}", self.options.style))?
             .with_int_spelling(self.options.types)
             .with_declarations(self.options.declarations)
-            .with_naming(self.options.names);
+            .with_naming(self.options.names)
+            .with_spacing(self.options.spacing);
         let function = database
             .function(id)
             .ok_or_else(|| "not a function of the program".to_owned())?;

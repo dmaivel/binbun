@@ -10,19 +10,19 @@ use binbun::profile;
 use binbun::run::{self, ExampleState, How, Occurrence, Recording, show};
 use binbun_ast::ir::StmtId;
 use binbun_print::layout::render_spans;
-use binbun_print::style::{IntSpelling, Naming, Placement, Style};
+use binbun_print::style::{IntSpelling, Naming, Placement, Spacing, Style};
 
-use super::{USAGE, database, int_spelling, load, naming, placement, read};
+use super::{USAGE, database, int_spelling, load, naming, placement, read, spacing};
 
 /// The column values start at.
 const COLUMN: usize = 56;
 
 /// `run FILE FUNCTION --state STATE [--view exact|reading]
 /// [--types fixed|plain] [--declarations scoped|top]
-/// [--names numbered|registers] [--depth N]
+/// [--names numbered|registers] [--spacing paragraphs|compact] [--depth N]
 /// [--steps N] [--profile NAME|PATH]`: the function's C (its integer
 /// types as `--types` says, its locals declared where `--declarations`
-/// says), each line ending
+/// says, its statements parted as `--spacing` says), each line ending
 /// with what its statements did (a loop's iterations; a statement in a
 /// loop, a column per iteration), then how the run ended, its calls, and
 /// the machine code's run. On a processor's profile (a shipped one's
@@ -37,6 +37,7 @@ pub(crate) fn run(args: &[String]) -> Result<String, String> {
         types,
         declarations: placement,
         names,
+        spacing: parted,
     } = arguments(args)?;
     let (&[path, wanted], Some(state_path)) = (positional.as_slice(), state) else {
         return Err(USAGE.to_owned());
@@ -63,7 +64,8 @@ pub(crate) fn run(args: &[String]) -> Result<String, String> {
         .ok_or("no style kr")?
         .with_int_spelling(types)
         .with_declarations(placement)
-        .with_naming(names);
+        .with_naming(names)
+        .with_spacing(parted);
     let printed = binbun_print::c::function(
         &decompiled.l2,
         declarations,
@@ -144,6 +146,8 @@ struct Arguments<'a> {
     declarations: Placement,
     /// How the C names variables with no name of their own (`--names`).
     names: Naming,
+    /// Whether empty lines part a block's statements (`--spacing`).
+    spacing: Spacing,
 }
 
 /// `run`'s arguments of `args`.
@@ -154,6 +158,7 @@ fn arguments(args: &[String]) -> Result<Arguments<'_>, String> {
     let mut types = IntSpelling::Fixed;
     let mut declarations = Placement::Scoped;
     let mut names = Naming::Numbered;
+    let mut parted = Spacing::Paragraphs;
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or_else(|| USAGE.to_owned());
@@ -162,6 +167,7 @@ fn arguments(args: &[String]) -> Result<Arguments<'_>, String> {
             "--types" => types = int_spelling(Some(value()?))?,
             "--declarations" => declarations = placement(Some(value()?))?,
             "--names" => names = naming(Some(value()?))?,
+            "--spacing" => parted = spacing(Some(value()?))?,
             "--view" => {
                 options.view = match value()?.as_str() {
                     "exact" => View::Exact,
@@ -183,6 +189,7 @@ fn arguments(args: &[String]) -> Result<Arguments<'_>, String> {
         types,
         declarations,
         names,
+        spacing: parted,
     })
 }
 

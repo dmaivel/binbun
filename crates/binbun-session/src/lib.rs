@@ -206,6 +206,7 @@ pub use binbun::decompile::View;
 pub use binbun_debuginfo::info::model::Unit;
 pub use binbun_print::style::Naming;
 pub use binbun_print::style::Placement;
+pub use binbun_print::style::Spacing;
 pub use binbun_typedb::c::CError;
 pub use calls::CallSite;
 pub use document::Document;
@@ -457,6 +458,10 @@ pub struct Options {
     /// [`Session::set_style`] changes it, and the rest of the style, in
     /// place.
     pub names: Naming,
+    /// Whether empty lines part a block's statements (`binbun decompile
+    /// --spacing`; by default they do). [`Session::set_style`] changes it,
+    /// and the rest of the style, in place.
+    pub spacing: Spacing,
     /// Whether the worker, once idle, warms every function's interfaces
     /// callees first ([`Stage::Warmed`]).
     pub warm: bool,
@@ -498,6 +503,7 @@ impl Default for Options {
             types: IntSpelling::Fixed,
             declarations: Placement::Scoped,
             names: Naming::Numbered,
+            spacing: Spacing::Paragraphs,
             warm: true,
             view: View::Exact,
             debug: DebugSource::Search,
@@ -601,7 +607,8 @@ impl Session {
             .ok_or_else(|| Error::Project(format!("no style preset {:?}", options.style)))?
             .with_int_spelling(options.types)
             .with_declarations(options.declarations)
-            .with_naming(options.names);
+            .with_naming(options.names)
+            .with_spacing(options.spacing);
         let place = match &options.project {
             _ if options.ephemeral => Place::Ephemeral,
             Some(dir) => Place::Given(dir.clone()),

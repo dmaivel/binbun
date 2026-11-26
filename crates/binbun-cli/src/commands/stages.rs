@@ -9,11 +9,12 @@ use binbun::decompile::{Options as Decompiling, View};
 use binbun::profile;
 use binbun::stages::{Change, Level, Options, Stage, Stages, stages};
 
-use super::{USAGE, database, int_spelling, load, naming, placement, read};
+use super::{USAGE, database, int_spelling, load, naming, placement, read, spacing};
 
 /// `stages FILE FUNCTION [--view exact|reading] [--stage NAME] [--diff]
 /// [--types fixed|plain] [--declarations scoped|top]
-/// [--names numbered|registers] [--profile NAME|PATH]`:
+/// [--names numbered|registers] [--spacing paragraphs|compact]
+/// [--profile NAME|PATH]`:
 /// without `--stage`, each stage (its label, level, lines, and lines
 /// added, changed and removed against the stage before) and each pass's
 /// counts with its refusals; with it, that stage's text (a label, or a
@@ -24,13 +25,15 @@ use super::{USAGE, database, int_spelling, load, naming, placement, read};
 /// undefined values (its instruction and site) with that processor's
 /// rule there; the stages do not change with a processor.
 /// `--declarations` says where the C stage declares locals, `--names` how
-/// it names variables with no name of their own.
+/// it names variables with no name of their own, `--spacing` whether
+/// empty lines part its blocks' statements.
 pub fn stages_command(args: &[String]) -> Result<String, String> {
     let mut positional = Vec::new();
     let mut view = View::Exact;
     let mut types = Options::default().types;
     let mut declarations = Options::default().declarations;
     let mut names = Options::default().names;
+    let mut parted = Options::default().spacing;
     let mut wanted = None;
     let mut diff = false;
     let mut processor = None;
@@ -47,6 +50,7 @@ pub fn stages_command(args: &[String]) -> Result<String, String> {
             "--types" => types = int_spelling(args.next())?,
             "--declarations" => declarations = placement(args.next())?,
             "--names" => names = naming(args.next())?,
+            "--spacing" => parted = spacing(args.next())?,
             "--stage" => wanted = Some(args.next().ok_or_else(|| USAGE.to_owned())?),
             "--diff" => diff = true,
             "--profile" => {
@@ -72,6 +76,7 @@ pub fn stages_command(args: &[String]) -> Result<String, String> {
         types,
         declarations,
         names,
+        spacing: parted,
         ..Options::default()
     };
     let made = stages(&database, id, &options)?;

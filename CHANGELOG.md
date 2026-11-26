@@ -37,6 +37,7 @@ always read by later versions.
 
 ### Added
 
+- Empty lines part a function's statements into paragraphs: after a run of declarations, after an `if`, a loop or a `switch` that another statement follows, and before a label. It is every style's default; `binbun decompile --spacing compact` (and `run`, `stages`), the GUI's C › Spacing setting and Python's `Database.set_style(spacing="compact")` print the statements without them, as before.
 - `binbun eval types` says how the decompiler's structs line up with the debug information's named structs through the pointers it compares: source structs split under several of the decompiler's names, decompiler structs that merge several source structs (named, the worst first; `--totals` gives the counts), of the pairs of pointers to one source struct the share under one name, of those under one name the share to one source struct, and how many of those pointers it names a struct at all (a struct a translation unit only declares is the one of its name defined elsewhere). It also scores the source's locals that live in registers ("register locals", in the totals too): each against the decompiler's local held in that register at the most of the instructions in the local's ranges that read or write it; their types count, not their struct identities (a register reused for another value maps too loosely to say which struct a pointer is).
 
 ### Changed

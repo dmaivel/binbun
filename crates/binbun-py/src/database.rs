@@ -13,7 +13,7 @@ use binbun::Database as Engine;
 use binbun::cfg::{BlockId, FunctionId};
 use binbun::strings::Literal;
 use binbun_loader::{Format, Machine};
-use binbun_print::style::{IntSpelling, Naming, Style};
+use binbun_print::style::{IntSpelling, Naming, Spacing, Style};
 use binbun_protocol::messages::method;
 use binbun_protocol::server::members;
 use binbun_protocol::{Host, Owner, Write, stage_number, talk};
@@ -449,6 +449,18 @@ fn naming_of(names: &str) -> PyResult<Naming> {
         ))),
     }
 }
+
+/// `spacing=`: `"paragraphs"` or `"compact"`.
+fn spacing_of(spacing: &str) -> PyResult<Spacing> {
+    match spacing {
+        "paragraphs" => Ok(Spacing::Paragraphs),
+        "compact" => Ok(Spacing::Compact),
+        other => Err(PyValueError::new_err(format!(
+            "spacing={other:?}: paragraphs or compact"
+        ))),
+    }
+}
+
 /// `view` as a `binbun.View`.
 pub(crate) fn view_object(py: Python<'_>, view: View) -> PyResult<Bound<'_, PyAny>> {
     let value = match view {
@@ -670,9 +682,14 @@ impl Database {
     /// using them; `"top"`: all at the top of each function); `names`, how
     /// it names variables with no name of their own (`"numbered"`: `a1`,
     /// `v7`; `"registers"`: by where the machine code kept them, `arg1`,
-    /// `rax`, `var_58`); `None` keeps each. Documents already made keep
-    /// their text; the next ones are printed again.
-    #[pyo3(signature = (*, braces = None, types = None, declarations = None, names = None))]
+    /// `rax`, `var_58`); `spacing`, whether empty lines part a block's
+    /// statements (`"paragraphs"`: after declarations, after a compound
+    /// statement and before a label; `"compact"`: none); `None` keeps
+    /// each. Documents already made keep their text; the next ones are
+    /// printed again.
+    #[pyo3(
+        signature = (*, braces = None, types = None, declarations = None, names = None, spacing = None)
+    )]
     fn set_style(
         &self,
         py: Python<'_>,
@@ -680,6 +697,7 @@ impl Database {
         types: Option<&str>,
         declarations: Option<&str>,
         names: Option<&str>,
+        spacing: Option<&str>,
     ) -> PyResult<()> {
         let session = self.db.session(py)?;
         let mut style = session.style();
@@ -691,6 +709,7 @@ impl Database {
             preset.declarations = style.declarations;
             preset.naming = style.naming;
             preset.hex_threshold = style.hex_threshold;
+            preset.spacing = style.spacing;
             style = preset;
         }
         if let Some(types) = types {
@@ -701,6 +720,9 @@ impl Database {
         }
         if let Some(names) = names {
             style = style.with_naming(naming_of(names)?);
+        }
+        if let Some(spacing) = spacing {
+            style = style.with_spacing(spacing_of(spacing)?);
         }
         session.set_style(style);
         Ok(())

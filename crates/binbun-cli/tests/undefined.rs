@@ -41,7 +41,9 @@ fn decompiled(view: &str) -> BTreeMap<String, (String, String)> {
                 functions.insert(name, (stats, c));
             }
             current = Some((name.to_owned(), stats.to_owned(), String::new()));
-        } else if let Some((_, _, c)) = &mut current {
+        } else if let Some((_, _, c)) = &mut current
+            && !line.trim().is_empty()
+        {
             c.push_str(line.trim());
             c.push('\n');
         }
@@ -52,7 +54,7 @@ fn decompiled(view: &str) -> BTreeMap<String, (String, String)> {
     functions
 }
 
-/// The stats of `name` and its C, each line trimmed.
+/// The stats of `name` and its C, each line trimmed (empty ones dropped).
 fn function<'a>(
     functions: &'a BTreeMap<String, (String, String)>,
     name: &str,
