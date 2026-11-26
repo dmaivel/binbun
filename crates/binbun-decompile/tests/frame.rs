@@ -639,3 +639,90 @@ fn a_slot_of_its_own_written_in_parts_has_the_type_of_its_whole_accesses() {
         "{ty:?}"
     );
 }
+
+#[test]
+fn a_slot_reused_for_a_value_of_another_shape_is_a_local_per_value() {
+    // *(int32_t *)(sp − 0x20) = c; x = *(int32_t *)(sp − 0x20);
+    // *(sp − 0x20) = b; return x + *(sp − 0x20): a spill slot shared by a
+    // 4-byte value and then an 8-byte one, each read only where it was
+    // written: two locals, in no memory.
+    let mut l1 = L1::new();
+    let [_, b, c, _, memory] = l1.entry;
+    let slot = l1.below(0x20);
+    let low = l1.inst(
+        Op::Extract {
+            value: c,
+            offset: 0,
+            width: 32,
+        },
+        &[L1Type::Bits(32)],
+    )[0];
+    let memory = l1.store(memory, slot, low);
+    let int = l1.inst(
+        Op::Load {
+            memory,
+            address: slot,
+            bytes: 4,
+            atomic: None,
+        },
+        &[L1Type::Bits(32)],
+    )[0];
+    let memory = l1.store(memory, slot, b);
+    let long = l1.load(memory, slot);
+    let widened = l1.pure(Op::Extend {
+        value: int,
+        signed: false,
+        width: 64,
+    });
+    let value = l1.pure(Op::Binary(Binary::Add, widened, long));
+    let l2 = lowered(&l1.finish(memory, value));
+    assert!(
+        !l2.variables
+            .iter()
+            .any(|variable| matches!(variable.kind, VarKind::Frame(offset) if offset < 0)),
+        "a frame variable below the entry"
+    );
+    let widths: Vec<u16> = l2
+        .variables
+        .iter()
+        .filter(|variable| {
+            variable.kind == VarKind::Local && variable.origins.contains(&Origin::Slot(-0x20))
+        })
+        .filter_map(|variable| l2.types.value_width(variable.ty))
+        .collect();
+    assert!(widths.contains(&32) && widths.contains(&64), "{widths:?}");
+}
+
+#[test]
+fn a_slot_read_in_part_of_a_wider_store_stays_one() {
+    // *(sp − 0x20) = b; return *(int32_t *)(sp − 0x20) + *(sp − 0x20):
+    // the 4-byte load reads part of the 8-byte store's value, so both
+    // shapes are one value's bytes, in memory.
+    let mut l1 = L1::new();
+    let [_, b, _, _, memory] = l1.entry;
+    let slot = l1.below(0x20);
+    let memory = l1.store(memory, slot, b);
+    let int = l1.inst(
+        Op::Load {
+            memory,
+            address: slot,
+            bytes: 4,
+            atomic: None,
+        },
+        &[L1Type::Bits(32)],
+    )[0];
+    let long = l1.load(memory, slot);
+    let widened = l1.pure(Op::Extend {
+        value: int,
+        signed: false,
+        width: 64,
+    });
+    let value = l1.pure(Op::Binary(Binary::Add, widened, long));
+    let l2 = lowered(&l1.finish(memory, value));
+    assert!(
+        l2.variables
+            .iter()
+            .any(|variable| variable.kind == VarKind::Frame(-0x20)),
+        "the slot's variable in memory"
+    );
+}

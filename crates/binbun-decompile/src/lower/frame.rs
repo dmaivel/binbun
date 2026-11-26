@@ -23,6 +23,9 @@ use crate::validate::Link;
 /// The most values [`Lowering::saved`] looks at.
 const SAVE_STEPS: usize = 4096;
 
+/// The most block visits [`Lowering::reuses`] makes for one slot.
+const REUSE_STEPS: usize = 1 << 16;
+
 /// Where a slot lives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Home {
@@ -34,7 +37,8 @@ pub(super) enum Home {
     Frame,
 }
 
-/// Accesses that overlap, transitively.
+/// Accesses that overlap, transitively, or one reuse of such bytes
+/// ([`Lowering::reuses`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -467,6 +471,41 @@ fn passed_in_parts(members: &[&Access], offset: i64, end: i64) -> bool {
     })
 }
 
+/// The bytes `members` access: the first, past the last.
+fn extent(members: &[&Access]) -> (i64, i64) {
+    let offset = members.iter().map(|a| a.offset).min().unwrap_or(0);
+    let end = members
+        .iter()
+        .map(|a| a.offset + i64::from(a.bytes))
+        .max()
+        .unwrap_or(offset);
+    (offset, end)
+}
+
+/// Whether the accesses `members` of the bytes `offset..end` are those of
+/// one value: written, and every access of all of them (or read in parts
+/// only as calls' stack arguments, [`passed_in_parts`]).
+fn one_value(members: &[&Access], offset: i64, end: i64) -> bool {
+    let whole = |a: &&Access| a.offset == offset && a.offset + i64::from(a.bytes) == end;
+    members.iter().any(|a| a.write)
+        && (members.iter().all(whole) || passed_in_parts(members, offset, end))
+}
+
+/// The root of `index` in the forest `parent` (halving the path).
+fn root(parent: &mut [usize], mut index: usize) -> usize {
+    loop {
+        let up = parent.get(index).copied().unwrap_or(index);
+        if up == index {
+            return index;
+        }
+        let grand = parent.get(up).copied().unwrap_or(up);
+        if let Some(link) = parent.get_mut(index) {
+            *link = grand;
+        }
+        index = grand;
+    }
+}
+
 impl Lowering<'_, '_> {
     /// The frame: its accesses, slots and regions. `bounded`: addresses
     /// known to reach only as far as a given byte (a recognised
@@ -506,27 +545,10 @@ impl Lowering<'_, '_> {
         };
         for group in &overlapping(&accesses) {
             let members: Vec<&Access> = group.iter().filter_map(|&i| accesses.get(i)).collect();
-            let Some(first) = members.first() else {
+            if members.is_empty() {
                 continue;
-            };
-            let offset = first.offset;
-            let end = members
-                .iter()
-                .map(|a| a.offset + i64::from(a.bytes))
-                .max()
-                .unwrap_or(offset);
-            let is_whole = |a: &&Access| a.offset == offset && a.offset + i64::from(a.bytes) == end;
-            let (shape, whole) = (members.iter().all(is_whole), members.iter().any(is_whole));
-            let written = members.iter().any(|a| a.write);
-            let parts = written && passed_in_parts(&members, offset, end);
-            let mut register = None;
-            let saves = members.iter().filter(|a| a.write).all(|a| {
-                a.value
-                    .and_then(|v| self.saved(v, offset, end))
-                    .is_some_and(|saved| *register.get_or_insert(saved) == saved)
-            });
-            let in_link = offset < link && end > 0;
-            let unwritten = self.unwritten_reads(&members, offset, end, shadow);
+            }
+            let (offset, end) = extent(&members);
             // An address used as a value reaches its bytes: they are
             // memory (a slot no such address reaches lives as it would in
             // a frame where none escapes).
@@ -535,42 +557,14 @@ impl Lowering<'_, '_> {
             // the space the caller reserves for it above the return
             // address (Microsoft x64's home space).
             let own = end <= 0 || (offset >= link && end <= shadow);
-            let home = if in_link || end - offset > 64 {
-                Home::Frame
-            } else if !reached && (shape || parts) && own && written {
-                Home::Local
-            } else if !reached
-                && shape
-                && offset >= shadow
-                && !written
-                && !self.declared_parts(offset, end)
-            {
-                Home::Parameter
-            } else if reached && shape && own && written && saves {
-                Home::Local
-            } else {
-                Home::Frame
-            };
-            let index = frame.slots.len();
-            frame.slots.push(Slot {
-                offset,
-                end,
-                shape,
-                whole,
-                written,
-                reached,
-                home,
-            });
-            frame.read_at_entry(unwritten);
-            for access in members {
-                match access.at {
-                    At::Inst(inst) => {
-                        frame.accesses.insert(inst, index);
-                    }
-                    At::Argument(site, argument) => {
-                        frame.arguments.insert((site, argument), index);
-                    }
-                }
+            let parts =
+                if !reached && own && end - offset <= 64 && !one_value(&members, offset, end) {
+                    self.reuses(members)
+                } else {
+                    alloc::vec![members]
+                };
+            for members in parts {
+                self.add_slot(&mut frame, &members, own, reached, shadow);
             }
         }
         if memory {
@@ -580,6 +574,209 @@ impl Lowering<'_, '_> {
         frame.regions();
         frame.taken = offsets;
         self.frame = frame;
+    }
+
+    /// The slot of the accesses `members` (`own`: in the function's own
+    /// bytes; `reached`: by an address used as a value) added to `frame`,
+    /// with where it lives.
+    fn add_slot(
+        &self,
+        frame: &mut Frame,
+        members: &[&Access],
+        own: bool,
+        reached: bool,
+        shadow: i64,
+    ) {
+        let link = frame.link;
+        let (offset, end) = extent(members);
+        let is_whole = |a: &&Access| a.offset == offset && a.offset + i64::from(a.bytes) == end;
+        let (shape, whole) = (members.iter().all(is_whole), members.iter().any(is_whole));
+        let written = members.iter().any(|a| a.write);
+        let parts = written && passed_in_parts(members, offset, end);
+        let mut register = None;
+        let saves = members.iter().filter(|a| a.write).all(|a| {
+            a.value
+                .and_then(|v| self.saved(v, offset, end))
+                .is_some_and(|saved| *register.get_or_insert(saved) == saved)
+        });
+        let in_link = offset < link && end > 0;
+        let unwritten = self.unwritten_reads(members, offset, end, shadow);
+        let home = if in_link || end - offset > 64 {
+            Home::Frame
+        } else if !reached && (shape || parts) && own && written {
+            Home::Local
+        } else if !reached
+            && shape
+            && offset >= shadow
+            && !written
+            && !self.declared_parts(offset, end)
+        {
+            Home::Parameter
+        } else if reached && shape && own && written && saves {
+            Home::Local
+        } else {
+            Home::Frame
+        };
+        let index = frame.slots.len();
+        frame.slots.push(Slot {
+            offset,
+            end,
+            shape,
+            whole,
+            written,
+            reached,
+            home,
+        });
+        frame.read_at_entry(unwritten);
+        for access in members {
+            match access.at {
+                At::Inst(inst) => {
+                    frame.accesses.insert(inst, index);
+                }
+                At::Argument(site, argument) => {
+                    frame.arguments.insert((site, argument), index);
+                }
+            }
+        }
+    }
+
+    /// The slots the overlapping accesses `members` are, of several shapes
+    /// in the function's own bytes no address used as a value reaches (so
+    /// that only they read and write those bytes): one per reuse of the
+    /// bytes ([`Self::webs`]) that is one value's ([`one_value`]: a
+    /// compiler sharing a spill slot among values of different types)
+    /// where every reuse is; else all of them one slot (in memory, whose
+    /// bytes are then that slot's alone).
+    fn reuses<'m>(&self, members: Vec<&'m Access>) -> Vec<Vec<&'m Access>> {
+        let Some(webs) = self.webs(&members) else {
+            return alloc::vec![members];
+        };
+        let mut slots: Vec<Vec<&Access>> = Vec::new();
+        for web in webs {
+            let web: Vec<&Access> = web
+                .iter()
+                .filter_map(|&i| members.get(i).copied())
+                .collect();
+            let (offset, end) = extent(&web);
+            if !one_value(&web, offset, end) {
+                return alloc::vec![members];
+            }
+            slots.push(web);
+        }
+        slots.sort_by_key(|slot| extent(slot));
+        slots
+    }
+
+    /// The reuses of the bytes the accesses `members` (one slot's, which
+    /// alone read and write them) make, as indices into `members`: each
+    /// read (a load, a call's stack argument) with every store that may
+    /// have written one of its bytes last on some path from the entry,
+    /// joined transitively. `None` where that is one reuse, an access is
+    /// in no block lowered, a jump goes where nothing is known, or the walk
+    /// passes [`REUSE_STEPS`].
+    fn webs(&self, members: &[&Access]) -> Option<Vec<Vec<usize>>> {
+        let (offset, end) = extent(members);
+        let bytes = usize::try_from(end - offset).ok()?;
+        let mut at_inst: BTreeMap<InstId, Vec<usize>> = BTreeMap::new();
+        let mut at_end: BTreeMap<BlockId, Vec<usize>> = BTreeMap::new();
+        for (index, access) in members.iter().enumerate() {
+            match access.at {
+                At::Inst(inst) | At::Argument(Site::Call(inst), _) => {
+                    at_inst.entry(inst).or_default().push(index);
+                }
+                At::Argument(Site::Tail(block), _) => at_end.entry(block).or_default().push(index),
+            }
+        }
+        // Each block's accesses, in order.
+        let mut order: BTreeMap<BlockId, Vec<usize>> = BTreeMap::new();
+        let mut found = 0;
+        for (id, block) in self.blocks() {
+            if matches!(&block.terminator, Terminator::IndirectJump { targets, .. } if targets.is_empty())
+            {
+                return None;
+            }
+            let list = order.entry(id).or_default();
+            for inst in &block.insts {
+                if let Some(indices) = at_inst.get(inst) {
+                    list.extend(indices);
+                    found += indices.len();
+                }
+            }
+            if let Some(indices) = at_end.get(&id) {
+                list.extend(indices);
+                found += indices.len();
+            }
+        }
+        if found != members.len() {
+            return None;
+        }
+        // The stores that may have written each byte last, where each
+        // block starts.
+        let mut start: BTreeMap<BlockId, Vec<BTreeSet<usize>>> = BTreeMap::new();
+        start.insert(BlockId(0), alloc::vec![BTreeSet::new(); bytes]);
+        let mut reaching: Vec<BTreeSet<usize>> = alloc::vec![BTreeSet::new(); members.len()];
+        let mut work = alloc::vec![BlockId(0)];
+        let mut steps = 0;
+        while let Some(id) = work.pop() {
+            steps += 1;
+            if steps > REUSE_STEPS {
+                return None;
+            }
+            let Some(mut state) = start.get(&id).cloned() else {
+                continue;
+            };
+            for &index in order.get(&id).map_or(&[][..], Vec::as_slice) {
+                let access = members.get(index)?;
+                let from = usize::try_from(access.offset - offset).ok()?;
+                let touched = state.get_mut(from..from + usize::from(access.bytes))?;
+                if access.write {
+                    for byte in touched {
+                        *byte = BTreeSet::from([index]);
+                    }
+                } else {
+                    let into = reaching.get_mut(index)?;
+                    for byte in touched {
+                        into.extend(byte.iter().copied());
+                    }
+                }
+            }
+            let Some(block) = self.l1.block(id) else {
+                continue;
+            };
+            for target in block.terminator.targets() {
+                let changed = if let Some(known) = start.get_mut(&target.block) {
+                    let mut changed = false;
+                    for (into, from) in known.iter_mut().zip(&state) {
+                        for &store in from {
+                            changed |= into.insert(store);
+                        }
+                    }
+                    changed
+                } else {
+                    start.insert(target.block, state.clone());
+                    true
+                };
+                if changed {
+                    work.push(target.block);
+                }
+            }
+        }
+        let mut parent: Vec<usize> = (0..members.len()).collect();
+        for (read, stores) in reaching.iter().enumerate() {
+            for &store in stores {
+                let (a, b) = (root(&mut parent, read), root(&mut parent, store));
+                if let Some(link) = parent.get_mut(a.max(b)) {
+                    *link = a.min(b);
+                }
+            }
+        }
+        let mut webs: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for index in 0..members.len() {
+            webs.entry(root(&mut parent, index))
+                .or_default()
+                .push(index);
+        }
+        (webs.len() > 1).then(|| webs.into_values().collect())
     }
 
     /// Whether a stack address escapes where the frame does not see it
@@ -1148,11 +1345,14 @@ impl Lowering<'_, '_> {
                     else {
                         return false;
                     };
+                    // The load's own slot (a slot reused for other values
+                    // is several of one offset).
                     let restored = self.address(address).is_some_and(|offset| {
-                        slots.iter().any(|&slot| {
-                            self.frame.slots.get(slot).is_some_and(|s| {
-                                s.offset == offset && s.end == offset + i64::from(bytes)
-                            })
+                        self.frame.accesses.get(&inst).is_some_and(|&slot| {
+                            slots.contains(&slot)
+                                && self.frame.slots.get(slot).is_some_and(|s| {
+                                    s.offset == offset && s.end == offset + i64::from(bytes)
+                                })
                         })
                     });
                     if !restored {

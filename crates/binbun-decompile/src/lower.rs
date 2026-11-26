@@ -67,7 +67,14 @@
 //!    whole only and read in parts only as calls' stack arguments (pushed
 //!    as 8 bytes and passed as 4: the arguments are the variable's bits);
 //!    else a
-//!    `Frame(offset)` variable of its own. The slots reached are memory:
+//!    `Frame(offset)` variable of its own. Where such a slot in the
+//!    function's own bytes is accessed in several shapes, and each reuse
+//!    of its bytes (a read joined with every store that may have written
+//!    one of its bytes last on some path from the entry, transitively: a
+//!    compiler shares a spill slot among values of different types) is
+//!    one value's (written, and every access all of it), each reuse is a
+//!    slot of its own, a local variable.
+//!    The slots reached are memory:
 //!    one `Frame` variable from the lowest address that may reach any byte
 //!    above it, spanning every accessed and address-taken byte above it
 //!    below the entry stack pointer, and one per other reach with the
