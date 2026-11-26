@@ -295,7 +295,7 @@ impl Lowering<'_, '_> {
     }
 
     /// What each kept canonical value is.
-    fn shapes(&self) -> Vec<Option<Shape>> {
+    pub(super) fn shapes(&self) -> Vec<Option<Shape>> {
         (0..self.l1.values.len())
             .map(|index| {
                 let v = Value(u32::try_from(index).unwrap_or(u32::MAX));
@@ -337,7 +337,7 @@ impl Lowering<'_, '_> {
     /// The block parameters and arguments (parameter, argument) where the
     /// argument is zero on every edge it arrives by
     /// ([`Self::zero_on`]): the parameter holds no object of its there.
-    fn null_arguments(&self, shapes: &[Option<Shape>]) -> BTreeSet<(Value, Value)> {
+    pub(super) fn null_arguments(&self, shapes: &[Option<Shape>]) -> BTreeSet<(Value, Value)> {
         let mut nulls = BTreeSet::new();
         for (index, shape) in shapes.iter().enumerate() {
             let Some(Shape::Phi(_)) = shape else {

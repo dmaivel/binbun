@@ -214,6 +214,11 @@ pub(super) struct Lowering<'a, 'c> {
     pub(super) needed: Needed,
     /// The variables of values.
     pub(super) classes: Classes,
+    /// The block parameters and arguments (parameter, argument) where the
+    /// argument is proved zero on every edge it arrives by
+    /// ([`Self::null_arguments`]): the edge's copy is of 0, and the two
+    /// share no variable.
+    pub(super) nulls: BTreeSet<(Value, Value)>,
     /// Copies emitted on edges.
     pub(super) copies: usize,
     /// The solver's constraints, solved, between folding and rounding.
@@ -298,6 +303,7 @@ impl<'a, 'c> Lowering<'a, 'c> {
             frame: Frame::default(),
             needed: Needed::default(),
             classes: Classes::default(),
+            nulls: BTreeSet::new(),
             copies: 0,
             solved: None,
             typed: None,

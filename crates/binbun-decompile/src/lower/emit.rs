@@ -2661,7 +2661,8 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
     }
 
     /// An edge to `target`: the copies to the target's parameters, then a
-    /// goto.
+    /// goto. An argument proved zero there ([`Lowering::nulls`]) is copied
+    /// as 0: the parameter's variable is not the argument's.
     fn edge(&mut self, target: &Target) -> Vec<StmtId> {
         let lw = self.lw;
         // What the edge's copies read is theirs; what was seen before is
@@ -2672,8 +2673,9 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
             .l1
             .block(target.block)
             .map_or(&[][..], |b| b.parameters.as_slice());
-        // (destination class, argument, classes it reads)
-        let mut pending: Vec<(usize, Value, Vec<usize>)> = Vec::new();
+        // (destination class, argument, classes it reads; none if it is
+        // copied as 0)
+        let mut pending: Vec<(usize, Value, Option<Vec<usize>>)> = Vec::new();
         let mut leaves = Vec::new();
         for (&parameter, &argument) in parameters.iter().zip(&target.arguments) {
             if lw.canonical(parameter) != parameter || lw.role(parameter) != Role::Var {
@@ -2682,51 +2684,37 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
             let Some(dest) = lw.classes.of(parameter) else {
                 continue;
             };
+            if lw.nulls.contains(&(parameter, argument)) {
+                pending.push((dest, argument, None));
+                continue;
+            }
             if lw.classes.of(lw.canonical(argument)) == Some(dest) {
                 continue;
             }
             leaves.clear();
             lw.leaves(Use::Value(argument, lw.width(argument)), &mut leaves);
             let reads = leaves.iter().filter_map(|&v| lw.classes.of(v)).collect();
-            pending.push((dest, argument, reads));
+            pending.push((dest, argument, Some(reads)));
         }
         let mut renamed: BTreeMap<VarId, VarId> = BTreeMap::new();
         let mut renamed_classes: Vec<usize> = Vec::new();
         while !pending.is_empty() {
             let ready = (0..pending.len()).find(|&i| {
                 let dest = pending.get(i).map_or(usize::MAX, |p| p.0);
-                pending.iter().enumerate().all(|(j, (_, _, reads))| {
-                    j == i || renamed_classes.contains(&dest) || !reads.contains(&dest)
+                pending.iter().enumerate().all(|(j, (_, _, sources))| {
+                    j == i
+                        || renamed_classes.contains(&dest)
+                        || sources
+                            .as_ref()
+                            .is_none_or(|sources| !sources.contains(&dest))
                 })
             });
             if let Some(i) = ready {
-                let (dest, argument, _) = pending.remove(i);
+                let (dest, argument, sources) = pending.remove(i);
                 let Some(var) = self.classes.get(dest).copied().flatten() else {
                     continue;
                 };
-                // An argument no run reads (on an edge where the parameter
-                // is used only where the edge was not taken): a register's
-                // entry value, as such, else what it is.
-                let value = match lw.kind(lw.canonical(argument)) {
-                    Kind::Entry(register) if lw.role(argument) == Role::None => self.undefined(
-                        lw.width(argument),
-                        Unknown::Entry {
-                            register: Some(register),
-                        },
-                    ),
-                    Kind::None
-                    | Kind::Const(_)
-                    | Kind::Undefined(..)
-                    | Kind::Address(_)
-                    | Kind::Entry(_)
-                    | Kind::Phi
-                    | Kind::Pure(_)
-                    | Kind::Load(_)
-                    | Kind::Result(_)
-                    | Kind::CallView { .. } => self.expr(argument),
-                };
-                let value = self.passed(value, argument);
-                let value = self.substitute(value, &renamed);
+                let value = self.copied(argument, sources.is_none(), &renamed);
                 let width = lw.classes.sets.get(dest).map_or(0, |class| class.width);
                 let value = self.fitted(value, width);
                 let stmt = self.stmt(
@@ -2767,6 +2755,38 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
         out.push(goto);
         self.seen = before;
         out
+    }
+
+    /// What an edge copies of `argument`: 0 where it is proved zero there
+    /// (`zero`); else its value, with the variables `renamed` read from
+    /// their new names. An argument no run reads (on an edge where the
+    /// parameter is used only where the edge was not taken) is a
+    /// register's entry value, as such.
+    fn copied(&mut self, argument: Value, zero: bool, renamed: &BTreeMap<VarId, VarId>) -> ExprId {
+        let lw = self.lw;
+        if zero {
+            return self.constant(Bits::zero(lw.width(argument)));
+        }
+        let value = match lw.kind(lw.canonical(argument)) {
+            Kind::Entry(register) if lw.role(argument) == Role::None => self.undefined(
+                lw.width(argument),
+                Unknown::Entry {
+                    register: Some(register),
+                },
+            ),
+            Kind::None
+            | Kind::Const(_)
+            | Kind::Undefined(..)
+            | Kind::Address(_)
+            | Kind::Entry(_)
+            | Kind::Phi
+            | Kind::Pure(_)
+            | Kind::Load(_)
+            | Kind::Result(_)
+            | Kind::CallView { .. } => self.expr(argument),
+        };
+        let value = self.passed(value, argument);
+        self.substitute(value, renamed)
     }
 
     /// `expr` with the variables `renamed` read from their new names.

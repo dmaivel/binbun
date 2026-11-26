@@ -200,7 +200,7 @@ pub(crate) fn round(
             .push(state.parameter(index, parameter, classes));
     }
     state.accesses(&mut rounded.accesses);
-    rounded.returns = state.returns(classes, &rounded.classes);
+    rounded.returns = state.returns();
     for (&start, &var) in &generated.objects {
         if let Some(ty) = state.global_object(start, var) {
             rounded.globals.insert(start, ty);
@@ -254,15 +254,42 @@ pub(crate) fn round(
 }
 
 /// What a pointer-wide value with a variable is, for coalescing: a class
-/// holding a pointer is not coalesced with one holding an integer.
+/// holding a pointer is not coalesced with one holding an integer, nor
+/// one holding a pointer to a struct with one holding a pointer to
+/// anything else ([`Pointee`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Sort {
     /// It rounds to a pointer (a pointer family's member with pointer
-    /// evidence, a pointer bound standing) or code.
-    Pointer,
+    /// evidence, a pointer bound standing) or code, to what (`None`:
+    /// `void *`, a target unknown).
+    Pointer(Option<Pointee>),
     /// It rounds to an integer, a truth value or a float, or it is an
     /// integer computation ([`Generated::integers`]).
     Integer,
+}
+
+/// What a pointer [`Sort`] points to: a struct or union (its type), or
+/// anything else (a scalar, an array, code: its type; a value rounded to
+/// code is its own pointee). Two structs are two objects' types, and a
+/// struct is no scalar's; scalars' types are a buffer's views.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Pointee {
+    /// A struct or union.
+    Struct(TypeId),
+    /// Anything else.
+    Other(TypeId),
+}
+
+impl Pointee {
+    /// Whether one variable may hold pointers to `self` and to `other`:
+    /// not to two structs, nor to a struct and anything else.
+    pub(crate) fn agrees(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Struct(a), Self::Struct(b)) => a == b,
+            (Self::Other(_), Self::Other(_)) => true,
+            (Self::Struct(_), Self::Other(_)) | (Self::Other(_), Self::Struct(_)) => false,
+        }
+    }
 }
 
 /// Per L1 value: what `solution` of `generated` (from `view`) rounds it to
@@ -286,12 +313,21 @@ pub(crate) fn sorts(
             let rounded = generated
                 .var(v)
                 .and_then(|var| state.of(var, pointer))
-                .and_then(|(ty, _)| state.types.get(ty));
+                .and_then(|(ty, _)| Some((ty, state.types.get(ty)?)));
             match rounded {
-                Some(Type::Pointer(_) | Type::Code(_)) => Some(Sort::Pointer),
-                Some(
+                Some((_, &Type::Pointer(target))) => {
+                    Some(Sort::Pointer(target.map(
+                        |target| match state.types.get(target) {
+                            Some(Type::Struct(_) | Type::Union(_)) => Pointee::Struct(target),
+                            Some(_) | None => Pointee::Other(target),
+                        },
+                    )))
+                }
+                Some((ty, Type::Code(_))) => Some(Sort::Pointer(Some(Pointee::Other(ty)))),
+                Some((
+                    _,
                     Type::Int(_) | Type::UInt(_) | Type::Bool(_) | Type::Float(_) | Type::Enum(_),
-                ) => Some(Sort::Integer),
+                )) => Some(Sort::Integer),
                 Some(_) | None => generated
                     .integers
                     .get(v.0 as usize)
@@ -1008,7 +1044,7 @@ impl<'r, 'a> Rounder<'r, 'a> {
     /// The return value's type: its variable's with the values returned
     /// (joined as a class: what a returned value is demanded as before it
     /// is returned is evidence of the return type too).
-    fn returns(&mut self, classes: &[Members], types: &[Option<TypeId>]) -> Option<TypeId> {
+    fn returns(&mut self) -> Option<TypeId> {
         let view = self.view;
         let returns = &view.returns;
         let var = self.generated.returns?;
@@ -1022,39 +1058,6 @@ impl<'r, 'a> Rounder<'r, 'a> {
         let (mut ty, _) = self.join(vars.into_iter(), returns.width);
         if let Some(object) = self.returned_struct() {
             ty = Some(object);
-        }
-        if ty.is_none() {
-            // Nothing speaks for the values returned themselves (a copy
-            // of what something else is demanded as): the type of the
-            // variables holding them, where they agree; a pointer to a
-            // struct as only a pointer, as only the values returned say
-            // which struct ([`Self::returned_struct`]): a variable holds
-            // a bucket and then the data it points to (`r = r->data;
-            // return r;`).
-            let held: Vec<TypeId> = classes
-                .iter()
-                .zip(types)
-                .filter(|(class, _)| {
-                    class.width == returns.width
-                        && returns
-                            .values
-                            .iter()
-                            .chain(&returns.registers)
-                            .any(|&v| class.values.contains(&view.canonical(v)))
-                })
-                .filter_map(|(_, &ty)| ty)
-                .collect();
-            let mut held = held.into_iter().map(|ty| {
-                if points_to_aggregate(self.types, ty) {
-                    self.types.intern(Type::Pointer(None))
-                } else {
-                    ty
-                }
-            });
-            let first = held.next();
-            if held.all(|other| Some(other) == first) {
-                ty = first;
-            }
         }
         self.keep_declared(ty, returns.evidence.unwrap_or(Stated::Default))
     }
@@ -3185,12 +3188,6 @@ pub(super) fn field_class(ty: &FieldType) -> Option<Class> {
         | FieldType::ScalarPointers(_) => Some(Class::Pointer(None)),
         FieldType::Code { .. } => Some(Class::Code),
     }
-}
-
-/// Whether `ty` (in `types`) is a pointer to a struct or a union.
-fn points_to_aggregate(types: &Types, ty: TypeId) -> bool {
-    matches!(types.get(ty), Some(&Type::Pointer(Some(target)))
-        if matches!(types.get(target), Some(Type::Struct(_) | Type::Union(_))))
 }
 
 /// `level`'s atom if it says more than a width and is `width` bits.

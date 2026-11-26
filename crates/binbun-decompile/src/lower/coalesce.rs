@@ -6,9 +6,15 @@
 //! the statement it is folded into, and a block argument at the end of its
 //! predecessor. Types ([`crate::typing`], solved before coalescing)
 //! inform it: a class holding a pointer is not coalesced with one holding
-//! an integer ([`Sort`], what the solution rounds each pointer-wide value
-//! to alone, an integer computation being an integer whatever it rounds
-//! to); the argument stays a copy on its edge.
+//! an integer, nor one holding a pointer to a struct with one holding a
+//! pointer to another struct or to a scalar ([`Sort`], what the solution
+//! rounds each pointer-wide value to alone, an integer computation being
+//! an integer whatever it rounds to); the argument stays a copy on its
+//! edge. A class takes the first target its members show, so `void *`
+//! joins pointers to two structs to neither.
+//! An argument proved zero on every edge it arrives by
+//! ([`Lowering::nulls`]) is not coalesced with its parameter at all: its
+//! copy there is of 0, whatever else it holds.
 
 use alloc::collections::BTreeMap;
 use alloc::vec;
@@ -18,16 +24,18 @@ use binbun_ssa::ir::{BlockId, Value};
 
 use super::facts::{Def, Kind, Lowering};
 use super::needed::{Role, Use};
-use crate::typing::Sort;
+use crate::typing::{Pointee, Sort};
 
 /// No class.
 const NONE: u32 = u32::MAX;
 
-/// What a class holds, of [`Sort`]s: a pointer, an integer.
+/// What a class holds, of [`Sort`]s: a pointer (to what, if its members
+/// say), an integer.
 #[derive(Clone, Copy, Debug, Default)]
 struct Held {
     pointer: bool,
     integer: bool,
+    pointee: Option<Pointee>,
 }
 
 impl Held {
@@ -36,7 +44,10 @@ impl Held {
         let mut held = Self::default();
         for member in members {
             match sorts.get(member.0 as usize).copied().flatten() {
-                Some(Sort::Pointer) => held.pointer = true,
+                Some(Sort::Pointer(pointee)) => {
+                    held.pointer = true;
+                    held.pointee = held.pointee.or(pointee);
+                }
                 Some(Sort::Integer) => held.integer = true,
                 None => {}
             }
@@ -44,16 +55,23 @@ impl Held {
         held
     }
 
-    /// Whether one holds a pointer and the other an integer.
-    const fn conflicts(self, other: Self) -> bool {
-        (self.pointer && other.integer) || (self.integer && other.pointer)
+    /// Whether one holds a pointer and the other an integer, or they hold
+    /// pointers to what one variable may not ([`Pointee::agrees`]).
+    fn conflicts(self, other: Self) -> bool {
+        (self.pointer && other.integer)
+            || (self.integer && other.pointer)
+            || self
+                .pointee
+                .zip(other.pointee)
+                .is_some_and(|(a, b)| !a.agrees(b))
     }
 
     /// What both hold.
-    const fn with(self, other: Self) -> Self {
+    fn with(self, other: Self) -> Self {
         Self {
             pointer: self.pointer || other.pointer,
             integer: self.integer || other.integer,
+            pointee: self.pointee.or(other.pointee),
         }
     }
 }
@@ -205,6 +223,7 @@ impl Lowering<'_, '_> {
     pub(super) fn coalesce(&mut self) {
         let mut classes = self.singletons();
         let sorts = self.sorts();
+        self.nulls = self.null_arguments(&self.shapes());
         let mut steps = 0u64;
         let merged = self
             .liveness(&classes, &mut steps)
@@ -272,6 +291,9 @@ impl Lowering<'_, '_> {
                     continue;
                 }
                 for (_, argument) in self.incoming(id, k) {
+                    if self.nulls.contains(&(parameter, argument)) {
+                        continue;
+                    }
                     let argument = self.canonical(argument);
                     let (Some(a), Some(b)) = (classes.of(argument), classes.of(parameter)) else {
                         continue;

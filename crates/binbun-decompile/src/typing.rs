@@ -142,7 +142,7 @@ pub(crate) use generate::{Call, Generated, Parameter, Returns, Shape, View};
 pub use globals::{
     GlobalClue, GlobalSource, GlobalType, Globals, Kind, Seen, Shape as GlobalShape,
 };
-pub(crate) use round::{Members, Rounded, Sort};
+pub(crate) use round::{Members, Pointee, Rounded, Sort};
 pub use structs::{Contribution, Field, FieldType, Layout, StructId, Structs};
 
 use alloc::collections::BTreeMap;
