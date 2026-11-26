@@ -41,7 +41,7 @@ always read by later versions.
 
 ### Changed
 
-- A struct on the stack whose address is passed to calls is one struct for all of them, and where a library function's declaration types the parameter it is passed as (`gettimeofday`'s `struct timeval *`), it is that declared struct: `difftimeval(struct timeval *, struct timeval *, struct timeval *)` instead of three structs of `difftimeval`'s own. On bash built with debug information, `struct timeval` is one struct instead of twelve names.
+- A struct on the stack whose address is passed to calls is one struct for all of them, and where a library function's declaration types the parameter it is passed as (`gettimeofday`'s `struct timeval *`), it is that declared struct: `difftimeval(struct timeval *, struct timeval *, struct timeval *)` instead of three structs of `difftimeval`'s own. On bash built with debug information, `struct timeval` is one struct instead of twelve names. The declared type names the struct only where its fields fit it, and not where they fit its first member alone: a stack slot the compiler reuses for a `scratch_buffer` and for `uname`'s `struct utsname` is no `utsname`, and `print_timeval(&self.ru_utime)` takes no `struct rusage *`.
 - A function of the program that returns, on every path, what an allocator returns for its own unchanged size parameter (`xmalloc`, `xrealloc`, wrappers of those) is an allocator too: it and every call to it return `void *` (`void *xmalloc(uint64_t);` and `v = xmalloc(24);` instead of `char *xmalloc(uint64_t);` and `v = (struct s *)xmalloc(24);`), and its calls' sizes are allocation sizes, as a declared `malloc`'s are.
 - The reading view assumes that no code steps back from an address of a function's stack frame that the function passes or stores (as `container_of` does), and says so in its header: the locals below every such address are variables of their own instead of fields of the frame struct (most of an `-O0` function's locals).
 - A stack slot that is accessed in parts and lives outside the frame struct has the type of its whole accesses (`int64_t frame_m78`) instead of being bytes (`uint8_t frame_m78[8]`).
@@ -67,6 +67,8 @@ always read by later versions.
 
 ### Fixed
 
+- A variable or object that holds allocations of known sizes (`malloc(3)` and `malloc(2)` on two paths) is no pointer to a struct larger than the smallest of them, so clang no longer warns that an allocation is too small for its type: on bash, 14 of those warnings go from the exact view.
+- A struct that starts some bytes into an object a call returns (Lua's `lua_State`, 8 bytes into the `LG` its `global_State` follows) takes no fields from that function's accesses to the object, so it is not printed as large as the whole object: on Lua's interpreter, struct field precision rises from 61% to 67%, and pointer parameters whose pointee has the right size from 36% to 43%.
 - A string constant held in a local and passed to two calls prints as the string literal at both, not as its address.
 
 ## v0.1.0 (2026-11-23)

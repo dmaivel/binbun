@@ -99,6 +99,11 @@
 //!   it reaches past the declared size or a declared field at its offset
 //!   is of another width, the declared layout stays and the conflict is
 //!   counted ([`Structs::declared_conflicts`]).
+//!   A region of the stack frame passed as a declared pointer is weaker
+//!   evidence (a slot the compiler reuses is passed for different
+//!   objects, and a struct's first member at its start): its struct
+//!   takes the declared type only where its fields fit it ([`fits`]) and
+//!   do not fit its first member alone.
 
 mod named;
 
@@ -546,6 +551,13 @@ pub struct Contribution {
     pub(crate) declared: Vec<(StructId, TypeId)>,
     /// The types of [`Self::declared`] (none where it is empty).
     pub(crate) declared_types: Option<Types>,
+    /// The declared type (in [`Self::declared_types`]) of each struct a
+    /// region of the stack frame is that is passed as a declared pointer
+    /// ([`super::declared::Declared::Region`]): weaker than
+    /// [`Self::declared`], as a slot the compiler reuses is passed for
+    /// different objects, so the table takes it only where the struct's
+    /// layout fits it ([`fits`]).
+    pub(crate) regional: Vec<(StructId, TypeId)>,
     /// The struct each region of its stack frame it passes to calls is
     /// (by the region's start, from the entry stack pointer), where
     /// callees' roots claim it: for its declared roots there
@@ -654,6 +666,7 @@ impl Structs {
             tables,
             declared,
             declared_types,
+            regional,
             objects: _,
             regions: _,
         } = contribution;
@@ -702,12 +715,23 @@ impl Structs {
         }
         if let Some(from) = declared_types {
             let mut map = BTreeMap::new();
-            for (id, ty) in declared {
+            let stated = declared.into_iter().map(|claim| (claim, true));
+            let regional = regional.into_iter().map(|claim| (claim, false));
+            for ((id, ty), strong) in stated.chain(regional) {
                 let into = self
                     .declared
                     .get_or_insert_with(|| Types::new(from.pointer_width()));
-                if let Some(ty) = copy(&from, ty, into, &mut map) {
-                    let id = self.find(id);
+                let Some(ty) = copy(&from, ty, into, &mut map) else {
+                    continue;
+                };
+                let id = self.find(id);
+                let fitting = match (self.layouts.get(&id), &self.declared) {
+                    (Some(layout), Some(types)) => {
+                        fits(layout, types, ty) && !first_member(layout, types, ty)
+                    }
+                    _ => true,
+                };
+                if strong || fitting {
                     self.identify(id, ty);
                 }
             }
@@ -1734,6 +1758,88 @@ pub(crate) fn bytes(family: &Family) -> bool {
     family.stride == 0 && exact.peek().is_some() && exact.all(|access| access.bits == 8)
 }
 
+/// Whether every field of `layout` lies in declared type `ty` (in
+/// `types`) as a read of it may ([`admits`]): a struct whose fields a
+/// declared struct cannot hold (`scratch_buffer`'s pointer at 0, where
+/// `utsname` has characters) is not of that type.
+fn fits(layout: &Layout, types: &Types, ty: TypeId) -> bool {
+    layout
+        .fields
+        .iter()
+        .all(|(&offset, field)| admits(types, ty, offset, field.bytes(), DEPTH))
+}
+
+/// How deep [`admits`] follows nested members (a malformed table may have
+/// cycles).
+const DEPTH: usize = 8;
+
+/// Whether `layout` fits the first member of declared type `ty` (in
+/// `types`) where that member is a struct or a union ([`fits`]): a region
+/// passed as `struct rusage *` whose struct fits its `ru_utime` may be
+/// that `struct timeval` (`print_timeval(&self.ru_utime)`).
+fn first_member(layout: &Layout, types: &Types, ty: TypeId) -> bool {
+    let Some(Type::Struct(aggregate)) = types.get(ty) else {
+        return false;
+    };
+    aggregate.fields.iter().any(|member| {
+        member.offset == 0
+            && matches!(types.get(member.ty), Some(Type::Struct(_) | Type::Union(_)))
+            && fits(layout, types, member.ty)
+    })
+}
+
+/// Whether `bytes` bytes at byte `at` of declared type `ty` (in `types`)
+/// are a read of it: within one scalar member (a narrower read: a flag's
+/// byte), through nested structs, any member of a union and an array's
+/// element; or a struct's members copied whole, from a member's start to
+/// a member's end (`timeval` moved as 128 bits). Of a type of no known
+/// width, any.
+fn admits(types: &Types, ty: TypeId, at: u64, bytes: u64, depth: usize) -> bool {
+    let Some(size) = types.width(ty).map(|bits| bits / 8) else {
+        return true;
+    };
+    let end = at.saturating_add(bytes);
+    if end > size {
+        return false;
+    }
+    let Some(next) = depth.checked_sub(1) else {
+        return true;
+    };
+    let width = |member: TypeId| types.width(member).map_or(0, |bits| bits / 8);
+    match types.get(ty) {
+        Some(Type::Struct(aggregate)) => {
+            aggregate.fields.iter().any(|member| {
+                at >= member.offset && admits(types, member.ty, at - member.offset, bytes, next)
+            }) || (aggregate.fields.iter().any(|member| member.offset == at)
+                && aggregate
+                    .fields
+                    .iter()
+                    .any(|member| member.offset.saturating_add(width(member.ty)) == end))
+        }
+        Some(Type::Union(aggregate)) => aggregate
+            .fields
+            .iter()
+            .any(|member| admits(types, member.ty, at, bytes, next)),
+        Some(&Type::Array { element, .. }) => match width(element) {
+            0 => true,
+            step => admits(types, element, at % step, bytes, next),
+        },
+        Some(
+            Type::Bits(_)
+            | Type::Int(_)
+            | Type::UInt(_)
+            | Type::Char { .. }
+            | Type::Bool(_)
+            | Type::Float(_)
+            | Type::Pointer(_)
+            | Type::Code(_)
+            | Type::Vector { .. }
+            | Type::Enum(_),
+        )
+        | None => true,
+    }
+}
+
 /// Whether access `access` of a family whose offsets repeat by `period`
 /// (its stride; 0: none) is at a known place in its struct (an element's
 /// where `period` is not 0): whole bytes, no index, through a member
@@ -2404,6 +2510,70 @@ mod tests {
         let ty = structs.field_type(&FieldType::Struct(string), &mut types, &mut BTreeMap::new());
         let char_ty = types.intern(Type::Char { signed: true });
         assert_eq!(types.get(ty), Some(&Type::Pointer(Some(char_ty))));
+    }
+
+    /// A stack region passed as a declared pointer names the struct
+    /// callees claim there only where its fields fit the declared type,
+    /// and not its first member alone: two longs are a `timeval`, but
+    /// not a `rusage` (whose `ru_utime` they may be), and a pointer and a
+    /// length (`scratch_buffer`) are no `utsname` (characters).
+    #[test]
+    fn a_region_is_named_only_by_a_type_its_fields_fit() {
+        let mut declared = Types::new(64);
+        let long = declared.intern(Type::Int(64));
+        let character = declared.intern(Type::Char { signed: true });
+        let name = declared.intern(Type::Array {
+            element: character,
+            length: Some(65),
+        });
+        let member = |offset, ty| Member {
+            offset,
+            ty,
+            name: None,
+        };
+        let timeval = declared.intern(Type::Struct(Aggregate {
+            name: Some("timeval".into()),
+            size: 16,
+            fields: vec![member(0, long), member(8, long)],
+        }));
+        let rusage = declared.intern(Type::Struct(Aggregate {
+            name: Some("rusage".into()),
+            size: 32,
+            fields: vec![member(0, timeval), member(16, timeval)],
+        }));
+        let utsname = declared.intern(Type::Struct(Aggregate {
+            name: Some("utsname".into()),
+            size: 130,
+            fields: vec![member(0, name), member(65, name)],
+        }));
+        let mut longs = Layout::default();
+        longs.add(0, field(64, Type::Int(64), 4));
+        longs.add(8, field(64, Type::Int(64), 4));
+        let mut buffer = Layout::default();
+        buffer.add(0, field(64, Type::Pointer(None), 4));
+        buffer.add(8, field(64, Type::UInt(64), 4));
+        for (layout, ty, named) in [
+            (longs.clone(), timeval, true),
+            (longs, rusage, false),
+            (buffer, utsname, false),
+        ] {
+            let id = StructId {
+                function: 0x100,
+                k: 1,
+            };
+            let mut structs = Structs::default();
+            structs.add(0x100, None, born(id, layout, Vec::new()));
+            structs.add(
+                0x200,
+                None,
+                Contribution {
+                    regional: vec![(id, ty)],
+                    declared_types: Some(declared.clone()),
+                    ..Contribution::default()
+                },
+            );
+            assert_eq!(structs.declared() == 1, named, "{:?}", declared.get(ty));
+        }
     }
 
     #[test]

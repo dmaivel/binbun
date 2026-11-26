@@ -551,8 +551,9 @@ struct Rounder<'r, 'a> {
     fields: BTreeMap<InstId, (StructId, i64, u16)>,
     /// The structs interned in `types`.
     interned: BTreeMap<StructId, TypeId>,
-    /// The families holding allocations of a known size ([`allocations`]).
-    allocations: BTreeMap<usize, Option<(i64, u64)>>,
+    /// The smallest allocation of known size at each place of a family
+    /// ([`smallest`]).
+    smallest: BTreeMap<(usize, i64), u64>,
 }
 
 /// What rounding makes of a pointer family (one object).
@@ -630,7 +631,7 @@ impl<'r, 'a> Rounder<'r, 'a> {
             identities: Vec::new(),
             fields: BTreeMap::new(),
             interned: BTreeMap::new(),
-            allocations: allocations(view, generated),
+            smallest: smallest(view, generated),
         };
         rounder.identified(identities);
         rounder
@@ -828,12 +829,18 @@ impl<'r, 'a> Rounder<'r, 'a> {
 
     /// The type of the variables of one L2 variable `width` bits wide: the
     /// strongest, and whether they disagree. An enumeration only where
-    /// every variable is its value; else its integer.
+    /// every variable is its value; else its integer. A pointer to a type
+    /// larger than an allocation of known size one of them holds is `void
+    /// *`: the variable holds bytes (`malloc(3)` and a struct's pointer).
     fn join(&mut self, vars: impl Iterator<Item = Var>, width: u16) -> (Option<TypeId>, bool) {
         let mut best: Option<(TypeId, Strength)> = None;
         let mut disagree = false;
         let mut untyped = false;
+        let mut smallest: Option<u64> = None;
         for var in vars {
+            if let Some(bytes) = self.allocated_bytes(var) {
+                smallest = Some(smallest.map_or(bytes, |known| known.min(bytes)));
+            }
             let Some((ty, strength)) = self.of(var, width) else {
                 untyped = true;
                 continue;
@@ -869,6 +876,18 @@ impl<'r, 'a> Rounder<'r, 'a> {
             } else {
                 Type::UInt(bits)
             }),
+            Some(_) | None => ty,
+        });
+        let ty = ty.map(|ty| match self.types.get(ty) {
+            Some(&Type::Pointer(Some(target)))
+                if smallest.is_some_and(|bytes| {
+                    self.types
+                        .width(target)
+                        .is_some_and(|bits| bits > bytes.saturating_mul(8))
+                }) =>
+            {
+                self.types.intern(Type::Pointer(None))
+            }
             Some(_) | None => ty,
         });
         (ty, disagree)
@@ -1167,16 +1186,13 @@ impl<'r, 'a> Rounder<'r, 'a> {
         rounded
     }
 
-    /// The size in bytes of the allocation `var` is the start of, where a
-    /// call of known size makes it ([`allocations`]).
+    /// The size in bytes of the smallest allocation `var` is the start of,
+    /// where calls of known size make them ([`smallest`]).
     fn allocated_bytes(&self, var: Var) -> Option<u64> {
         let (index, offset, 0) = self.generated.families.of(var)? else {
             return None;
         };
-        let &Some((at, size)) = self.allocations.get(&index)? else {
-            return None;
-        };
-        (at == offset).then_some(size)
+        self.smallest.get(&(index, offset)).copied()
     }
 
     /// The target of the pointers stored to and loaded from a place
@@ -1693,6 +1709,7 @@ fn identify(view: &View<'_>, generated: &Generated, born: bool) -> Identified {
     let mut found = Identified {
         identities,
         allocations: allocations(view, generated),
+        smallest: smallest(view, generated),
         ..Identified::default()
     };
     let mut claims: BTreeMap<usize, Vec<(StructId, i64)>> = BTreeMap::new();
@@ -1792,6 +1809,9 @@ struct Identified {
     merges: Vec<(StructId, StructId)>,
     /// The families holding allocations of a known size ([`allocations`]).
     allocations: BTreeMap<usize, Option<(i64, u64)>>,
+    /// The smallest allocation of known size at each place of a family
+    /// ([`smallest`]).
+    smallest: BTreeMap<(usize, i64), u64>,
     /// The struct each region of the stack frame passed to calls is, by
     /// its start ([`Contribution::regions`]).
     regions: BTreeMap<i64, StructId>,
@@ -1845,7 +1865,9 @@ impl Identified {
     /// an array of scalars ([`scalar_global`]). A claim on a family
     /// holding an allocation of known size is kept only where the
     /// allocation starts the struct and the struct fits it (as large as
-    /// it where the table knows its size): not one object otherwise.
+    /// it where the table knows its size): not one object otherwise; and
+    /// where it holds allocations of several sizes, only a struct that
+    /// fits the smallest starting it ([`Self::smallest`]).
     fn claim(
         &mut self,
         view: &View<'_>,
@@ -1871,6 +1893,18 @@ impl Identified {
                                 && layout.natural_size() <= size
                                 && (layout.allocated == 0 || layout.allocated == size)
                         })
+                    })
+                })
+                .filter(|&(id, base)| {
+                    let mut starting = self
+                        .smallest
+                        .range((index, i64::MIN)..=(index, i64::MAX))
+                        .filter(|&(&(_, offset), _)| place(offset, base, stride) == 0)
+                        .map(|(_, &size)| size);
+                    starting.all(|size| {
+                        structs
+                            .layout(id)
+                            .is_none_or(|layout| layout.natural_size() <= size)
                     })
                 })
                 .collect();
@@ -2352,6 +2386,34 @@ fn stepped(view: &View<'_>, generated: &Generated) -> BTreeSet<Var> {
 /// one offset or at two offsets (not one object).
 fn allocations(view: &View<'_>, generated: &Generated) -> BTreeMap<usize, Option<(i64, u64)>> {
     let mut found: BTreeMap<usize, Option<(i64, u64)>> = BTreeMap::new();
+    for (index, offset, size) in allocation_sizes(view, generated) {
+        let entry = found.entry(index).or_insert(Some((offset, size)));
+        if *entry != Some((offset, size)) {
+            *entry = None;
+        }
+    }
+    found
+}
+
+/// Per place of a family of `generated` (from `view`; by the family's
+/// index and the offset), the smallest allocation of known size there
+/// ([`allocation_sizes`]): a variable holding `malloc(2)` and `malloc(3)` points
+/// to no type larger than 2 bytes.
+fn smallest(view: &View<'_>, generated: &Generated) -> BTreeMap<(usize, i64), u64> {
+    let mut found: BTreeMap<(usize, i64), u64> = BTreeMap::new();
+    for (index, offset, size) in allocation_sizes(view, generated) {
+        let entry = found.entry((index, offset)).or_insert(size);
+        *entry = (*entry).min(size);
+    }
+    found
+}
+
+/// Each result of a call to a callee declared `alloc_size` whose size
+/// arguments are constants, in a family of `generated` (from `view`):
+/// the family's index, the result's offset in it and the object's size
+/// in bytes.
+fn allocation_sizes(view: &View<'_>, generated: &Generated) -> Vec<(usize, i64, u64)> {
+    let mut found = Vec::new();
     for call in &view.calls {
         let Some(alloc) = call.alloc_size else {
             continue;
@@ -2376,10 +2438,7 @@ fn allocations(view: &View<'_>, generated: &Generated) -> BTreeMap<usize, Option
             else {
                 continue;
             };
-            let entry = found.entry(index).or_insert(Some((offset, size)));
-            if *entry != Some((offset, size)) {
-                *entry = None;
-            }
+            found.push((index, offset, size));
         }
     }
     found
@@ -2401,6 +2460,7 @@ pub(crate) fn contribution(
         merges,
         allocations,
         regions,
+        smallest: _,
     } = identify(view, generated, true);
     state.identified(identities.clone());
     let objects = state.seen();
@@ -2644,6 +2704,8 @@ impl Rounder<'_, '_> {
     /// [`Layout::add`]. A declared pointer parameter a pointer into it is
     /// passed to types the field there ([`Self::argument_fields`]) where
     /// the accesses show one of its width there, or none overlapping it.
+    /// None where the family is an object holding the struct
+    /// ([`Self::contains`]).
     fn layout(&mut self, index: usize, base: i64) -> Layout {
         let generated = self.generated;
         let pointer = self.types.pointer_width();
@@ -2656,6 +2718,9 @@ impl Rounder<'_, '_> {
         let Some(family) = generated.families.get(index) else {
             return Layout::default();
         };
+        if self.contains(index, base) {
+            return Layout::default();
+        }
         for access in &family.accesses {
             let at = u64::try_from(place(access.offset, base, family.stride));
             if let (true, Ok(at)) = (counted(access, family.stride), at) {
@@ -2711,6 +2776,30 @@ impl Rounder<'_, '_> {
             }
         }
         layout
+    }
+
+    /// Whether family `index`, its root at `base` in its struct, is an
+    /// object a call returned that begins before the struct (Lua's `LG`,
+    /// its `lua_State` 8 bytes in, and its `global_State` after it): the
+    /// struct is a member of it, and its accesses cannot tell the
+    /// struct's fields from the other members'.
+    fn contains(&self, index: usize, base: i64) -> bool {
+        let generated = self.generated;
+        let Some(family) = generated.families.get(index) else {
+            return false;
+        };
+        self.view
+            .calls
+            .iter()
+            .flat_map(|call| &call.result)
+            .any(|&value| {
+                generated
+                    .var(value)
+                    .and_then(|var| generated.families.of(var))
+                    .is_some_and(|(at, offset, modulus)| {
+                        at == index && modulus == 0 && place(offset, base, family.stride) < 0
+                    })
+            })
     }
 
     /// The fields declared pointer parameters show of family `index`, its

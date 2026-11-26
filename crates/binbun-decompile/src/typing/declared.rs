@@ -106,18 +106,25 @@ pub(crate) fn declare(
         .map(|&(inst, id, base)| (inst, (id, base)))
         .collect();
     let mut map = BTreeMap::new();
-    let mut declare = |id: StructId, target: TypeId, contribution: &mut Contribution| {
-        let into = contribution
-            .declared_types
-            .get_or_insert_with(|| Types::new(types.pointer_width()));
-        if let Some(ty) = copy(&*types, target, into, &mut map)
-            && !contribution.declared.contains(&(id, ty))
-        {
-            contribution.declared.push((id, ty));
-        }
-    };
+    let mut declare =
+        |id: StructId, target: TypeId, regional: bool, contribution: &mut Contribution| {
+            let into = contribution
+                .declared_types
+                .get_or_insert_with(|| Types::new(types.pointer_width()));
+            let Some(ty) = copy(&*types, target, into, &mut map) else {
+                return;
+            };
+            let claims = if regional {
+                &mut contribution.regional
+            } else {
+                &mut contribution.declared
+            };
+            if !claims.contains(&(id, ty)) {
+                claims.push((id, ty));
+            }
+        };
     for (id, target) in regions {
-        declare(id, target, contribution);
+        declare(id, target, true, contribution);
     }
     for (var, target) in vars {
         let Some((index, offset, 0)) = generated.families.of(var) else {
@@ -136,7 +143,7 @@ pub(crate) fn declare(
         if place(offset, base, family.stride) != 0 {
             continue;
         }
-        declare(id, target, contribution);
+        declare(id, target, false, contribution);
     }
 }
 
