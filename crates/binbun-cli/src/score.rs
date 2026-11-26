@@ -470,11 +470,27 @@ impl Tally {
         };
         split.sort_by(most);
         merged.sort_by(most);
+        // Pairs of compared pointers: to one source struct, to one
+        // decompiler struct, and to both.
+        let pairs = |count: usize| count * count.saturating_sub(1) / 2;
+        let mut by_name: BTreeMap<&str, usize> = BTreeMap::new();
+        let (mut same_source, mut both) = (0, 0);
+        for names in self.identities.values() {
+            same_source += pairs(names.values().sum());
+            for (name, &count) in names {
+                both += pairs(count);
+                *by_name.entry(name).or_default() += count;
+            }
+        }
+        let same_name = by_name.values().map(|&count| pairs(count)).sum();
         IdentityErrors {
             sources: self.identities.len(),
             decompiler,
             split,
             merged,
+            same_source,
+            same_name,
+            both,
         }
     }
 }
@@ -492,6 +508,13 @@ pub struct IdentityErrors {
     pub split: Vec<(String, Vec<String>)>,
     /// The decompiler's structs that are several source structs, with them.
     pub merged: Vec<(String, Vec<String>)>,
+    /// Pairs of the pointers compared that point to one source struct.
+    pub same_source: usize,
+    /// Pairs that point to one of the decompiler's structs.
+    pub same_name: usize,
+    /// Pairs that point to one of each: of `same_source`, those the
+    /// decompiler keeps together; of `same_name`, those it is right to.
+    pub both: usize,
 }
 
 impl IdentityErrors {
@@ -1369,7 +1392,7 @@ impl Report {
         let all = self.all_scores();
         let identities = all.identity_errors();
         format!(
-            "functions {}/{} decompiled; variables compared {}: class {}, width {}, sign {}, TIE distance {}, interval {}, conservative {}; casts {}; struct identities {} as {}, split {} (+{} names), merged {}",
+            "functions {}/{} decompiled; variables compared {}: class {}, width {}, sign {}, TIE distance {}, interval {}, conservative {}; casts {}; struct identities {} as {}, split {} (+{} names), merged {}, pairs together {}, right {}",
             self.decompiled,
             self.debug_functions,
             all.mapped,
@@ -1385,6 +1408,8 @@ impl Report {
             identities.split.len(),
             identities.extra_names(),
             identities.merged.len(),
+            percent(identities.both, identities.same_source),
+            percent(identities.both, identities.same_name),
         )
     }
 
@@ -1447,12 +1472,14 @@ impl fmt::Display for Report {
         let identities = self.all_scores().identity_errors();
         writeln!(
             f,
-            "struct identities through mapped pointers: {} source structs as {} decompiler structs; split {} (+{} names), merged {}",
+            "struct identities through mapped pointers: {} source structs as {} decompiler structs; split {} (+{} names), merged {}; pairs of pointers to one source struct under one name {}, under one name to one source struct {}",
             identities.sources,
             identities.decompiler,
             identities.split.len(),
             identities.extra_names(),
             identities.merged.len(),
+            percent(identities.both, identities.same_source),
+            percent(identities.both, identities.same_name),
         )?;
         for (source, names) in identities.split.iter().take(8) {
             writeln!(f, "  split {source}: {}", names.join(", "))?;

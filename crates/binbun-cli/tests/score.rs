@@ -154,4 +154,12 @@ fn identities_split_and_merged() {
             vec!["list".to_owned(), "node".to_owned()]
         )]
     );
+    // Pairs: three pointers to `list` make three pairs, one of them (the
+    // two `struct_a_1`s) under one name; two `struct_a_1`s and two
+    // `struct_b_1`s make two pairs under one name, one of them (the
+    // `struct_a_1`s) to one source struct.
+    assert_eq!(
+        (errors.same_source, errors.same_name, errors.both),
+        (3, 2, 1)
+    );
 }
