@@ -21,10 +21,10 @@
 //!   a copy made one where they never hold different values while both
 //!   are live (liveness and value numbering over the statements' control
 //!   flow, `flow`).
-//! - [`signs`]: [`LocalSigns`](signs::LocalSigns), a local's signedness
-//!   the one more of its reads ask for, then [`Signs`](signs::Signs), the
-//!   last pass: an operation whose operands read the same signed or
-//!   unsigned ([`crate::range`]) takes the signedness of their types.
+//! - [`signs`]: [`Signs`](signs::Signs), the last pass: an operation
+//!   whose operands read the same signed or unsigned ([`crate::range`])
+//!   takes the signedness of their types. (A local's own signedness is
+//!   the printer's choice, on its conversion plan.)
 //! - [`fields`]: [`DeclaredFields`](fields::DeclaredFields), the types
 //!   of what is read and written through the thread pointer, from the
 //!   structure its platform declares (types only: loads and stores are

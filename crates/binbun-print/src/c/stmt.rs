@@ -127,8 +127,12 @@ impl Printer<'_> {
 
     /// The locals declared before statement `id` and the statement
     /// ([`Self::statement`]), its conversions and casts noted in the plan
-    /// ([`super::plan::Ledger::enter`]).
+    /// ([`super::plan::Ledger::enter`]); nothing for a statement held by
+    /// the one being planned again ([`Self::replan`]).
     fn planned_statement(&mut self, id: StmtId) -> Result<(Vec<Doc>, Statement), PrintError> {
+        if self.replanning.is_some_and(|again| again != id) {
+            return Ok((Vec::new(), (Vec::new(), true, false)));
+        }
         let saved = self.node;
         self.node = Some(Node::Stmt(id));
         let before = self.ledger.enter(id, || Site {
@@ -143,14 +147,17 @@ impl Printer<'_> {
         Ok(printed)
     }
 
-    /// Statement `id` planned again where it was printed (`site`), its
-    /// tokens discarded ([`super::Planner::replan`]).
+    /// Statement `id` planned again where it was printed (`site`), without
+    /// the statements it holds, its tokens discarded
+    /// ([`super::Planner::replan`]).
     pub(super) fn replan(&mut self, id: StmtId, site: Site) -> Result<(), PrintError> {
         self.breakable = site.breakable;
         self.nesting = site.nesting;
         self.budget = super::expr::BUDGET;
         self.copied.set(0);
+        self.replanning = Some(id);
         let printed = self.planned_statement(id);
+        self.replanning = None;
         self.breakable.clear();
         self.nesting = 0;
         printed.map(|_| ())

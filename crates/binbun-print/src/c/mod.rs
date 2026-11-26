@@ -81,7 +81,9 @@
 //! The conversions are planned before the function is printed
 //! ([`Planner`]: the printer's own walk, noting each conversion C's rules
 //! decide and each statement's casts), so that a choice of presentation
-//! can be costed in casts first; printing follows the plan ([`planned`]),
+//! can be costed in casts first (each local's signedness, where L2 leaves
+//! it free: [`Planner::choose_signs`]); printing follows the plan
+//! ([`planned`]),
 //! still deciding each conversion by the rules, and counts any the plan
 //! lacks ([`Counts::unplanned`]).
 //!
@@ -147,6 +149,7 @@ mod expr;
 mod float;
 mod memory;
 mod plan;
+mod signs;
 mod stmt;
 mod thread;
 mod types;
@@ -376,8 +379,9 @@ impl Image for Unnamed {
 /// options, with intrinsic names from `declarations` and the names of
 /// functions and globals at addresses, and the read-only data, from
 /// `image`; its instructions without semantics as `opaque` says. Its
-/// conversions are planned first ([`Planner`]), then printed as planned
-/// ([`planned`]).
+/// conversions are planned first ([`Planner`]), each local's signedness
+/// chosen on the plan where L2 leaves it free
+/// ([`Planner::choose_signs`]), then printed as planned ([`planned`]).
 ///
 /// # Errors
 ///
@@ -391,8 +395,16 @@ pub fn function(
     opaque: Opaque,
 ) -> Result<Printed, PrintError> {
     let function = shown(function, opaque);
-    let plan = Planner::new(&function, declarations, style, image, opaque)?.into_plan();
-    planned(&function, declarations, style, image, opaque, plan)
+    let mut planner = Planner::new(&function, declarations, style, image, opaque)?;
+    planner.choose_signs()?;
+    planned(
+        &function,
+        declarations,
+        style,
+        image,
+        opaque,
+        planner.into_plan(),
+    )
 }
 
 /// `function` as view `opaque` prints it: the reading view leaves a
@@ -904,6 +916,8 @@ struct Printer<'a> {
     /// The types variables are printed as, in place of their L2 types
     /// ([`Plan::types`]).
     var_types: BTreeMap<VarId, TypeId>,
+    /// The statement being planned again alone ([`Planner::replan`]).
+    replanning: Option<StmtId>,
 }
 
 impl<'a> Printer<'a> {
@@ -991,6 +1005,7 @@ impl<'a> Printer<'a> {
             nesting: 0,
             ledger: plan::Ledger::making(Plan::default()),
             var_types: BTreeMap::new(),
+            replanning: None,
         };
         printer.name_callees();
         printer.name_variables();

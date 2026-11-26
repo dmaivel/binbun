@@ -197,7 +197,7 @@ fn presets_look_like_their_namesakes() {
     assert!(kr.contains("    if (a1 < a2) {\n"), "{kr}");
     assert!(kr.contains("    } else if (a1 == a2)\n"), "{kr}");
     assert!(kr.contains("    do {\n"), "{kr}");
-    assert!(kr.contains("    } while ((uint64_t)v2 < 10);\n"), "{kr}");
+    assert!(kr.contains("    } while (v2 < 10);\n"), "{kr}");
     let allman = render(&printed(&f, &Style::allman()).document, &Style::allman());
     // Allman: every brace on its own line, single statements braced.
     assert!(allman.contains("    if (a1 < a2)\n    {\n"), "{allman}");
@@ -324,10 +324,7 @@ fn plain_types_spell_64_bits_as_the_data_model_does() {
         linux.contains("long branches(long a1, long a2)\n{\n"),
         "{linux}"
     );
-    assert!(
-        linux.contains("} while ((unsigned long)v2 < 10);"),
-        "{linux}"
-    );
+    assert!(linux.contains("    unsigned long v2;\n"), "{linux}");
     assert!(
         !linux.contains("long long") && !linux.contains("int64_t"),
         "{linux}"
@@ -339,7 +336,7 @@ fn plain_types_spell_64_bits_as_the_data_model_does() {
         "{windows}"
     );
     assert!(
-        windows.contains("} while ((unsigned long long)v2 < 10);"),
+        windows.contains("    unsigned long long v2;\n"),
         "{windows}"
     );
     // The image's data model changes nothing of the fixed-width spelling,

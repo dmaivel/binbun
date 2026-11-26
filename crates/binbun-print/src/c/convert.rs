@@ -354,6 +354,17 @@ pub(super) enum Conversion {
     Mask { widen: bool, ty: IntTy },
 }
 
+impl Conversion {
+    /// Whether it shows in the C as a conversion: a cast, a mask, `sext_n`
+    /// or a negation (a literal printed again is still the literal).
+    pub(super) const fn shows(self) -> bool {
+        match self {
+            Self::Cast(_) | Self::Negate | Self::SignExtend(_) | Self::Mask { .. } => true,
+            Self::Keep | Self::UnsignedLiteral | Self::Literal(_) | Self::Folded(_) => false,
+        }
+    }
+}
+
 /// Why no conversion makes a value what a use needs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Refusal {

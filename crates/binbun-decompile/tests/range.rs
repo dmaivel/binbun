@@ -10,8 +10,7 @@
 //! (rule 5), counters held narrow (rule 6), the code both arms of an `if`
 //! share (`common-arms`), comparison chains as
 //! `switch` (`switches`), and values whose signedness is free (`signs`) on
-//! hand-built L2, with locals typed by the signedness their reads ask for
-//! (`local-signs`): where each applies (a bound zero-extended included), and
+//! hand-built L2: where each applies (a bound zero-extended included), and
 //! where it must refuse (the bound written in the loop, a step that may
 //! pass a `!=` bound, a guard that does not prove the first test, a
 //! sign-extended bound of unknown sign, a range that does not fit the
@@ -32,7 +31,7 @@ use binbun_ast::types::{Evidence, Signature, Type, Types};
 use binbun_decompile::itanium::NONE;
 use binbun_decompile::pass::{self, L2Env};
 use binbun_decompile::range::{Ranges, Refused};
-use binbun_decompile::simplify::signs::{LocalSigns, Signs};
+use binbun_decompile::simplify::signs::Signs;
 use binbun_decompile::structure::{CommonArms, Conditions, Loops, Rotated, Switches};
 use binbun_semantics::Declarations;
 use binbun_semantics::bits::Bits;
@@ -454,65 +453,6 @@ fn a_sign_extended_bound_of_unknown_sign_is_refused() {
     // `0 < (int64_t)n`.
     let (mut b, _) = extended(true);
     assert_eq!(rewrite(&mut b), [(Rotated::Left(Refused::Entry), 1)]);
-}
-
-#[test]
-fn a_local_takes_the_signedness_more_of_its_reads_ask_for() {
-    // more = n; tie = n; same = n;
-    // if (more <u 10) return more /u 3;  one read unsigned (`more / 3U`
-    //                                    is so)
-    // if (more <=u 20) return 0;         another
-    // if (more <s 5) return 1;           one signed
-    // if (tie <u 7) return 2;
-    // if (tie <s 9) return 3;            one each: a tie
-    // if (same == more) return 4;        as `more`
-    // return n <u 4 ? 5 : 6;             a parameter
-    let mut b = Builder::new();
-    let n = b.param();
-    let (more, tie, same) = (b.local(), b.local(), b.local());
-    let mut body = Vec::new();
-    for var in [more, tie, same] {
-        let rn = b.read(n);
-        body.push(b.assign(var, rn));
-    }
-    let quotient = b.vc(Binary::UDiv, more, 3);
-    let tests = [
-        (b.vc(Binary::ULt, more, 10), quotient),
-        (b.vc(Binary::ULe, more, 20), b.c(0)),
-        (b.vc(Binary::SLt, more, 5), b.c(1)),
-        (b.vc(Binary::ULt, tie, 7), b.c(2)),
-        (b.vc(Binary::SLt, tie, 9), b.c(3)),
-        (b.vv(Binary::Eq, same, more), b.c(4)),
-    ];
-    for (condition, value) in tests {
-        let early = b.ret(value);
-        body.push(b.stmt(Stmt::If {
-            condition,
-            then: vec![early],
-            otherwise: Vec::new(),
-        }));
-    }
-    let below = b.vc(Binary::ULt, n, 4);
-    let (five, six) = (b.c(5), b.c(6));
-    let choice = b.f.add_expr(Expr::Select {
-        condition: below,
-        then: five,
-        otherwise: six,
-    });
-    body.push(b.ret(choice));
-    b.f.body = body;
-    let before = outcomes(&b.f);
-    b.run(&mut [&mut LocalSigns]);
-    assert_eq!(outcomes(&b.f), before, "local-signs changed what it does");
-    let ty = |var: VarId| b.f.types.get(b.f.var(var).unwrap().ty).cloned();
-    assert_eq!(ty(more), Some(Type::UInt(32)));
-    assert_eq!(ty(tie), Some(Type::Bits(32)), "a tie keeps the type");
-    assert_eq!(
-        ty(same),
-        Some(Type::UInt(32)),
-        "compared with `more`, as it"
-    );
-    assert_eq!(ty(n), Some(Type::Int(32)), "a parameter keeps its type");
 }
 
 #[test]

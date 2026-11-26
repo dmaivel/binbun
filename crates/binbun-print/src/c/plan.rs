@@ -60,19 +60,19 @@ enum Entry {
 }
 
 impl Entry {
-    /// How many conversions it makes that are not implicit: casts,
-    /// literals printed again, helpers and masks.
+    /// How many conversions it makes that show in the C
+    /// ([`Conversion::shows`]): casts, helpers and masks.
     fn conversions(&self) -> usize {
         match self {
             Self::One(one) => usize::from(matches!(
                 one.conversion,
-                Ok(conversion) if conversion != Conversion::Keep
+                Ok(conversion) if conversion.shows()
             )),
             Self::Two(two) => two
                 .operands
                 .steps()
                 .iter()
-                .filter(|(_, conversion)| *conversion != Conversion::Keep)
+                .filter(|(_, conversion)| conversion.shows())
                 .count(),
         }
     }
@@ -83,8 +83,8 @@ impl Entry {
 pub struct Cost {
     /// Casts printed (each `(T)`), but those of the statements it holds.
     pub casts: usize,
-    /// Conversions that are not implicit: casts, literals printed again,
-    /// helpers and masks.
+    /// Conversions that show in the C: casts, helpers and masks (not a
+    /// literal printed again, the same literal).
     pub conversions: usize,
 }
 
@@ -143,6 +143,12 @@ impl Plan {
     /// types ([`Planner::retype`]).
     pub fn types(&self) -> &BTreeMap<VarId, Type> {
         &self.types
+    }
+
+    /// Whether statement `id` has a plan of its own: it is printed as an
+    /// item of a block, not within another statement's tokens.
+    pub(super) fn has(&self, id: StmtId) -> bool {
+        self.sites.contains_key(&id)
     }
 }
 
@@ -356,6 +362,20 @@ impl<'a> Planner<'a> {
         self.printer.ledger.plan
     }
 
+    /// The function planned.
+    pub(super) const fn function(&self) -> &'a Function {
+        self.printer.f
+    }
+
+    /// Whether variable `var` prints now as an integer of type `ty` would:
+    /// the same C integer type.
+    pub(super) fn spelled_as(&mut self, var: VarId, ty: &Type) -> bool {
+        let printer = &mut self.printer;
+        let id = printer.types.intern(ty.clone());
+        let now = printer.var_ty(var).and_then(|now| printer.int_rep(now));
+        now.is_some() && now == printer.int_rep(id)
+    }
+
     /// Variable `var` printed as of type `ty` from now on (`None`: its L2
     /// type). The statements already planned keep their plans
     /// ([`Self::replan`]).
@@ -370,8 +390,8 @@ impl<'a> Planner<'a> {
         }
     }
 
-    /// Statements `ids` planned again, each with the statements it holds,
-    /// where the plan printed them.
+    /// Statements `ids` planned again where the plan printed them, each
+    /// without the statements it holds (they keep their plans).
     ///
     /// # Errors
     ///

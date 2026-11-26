@@ -1398,9 +1398,11 @@ fn rendered(database: &Database<'_>, output: Output, flags: &Flags) -> Rendered 
             covered = coverage(database, id, &decompiled, &style, flags.view.opaque()).ok();
         }
         let mut asm = 0;
+        let mut unplanned = 0;
         let mut unknowns = Unknowns::default();
         let (text, casts, verdicts) = if let Some(c) = decompiled.c {
             asm = c.asm;
+            unplanned = c.unplanned;
             unknowns = c.unknowns;
             // C with `__asm` blocks is no C a compiler takes: not compiled.
             let verdicts = if flags.stats && c.asm == 0 {
@@ -1420,7 +1422,7 @@ fn rendered(database: &Database<'_>, output: Output, flags: &Flags) -> Rendered 
         let stats = flags.stats.then(|| {
             stats_line(
                 &decompiled.stats,
-                casts,
+                casts.map(|casts| (casts, unplanned)),
                 asm,
                 &unknowns,
                 &verdicts,
@@ -1438,14 +1440,15 @@ fn rendered(database: &Database<'_>, output: Output, flags: &Flags) -> Rendered 
     }
 }
 
-/// A function's `stats`, the `casts` its C has (if printed), its `__asm`
+/// A function's `stats`, the `casts` its C has (if printed, with the
+/// conversions it printed unplanned, shown where there are any), its `__asm`
 /// blocks (`asm`: then it is not compiled, and says so) or what each
 /// compiler found in it, the unknown values it prints (`unknowns`: those
 /// the architecture leaves undefined are `processor-dependent`), and how
 /// much of its machine code its lines came from, on one line.
 fn stats_line(
     stats: &Stats,
-    casts: Option<usize>,
+    casts: Option<(usize, usize)>,
     asm: usize,
     unknowns: &Unknowns,
     verdicts: &[Verdict],
@@ -1455,8 +1458,11 @@ fn stats_line(
         "gotos {}, escapes {}",
         stats.counts.gotos, stats.counts.escapes
     );
-    if let Some(casts) = casts {
+    if let Some((casts, unplanned)) = casts {
         let _ = write!(line, ", casts {casts}");
+        if unplanned > 0 {
+            let _ = write!(line, ", unplanned {unplanned}");
+        }
     }
     if stats.formats.calls() > 0 {
         let _ = write!(line, ", formats {}", stats.formats);
