@@ -69,8 +69,7 @@ impl Lowering<'_, '_> {
 
     /// What [`Self::solve_types`] solved adds to the program's synthesised
     /// structs ([`typing::Contribution`]; nothing unless solved), with the
-    /// declared structs its roots point to where the function has debug
-    /// information ([`Self::declared_roots`]).
+    /// declared structs its roots point to ([`Self::declared_roots`]).
     pub(super) fn structs(&self) -> typing::Contribution {
         let Some(solved) = self.solved.as_ref() else {
             return typing::Contribution::default();
@@ -78,28 +77,29 @@ impl Lowering<'_, '_> {
         let mut types = self.types.clone();
         let view = self.rounding_view(&mut types);
         let mut contribution = typing::contribution(&view, solved, &mut types);
-        if self.debug.is_some() {
-            let roots = self.declared_roots(&view);
-            typing::declare(
-                solved,
-                &roots,
-                self.cx.prototypes,
-                &mut types,
-                &mut contribution,
-            );
-        }
+        let roots = self.declared_roots(&view);
+        typing::declare(
+            solved,
+            &roots,
+            self.cx.prototypes,
+            &mut types,
+            &mut contribution,
+        );
         contribution
     }
 
-    /// The roots whose type a declaration states (debug information's
-    /// where the function has it): the parameters and the return value of
-    /// a declared prototype, the arguments of calls to the program's
-    /// functions with a declared prototype, and the frame slots of the
-    /// debug information's typed variables.
+    /// The roots whose type a declaration states: the arguments and
+    /// results of calls with a declared prototype (the program's
+    /// functions' and imports' alike: `gettimeofday`'s `struct timeval
+    /// *`), an argument that is a region of the stack frame by its start
+    /// ([`Declared::Region`]); and where the function has debug
+    /// information, the parameters and the return value of its declared
+    /// prototype, and the frame slots of its typed variables.
     fn declared_roots(&self, view: &View<'_>) -> Vec<Declared> {
         let mut roots = Vec::new();
+        let debug = self.debug.is_some();
         for parameter in &view.parameters {
-            if parameter.evidence != Evidence::Declared {
+            if !debug || parameter.evidence != Evidence::Declared {
                 continue;
             }
             roots.extend(
@@ -112,7 +112,8 @@ impl Lowering<'_, '_> {
                 roots.push(Declared::Slot(slot, parameter.ty));
             }
         }
-        if view.returns.evidence == Some(Evidence::Declared)
+        if debug
+            && view.returns.evidence == Some(Evidence::Declared)
             && let Some(ty) = view.returns.ty
         {
             roots.extend(
@@ -123,17 +124,20 @@ impl Lowering<'_, '_> {
             );
         }
         for call in &view.calls {
-            let defined = view
-                .constant(call.target)
-                .is_some_and(|target| view.functions.contains(&target.cast_unsigned()));
             let Some(signature) = view.types.signature(call.signature) else {
                 continue;
             };
-            if call.callee.is_some() || !defined {
+            if call.callee.is_some() || call.guessed {
                 continue;
             }
             for (values, &ty) in call.arguments.iter().zip(&signature.parameters) {
-                roots.extend(values.iter().map(|&value| Declared::Value(value, ty)));
+                roots.extend(values.iter().map(|&value| {
+                    if let Kind::Address(at) = self.kind(value) {
+                        Declared::Region(at, ty)
+                    } else {
+                        Declared::Value(value, ty)
+                    }
+                }));
             }
             if let Some(ty) = signature.returns {
                 roots.extend(call.result.iter().map(|&value| Declared::Value(value, ty)));

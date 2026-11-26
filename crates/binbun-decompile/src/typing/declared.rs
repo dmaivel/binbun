@@ -8,8 +8,11 @@
 //!
 //! - **Roots** ([`Declared`]): a value of a declared pointer type (the
 //!   struct is the family's at offset 0 in its struct), the values stored
-//!   to and loaded from a frame slot or a global declared a pointer, and a
-//!   global object declared a struct (its family's struct is it).
+//!   to and loaded from a frame slot or a global declared a pointer, a
+//!   global object declared a struct (its family's struct is it), and a
+//!   region of the stack frame passed as a declared pointer (the struct
+//!   callees' roots claim it at its start is it:
+//!   [`Contribution::regions`]).
 //! - **Portable**: the declared type travels in a [`Types`] of its own
 //!   ([`copy`]); a named struct or union a table already holds of that
 //!   name, kind and size is that one (C has one type per tag), so the
@@ -36,6 +39,9 @@ pub(crate) enum Declared {
     /// The values stored to and loaded from the frame slot (by index) of
     /// the type.
     Slot(usize, TypeId),
+    /// The region of the stack frame starting at this offset from the
+    /// entry stack pointer, passed as a value of the type.
+    Region(i64, TypeId),
 }
 
 /// Records in `contribution` the declared struct each of `roots` (types in
@@ -52,6 +58,7 @@ pub(crate) fn declare(
     contribution: &mut Contribution,
 ) {
     let mut vars: Vec<(Var, TypeId)> = Vec::new();
+    let mut regions: Vec<(StructId, TypeId)> = Vec::new();
     let cells = |var: Var| generated.cells.get(&var).into_iter().flatten().copied();
     for &root in roots {
         match root {
@@ -65,6 +72,13 @@ pub(crate) fn declare(
                     (generated.slots.get(slot), pointee(types, ty))
                 {
                     vars.extend(cells(var).map(|cell| (cell, target)));
+                }
+            }
+            Declared::Region(at, ty) => {
+                if let (Some(&id), Some(target)) =
+                    (contribution.regions.get(&at), pointee(types, ty))
+                {
+                    regions.push((id, target));
                 }
             }
         }
@@ -83,7 +97,7 @@ pub(crate) fn declare(
             vars.extend(cells(var).map(|cell| (cell, target)));
         }
     }
-    if vars.is_empty() {
+    if vars.is_empty() && regions.is_empty() {
         return;
     }
     let accesses: BTreeMap<InstId, (StructId, i64)> = contribution
@@ -92,6 +106,19 @@ pub(crate) fn declare(
         .map(|&(inst, id, base)| (inst, (id, base)))
         .collect();
     let mut map = BTreeMap::new();
+    let mut declare = |id: StructId, target: TypeId, contribution: &mut Contribution| {
+        let into = contribution
+            .declared_types
+            .get_or_insert_with(|| Types::new(types.pointer_width()));
+        if let Some(ty) = copy(&*types, target, into, &mut map)
+            && !contribution.declared.contains(&(id, ty))
+        {
+            contribution.declared.push((id, ty));
+        }
+    };
+    for (id, target) in regions {
+        declare(id, target, contribution);
+    }
     for (var, target) in vars {
         let Some((index, offset, 0)) = generated.families.of(var) else {
             continue;
@@ -109,14 +136,7 @@ pub(crate) fn declare(
         if place(offset, base, family.stride) != 0 {
             continue;
         }
-        let into = contribution
-            .declared_types
-            .get_or_insert_with(|| Types::new(types.pointer_width()));
-        if let Some(ty) = copy(&*types, target, into, &mut map)
-            && !contribution.declared.contains(&(id, ty))
-        {
-            contribution.declared.push((id, ty));
-        }
+        declare(id, target, contribution);
     }
 }
 

@@ -842,6 +842,23 @@ fn a_struct_returned_by_value_is_placed_by_the_convention() {
     assert!(bare_c(&data, "used").contains("*mallinfo2(structmallinfo2"));
 }
 
+/// Structs on the stack passed by address (`tests/fixtures/regions.c`):
+/// `main` passes `before` to `gettimeofday`, declared `struct timeval *`,
+/// and to `difference` as its third argument, `after` likewise as its
+/// second; each region is the struct its callees' parameters claim, so
+/// those parameters are `struct timeval *`. `spent`, passed to no
+/// declared function, keeps the struct of the program's own.
+#[test]
+fn a_stack_struct_passed_to_a_declared_function_is_its_declared_type() {
+    let data = fixture("regions-x86_64.elf");
+    let difference = bare_c(&data, "difference");
+    assert!(
+        difference.contains("structtimeval*a2,structtimeval*a3)"),
+        "{difference}"
+    );
+    assert!(!difference.contains("structtimeval*a1"), "{difference}");
+}
+
 /// Calls of functions that take or return a struct by value under the
 /// Microsoft x64 convention (`tests/fixtures/aggregates-win.c`) take the
 /// declaration, placed by its rule: `SetConsoleCursorPosition`'s `COORD`

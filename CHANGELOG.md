@@ -41,6 +41,7 @@ always read by later versions.
 
 ### Changed
 
+- A struct on the stack whose address is passed to calls is one struct for all of them, and where a library function's declaration types the parameter it is passed as (`gettimeofday`'s `struct timeval *`), it is that declared struct: `difftimeval(struct timeval *, struct timeval *, struct timeval *)` instead of three structs of `difftimeval`'s own. On bash built with debug information, `struct timeval` is one struct instead of twelve names.
 - A function of the program that returns, on every path, what an allocator returns for its own unchanged size parameter (`xmalloc`, `xrealloc`, wrappers of those) is an allocator too: it and every call to it return `void *` (`void *xmalloc(uint64_t);` and `v = xmalloc(24);` instead of `char *xmalloc(uint64_t);` and `v = (struct s *)xmalloc(24);`), and its calls' sizes are allocation sizes, as a declared `malloc`'s are.
 - The reading view assumes that no code steps back from an address of a function's stack frame that the function passes or stores (as `container_of` does), and says so in its header: the locals below every such address are variables of their own instead of fields of the frame struct (most of an `-O0` function's locals).
 - A stack slot that is accessed in parts and lives outside the frame struct has the type of its whole accesses (`int64_t frame_m78`) instead of being bytes (`uint8_t frame_m78[8]`).

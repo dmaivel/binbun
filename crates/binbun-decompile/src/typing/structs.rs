@@ -538,6 +538,11 @@ pub struct Contribution {
     pub(crate) declared: Vec<(StructId, TypeId)>,
     /// The types of [`Self::declared`] (none where it is empty).
     pub(crate) declared_types: Option<Types>,
+    /// The struct each region of its stack frame it passes to calls is
+    /// (by the region's start, from the entry stack pointer), where
+    /// callees' roots claim it: for its declared roots there
+    /// ([`super::declared::declare`]); not the table's.
+    pub(crate) regions: BTreeMap<i64, StructId>,
     /// What it shows of each global object it reaches, by the object's
     /// first byte, for the program's global types
     /// ([`Globals`](super::Globals); not the table's).
@@ -642,6 +647,7 @@ impl Structs {
             declared,
             declared_types,
             objects: _,
+            regions: _,
         } = contribution;
         for id in tables {
             let id = self.find(id);

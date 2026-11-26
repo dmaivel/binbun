@@ -104,6 +104,12 @@
 #                      return a struct by value, in two registers
 #                      (`imaxdiv`) and in memory (`mallinfo2`)
 #
+# and from regions.c:
+#
+#   regions-x86_64.elf  GCC, -O2, PIE: structs on the stack passed by
+#                      address to `gettimeofday` (declared `struct
+#                      timeval *`) and to functions of the program
+#
 # and from forwarded.c:
 #
 #   forwarded-x86_64.elf  GCC, -O2, PIE: calls of `open` with two and
@@ -425,6 +431,7 @@ gcc -O2 -g0 -o enums-x86_64.elf enums.c
 gcc -O2 -g0 -o chars-x86_64.elf chars.c
 gcc -O2 -g0 -o unaligned-x86_64.elf unaligned.c
 gcc -O2 -g0 -o aggregates-x86_64.elf aggregates.c
+gcc -O2 -g0 -o regions-x86_64.elf regions.c
 gcc -O2 -g0 -o forwarded-x86_64.elf forwarded.c
 gcc -O2 -g0 -fPIC -shared -o forwarded-x86_64.so forwarded.c
 gcc -O2 -g0 -o futex-x86_64.elf futex.c

@@ -1639,7 +1639,10 @@ fn structured(family: &Family) -> bool {
 /// family that points to a struct is that struct (to a fixed point);
 /// several claims at one offset are one struct (to unite; the first by
 /// [`Structs::rank`](super::Structs) kept), at different offsets a
-/// conflict (the first kept); else, if `born` and it qualifies
+/// conflict (the first kept); a region of the stack frame passed to
+/// calls is one object too, the structs callees' roots claim at one start
+/// one struct ([`Contribution::regions`](super::Contribution)); else, if
+/// `born` and it qualifies
 /// ([`qualifies`]), a new struct of this function, numbered from 1 by its
 /// first access (the smallest instruction), with its root placed so that
 /// its first object member (a parameter's value or a loaded pointer; else
@@ -1670,6 +1673,10 @@ fn identify(view: &View<'_>, generated: &Generated, born: bool) -> Identified {
     // A value in no family (passed on untouched) that callees' roots
     // claim is one object all the same.
     let mut loose: BTreeMap<Var, Vec<(StructId, i64)>> = BTreeMap::new();
+    // So is a region of the stack frame whose address calls are passed,
+    // by the struct's start there (from the entry stack pointer): one
+    // object however many times its address is computed.
+    let mut regions: BTreeMap<i64, Vec<(StructId, i64)>> = BTreeMap::new();
 
     for call in &view.calls {
         let Some(callee) = call.callee else {
@@ -1692,6 +1699,13 @@ fn identify(view: &View<'_>, generated: &Generated, born: bool) -> Identified {
             let Some((id, offset)) = view.schemes.struct_root(entry, callee, root) else {
                 continue;
             };
+            if let Some(&Shape::Address(at)) = view.shape(value) {
+                regions
+                    .entry(at.wrapping_sub(offset))
+                    .or_default()
+                    .push((id, offset));
+                continue;
+            }
             let Some(var) = generated.var(value) else {
                 continue;
             };
@@ -1705,17 +1719,7 @@ fn identify(view: &View<'_>, generated: &Generated, born: bool) -> Identified {
             }
         }
     }
-    for (_, mut claimed) in loose {
-        claimed.sort_unstable_by_key(|&(id, base)| (structs.rank(id), base));
-        claimed.dedup();
-        if let Some((&(kept, base), rest)) = claimed.split_first() {
-            for &(id, at) in rest {
-                if at == base && id != kept {
-                    found.merges.push((kept, id));
-                }
-            }
-        }
-    }
+    found.unclaimed(view, loose.into_values(), regions);
     // A global object is the struct the table has for it, whatever its
     // accesses here look like (first: its identity is the program's).
     let mut globals: BTreeMap<usize, Vec<(StructId, i64)>> = BTreeMap::new();
@@ -1762,9 +1766,49 @@ struct Identified {
     merges: Vec<(StructId, StructId)>,
     /// The families holding allocations of a known size ([`allocations`]).
     allocations: BTreeMap<usize, Option<(i64, u64)>>,
+    /// The struct each region of the stack frame passed to calls is, by
+    /// its start ([`Contribution::regions`]).
+    regions: BTreeMap<i64, StructId>,
 }
 
 impl Identified {
+    /// Takes the claims on what is in no family: per value (`loose`), the
+    /// structs at one offset are one; per region of the stack frame (by
+    /// its start), every struct claiming it is one, the first by rank
+    /// ([`Self::regions`]).
+    fn unclaimed(
+        &mut self,
+        view: &View<'_>,
+        loose: impl Iterator<Item = Vec<(StructId, i64)>>,
+        regions: BTreeMap<i64, Vec<(StructId, i64)>>,
+    ) {
+        let structs = view.schemes.structs();
+        for mut claimed in loose {
+            claimed.sort_unstable_by_key(|&(id, base)| (structs.rank(id), base));
+            claimed.dedup();
+            if let Some((&(kept, base), rest)) = claimed.split_first() {
+                for &(id, at) in rest {
+                    if at == base && id != kept {
+                        self.merges.push((kept, id));
+                    }
+                }
+            }
+        }
+        for (start, mut claimed) in regions {
+            claimed.sort_unstable_by_key(|&(id, offset)| (structs.rank(id), offset));
+            claimed.dedup();
+            if let Some(&(kept, _)) = claimed.first() {
+                self.merges.extend(
+                    claimed
+                        .iter()
+                        .filter(|&&(id, _)| id != kept)
+                        .map(|&(id, _)| (kept, id)),
+                );
+                self.regions.insert(start, kept);
+            }
+        }
+    }
+
     /// Takes `claims` (per family, the structs it is by its calls or its
     /// fields, with its root's offset in each): a family already
     /// identified at a claim's offset is one struct with it; an
@@ -2330,6 +2374,7 @@ pub(crate) fn contribution(
         conflicts,
         merges,
         allocations,
+        regions,
     } = identify(view, generated, true);
     state.identified(identities.clone());
     let objects = state.seen();
@@ -2349,6 +2394,7 @@ pub(crate) fn contribution(
         conflicts,
         merges,
         callees,
+        regions,
         objects,
         ..Contribution::default()
     };
