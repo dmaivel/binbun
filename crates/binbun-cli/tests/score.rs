@@ -162,4 +162,7 @@ fn identities_split_and_merged() {
         (errors.same_source, errors.same_name, errors.both),
         (3, 2, 1)
     );
+    // Five pointers to a named struct, four typed as one of the
+    // decompiler's (the `void *` one not).
+    assert_eq!((errors.named, errors.pointers), (4, 5));
 }

@@ -491,6 +491,8 @@ impl Tally {
             same_source,
             same_name,
             both,
+            pointers: self.struct_pointers,
+            named: self.identities.values().flat_map(BTreeMap::values).sum(),
         }
     }
 }
@@ -515,6 +517,12 @@ pub struct IdentityErrors {
     /// Pairs that point to one of each: of `same_source`, those the
     /// decompiler keeps together; of `same_name`, those it is right to.
     pub both: usize,
+    /// The pointers compared whose truth is a pointer to a named struct.
+    pub pointers: usize,
+    /// Of them, those the decompiler typed as a pointer to one of its
+    /// structs (the pairs' coverage: `void *` everywhere would be right
+    /// and name nothing).
+    pub named: usize,
 }
 
 impl IdentityErrors {
@@ -1392,7 +1400,7 @@ impl Report {
         let all = self.all_scores();
         let identities = all.identity_errors();
         format!(
-            "functions {}/{} decompiled; variables compared {}: class {}, width {}, sign {}, TIE distance {}, interval {}, conservative {}; casts {}; struct identities {} as {}, split {} (+{} names), merged {}, pairs together {}, right {}",
+            "functions {}/{} decompiled; variables compared {}: class {}, width {}, sign {}, TIE distance {}, interval {}, conservative {}; casts {}; struct identities {} as {}, split {} (+{} names), merged {}, pairs together {}, right {}, named {}",
             self.decompiled,
             self.debug_functions,
             all.mapped,
@@ -1410,6 +1418,7 @@ impl Report {
             identities.merged.len(),
             percent(identities.both, identities.same_source),
             percent(identities.both, identities.same_name),
+            percent(identities.named, identities.pointers),
         )
     }
 
@@ -1472,7 +1481,7 @@ impl fmt::Display for Report {
         let identities = self.all_scores().identity_errors();
         writeln!(
             f,
-            "struct identities through mapped pointers: {} source structs as {} decompiler structs; split {} (+{} names), merged {}; pairs of pointers to one source struct under one name {}, under one name to one source struct {}",
+            "struct identities through mapped pointers: {} source structs as {} decompiler structs; split {} (+{} names), merged {}; pairs of pointers to one source struct under one name {}, under one name to one source struct {}; pointers to a named struct typed as one of the decompiler's {}/{} ({})",
             identities.sources,
             identities.decompiler,
             identities.split.len(),
@@ -1480,6 +1489,9 @@ impl fmt::Display for Report {
             identities.merged.len(),
             percent(identities.both, identities.same_source),
             percent(identities.both, identities.same_name),
+            identities.named,
+            identities.pointers,
+            percent(identities.named, identities.pointers),
         )?;
         for (source, names) in identities.split.iter().take(8) {
             writeln!(f, "  split {source}: {}", names.join(", "))?;
