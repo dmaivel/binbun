@@ -277,7 +277,8 @@ pub struct Callers {
     /// too, that register, by entry ([`preferred`]).
     pub preferred: BTreeMap<u64, RegisterId>,
     /// Whether these are the reading view's: lowering with them takes its
-    /// `futex` assumption ([`Context::assume_futex`](binbun_decompile::lower::Context::assume_futex)).
+    /// `futex` assumption ([`Context::assume_futex`](binbun_decompile::lower::Context::assume_futex))
+    /// and its frame's ([`Context::assume_forward_reach`](binbun_decompile::lower::Context::assume_forward_reach)).
     pub assume: bool,
 }
 
@@ -487,8 +488,9 @@ pub fn callers_for(
 }
 
 /// The functions `found` as the reading view lowers them, where that
-/// differs: one making a `futex` call its code does not settle, as under
-/// the view's assumption ([`Found::assumed`]).
+/// differs: one making a `futex` call its code does not settle, or whose
+/// frame is all memory only because a stack address may step back from
+/// where it points, as under the view's assumptions ([`Found::assumed`]).
 fn reading_found(found: &BTreeMap<u64, Found>) -> Option<BTreeMap<u64, Found>> {
     found.values().any(|f| f.assumed.is_some()).then(|| {
         found

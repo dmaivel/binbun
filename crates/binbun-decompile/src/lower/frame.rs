@@ -13,7 +13,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use binbun_ast::types::{Type, TypeId};
-use binbun_semantics::ir::RegisterId;
+use binbun_semantics::ir::{Binary, RegisterId};
 use binbun_ssa::ir::{BlockId, Definition, InstId, Op, Terminator, Unknown, Value, ValueInfo};
 
 use super::facts::{Kind, Lowering, Site};
@@ -100,6 +100,10 @@ impl Region {
 
 /// The frame.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent facts about one frame"
+)]
 pub(super) struct Frame {
     /// Whether a stack address is used as a value or the stack escapes:
     /// the slots such an address may reach are memory ([`Slot::reached`]).
@@ -109,6 +113,14 @@ pub(super) struct Frame {
     pub(super) reach: BTreeMap<i64, i64>,
     /// Whether the stack escapes: every slot is reached.
     pub(super) escaped: bool,
+    /// Whether an address below the entry stack pointer that nothing
+    /// bounds may step back from where it points (`container_of`) in code
+    /// it is passed or stored to, the function's own code steps back from
+    /// none ([`Lowering::steps_back_itself`]) and nothing else makes the
+    /// stack escape: every slot is reached unless the reading view assumes
+    /// no such code steps back
+    /// ([`Context::assume_forward_reach`](crate::lower::Context::assume_forward_reach)).
+    pub(super) steps_back: bool,
     /// The slots, by offset.
     pub(super) slots: Vec<Slot>,
     /// The slot each load and store at a known offset accesses.
@@ -387,6 +399,28 @@ fn overlapping(accesses: &[Access]) -> Vec<Vec<usize>> {
     groups
 }
 
+/// A use of an L1 value ([`Lowering::steps_back_itself`]).
+#[derive(Clone, Copy)]
+enum Use {
+    /// An instruction's operand.
+    Inst(InstId),
+    /// An argument of a block parameter.
+    Param(Value),
+    /// The address of an indirect jump.
+    Jump,
+}
+
+/// What a use makes of a value computed from a stack address
+/// ([`Lowering::steps_back_itself`]).
+enum Through {
+    /// Nothing that reaches memory.
+    Nothing,
+    /// Another such value, maybe below the address if `true`.
+    Value(Value, bool),
+    /// A reach of memory that may be below the address.
+    Reaches,
+}
+
 /// How far each stack address used as a value, at `offsets`, may reach,
 /// by its offset (see [`Frame::reach`]): one inside a range of `bounded`,
 /// to its end; any other, any byte above it. Each range of `bounded` is
@@ -411,6 +445,16 @@ fn reach(offsets: &[i64], bounded: &[(i64, i64)]) -> BTreeMap<i64, i64> {
     reach
 }
 
+/// Whether one of the addresses of `reach` below the entry stack pointer
+/// is bounded by nothing: what is given it may step back from it (an
+/// enclosing object's `container_of`) to any byte below, so every slot is
+/// memory ([`Frame::steps_back`]).
+fn steps_back(reach: &BTreeMap<i64, i64>) -> bool {
+    reach
+        .iter()
+        .any(|(&offset, &far)| offset < 0 && far == i64::MAX)
+}
+
 impl Lowering<'_, '_> {
     /// The frame: its accesses, slots and regions. `bounded`: addresses
     /// known to reach only as far as a given byte (a recognised
@@ -427,13 +471,18 @@ impl Lowering<'_, '_> {
             .chain(passed.iter().map(|&(offset, _)| offset))
             .collect();
         let reach = reach(&offsets, bounded);
-        let escaped = self.unbounded(&reach);
+        let unseen = self.unseen(&reach);
+        // The function's own code stepping back is no assumption's.
+        let itself = steps_back(&reach) && self.steps_back_itself(&tricks);
+        let steps_back = !unseen && !itself && steps_back(&reach);
+        let escaped = unseen || itself || (steps_back && !self.cx.assume_forward_reach);
         let memory = !offsets.is_empty() || escaped;
         let link = i64::from(self.cx.link_bytes());
         let shadow = link + i64::from(self.cx.convention.shadow);
         let mut frame = Frame {
             memory,
             escaped,
+            steps_back,
             pushes,
             tricks,
             link,
@@ -520,19 +569,181 @@ impl Lowering<'_, '_> {
         self.frame = frame;
     }
 
-    /// Whether every slot is memory: a stack address escapes where the
-    /// frame does not see it used as a value (no reach of its own in
-    /// `reach`), or one below the entry stack pointer is bounded by
-    /// nothing and may reach any byte (code may step back from an address:
-    /// `container_of`).
-    fn unbounded(&self, reach: &BTreeMap<i64, i64>) -> bool {
+    /// Whether a stack address escapes where the frame does not see it
+    /// used as a value (no reach of its own in `reach`): every slot is
+    /// memory.
+    fn unseen(&self, reach: &BTreeMap<i64, i64>) -> bool {
         self.stack
             .escaping()
             .iter()
             .any(|offset| !reach.contains_key(offset))
-            || reach
-                .iter()
-                .any(|(&offset, &far)| offset < 0 && far == i64::MAX)
+    }
+
+    /// Whether the function's own code may reach a byte below a stack
+    /// address below the entry stack pointer: a value it computes from
+    /// one, other than another such address, by anything but adding
+    /// constants that are not negative (through block parameters, and
+    /// the arm a constant condition chooses: `rep stos`'s step by the
+    /// clear direction flag), is accessed, stored, passed or joined in a
+    /// block parameter (compared, as an alignment check does, it reaches
+    /// nothing); or one is jumped to or given to an instruction without
+    /// semantics, or a call is made on another stack (`tricks`). Passing
+    /// one to a call, storing or returning it are not its own code: what
+    /// is done with it there is the reading view's assumption
+    /// ([`Context::assume_forward_reach`](crate::lower::Context::assume_forward_reach)).
+    fn steps_back_itself(&self, tricks: &BTreeSet<Site>) -> bool {
+        if !tricks.is_empty() {
+            return true;
+        }
+        let users = self.value_uses();
+        // Each value computed from a stack address below the entry, and
+        // whether it may be below it.
+        let mut seen: BTreeMap<Value, bool> = BTreeMap::new();
+        let mut work: Vec<(Value, bool)> = (0..self.l1.values.len())
+            .filter_map(|index| u32::try_from(index).ok().map(Value))
+            .filter(|&v| self.canonical(v) == v && self.address(v).is_some_and(|o| o < 0))
+            .map(|v| (v, false))
+            .collect();
+        while let Some((v, back)) = work.pop() {
+            // Again where it may be below now and was not.
+            if seen.get(&v).is_some_and(|&was| was || !back) {
+                continue;
+            }
+            seen.insert(v, back);
+            for &user in users.get(&v).map_or(&[][..], Vec::as_slice) {
+                match user {
+                    Use::Jump => return true,
+                    Use::Param(parameter) => {
+                        if back {
+                            return true;
+                        }
+                        let parameter = self.canonical(parameter);
+                        if self.address(parameter).is_none() {
+                            work.push((parameter, false));
+                        }
+                    }
+                    Use::Inst(inst) => match self.through(inst, v, back) {
+                        Through::Nothing => {}
+                        Through::Value(r, below) => work.push((r, below)),
+                        Through::Reaches => return true,
+                    },
+                }
+            }
+        }
+        false
+    }
+
+    /// Each canonical value's uses: the instructions with it as an
+    /// operand, the block parameters it is an argument of, an indirect
+    /// jump to it.
+    fn value_uses(&self) -> BTreeMap<Value, Vec<Use>> {
+        let mut users: BTreeMap<Value, Vec<Use>> = BTreeMap::new();
+        for (_, block) in self.blocks() {
+            for &inst in &block.insts {
+                let Some(i) = self.l1.inst(inst) else {
+                    continue;
+                };
+                for operand in i.op.operands() {
+                    let at = self.canonical(operand);
+                    users.entry(at).or_default().push(Use::Inst(inst));
+                }
+            }
+            if let Terminator::IndirectJump { address, .. } = block.terminator {
+                let at = self.canonical(address);
+                users.entry(at).or_default().push(Use::Jump);
+            }
+            for target in block.terminator.targets() {
+                let parameters = self
+                    .l1
+                    .block(target.block)
+                    .map_or(&[][..], |b| b.parameters.as_slice());
+                for (&argument, &parameter) in target.arguments.iter().zip(parameters) {
+                    let at = self.canonical(argument);
+                    users.entry(at).or_default().push(Use::Param(parameter));
+                }
+            }
+        }
+        users
+    }
+
+    /// What instruction `inst` makes of `v`, a value computed from a stack
+    /// address (`back`: maybe below it) that it uses
+    /// ([`Self::steps_back_itself`]).
+    fn through(&self, inst: InstId, v: Value, back: bool) -> Through {
+        let Some(i) = self.l1.inst(inst) else {
+            return Through::Nothing;
+        };
+        // A result that is a stack address is accessed at its own offset;
+        // one narrower than an address is none.
+        let derived = i
+            .results
+            .first()
+            .map(|&result| self.canonical(result))
+            .filter(|&result| self.address(result).is_none() && self.width(result) >= self.pointer);
+        match &i.op {
+            Op::Binary(op @ (Binary::Add | Binary::Sub), a, b) => {
+                let Some(result) = derived else {
+                    return Through::Nothing;
+                };
+                let (left, right) = (self.canonical(*a), self.canonical(*b));
+                let added = if *op == Binary::Add {
+                    self.signed_constant(if left == v { right } else { left })
+                } else if left == v {
+                    self.signed_constant(right).and_then(i64::checked_neg)
+                } else {
+                    None
+                };
+                Through::Value(result, back || added.is_none_or(|added| added < 0))
+            }
+            Op::Select {
+                condition,
+                then,
+                otherwise,
+            } => {
+                let chosen = match self.signed_constant(*condition) {
+                    Some(0) => self.canonical(*otherwise) == v,
+                    Some(_) => self.canonical(*then) == v,
+                    None => true,
+                };
+                match derived {
+                    Some(result) if chosen => Through::Value(result, back),
+                    Some(_) | None => Through::Nothing,
+                }
+            }
+            Op::Load { .. } | Op::Store { .. } | Op::Call { .. } | Op::SystemCall { .. } => {
+                if back {
+                    Through::Reaches
+                } else {
+                    Through::Nothing
+                }
+            }
+            Op::Intrinsic { .. } => Through::Reaches,
+            // Anywhere (an alignment, a scaled index), which only an
+            // access, a call, a store or a jump through it makes a reach.
+            Op::Const(_)
+            | Op::Undefined(..)
+            | Op::Landing { .. }
+            | Op::Unary(..)
+            | Op::Binary(..)
+            | Op::Flag(..)
+            | Op::Extract { .. }
+            | Op::Concat { .. }
+            | Op::Extend { .. }
+            | Op::Lanes { .. }
+            | Op::Float { .. } => match derived {
+                Some(result) => Through::Value(result, true),
+                None => Through::Nothing,
+            },
+        }
+    }
+
+    /// `v`'s value read signed, if it is a constant of at most 64 bits.
+    fn signed_constant(&self, v: Value) -> Option<i64> {
+        let Kind::Const(bits) = self.kind(v) else {
+            return None;
+        };
+        let shift = 64u32.checked_sub(u32::from(bits.width()))?;
+        Some(bits.low_u64().cast_signed() << shift >> shift)
     }
 
     /// Whether the bytes `offset..end` hold bytes of declared stack

@@ -420,8 +420,10 @@ pub(super) fn interface(
 
 /// [`interface`], and the function's scheme ([`lowering::summarise`]),
 /// with the interfaces and schemes `known`; where it makes a `futex` call
-/// its code does not settle, its interface under the reading view's
-/// assumption too ([`Found::assumed`](lowering::Found::assumed)).
+/// its code does not settle, or its frame is all memory only because a
+/// stack address may step back from where it points, its interface under
+/// the reading view's assumptions too
+/// ([`Found::assumed`](lowering::Found::assumed)).
 ///
 /// # Errors
 ///
@@ -442,9 +444,11 @@ pub(super) fn summarise(
         |context| {
             let (mut found, summary) = lowering::summarise(&prepared.l1, &prepared.facts, context)
                 .map_err(|e| e.to_string())?;
-            if found.unsettled_futex && !context.assume_futex {
+            let reading = context.assume_futex && context.assume_forward_reach;
+            if (found.unsettled_futex || found.steps_back) && !reading {
                 let assumed = Context {
                     assume_futex: true,
+                    assume_forward_reach: true,
                     ..*context
                 };
                 found.assumed = lowering::interface(&prepared.l1, &prepared.facts, &assumed)

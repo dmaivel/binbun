@@ -444,7 +444,9 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
     /// A `Frame` variable for `region`: System V's `va_list` (an array of
     /// one `__va_list_tag`); a promoted object, of its declared type; a
     /// frame struct ([`Self::frame_struct`]) where `frame_struct`; one
-    /// value, of its slot's solved type; else bytes.
+    /// value, of its slot's solved type; exactly one slot accessed in
+    /// parts, of the type its field of a frame struct would have
+    /// ([`Self::field_type`]); else bytes.
     fn region(&mut self, region: Region, frame_struct: bool) -> usize {
         let list = self.lw.va.as_ref().and_then(|va| va.list) == Some(region.offset);
         let mut evidence = Evidence::Default;
@@ -476,6 +478,8 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
                 evidence = Evidence::Deduced;
             }
             solved.unwrap_or_else(|| self.bits(width))
+        } else if let Some(index) = self.only_slot(region) {
+            self.field_type(index, region)
         } else {
             let element = self.bits(8);
             self.ast.types.intern(Type::Array {
@@ -521,6 +525,14 @@ impl<'e, 'a, 'c> Emit<'e, 'a, 'c> {
             .as_ref()
             .and_then(|typed| typed.slots.get(index).copied().flatten())
             .filter(|&ty| self.ast.types.value_width(ty) == Some(width))
+    }
+
+    /// The slot in memory that is exactly the bytes of `region`, if one
+    /// is.
+    fn only_slot(&self, region: Region) -> Option<usize> {
+        self.lw.frame.slots.iter().position(|slot| {
+            slot.home == Home::Frame && slot.offset == region.offset && slot.end == region.end()
+        })
     }
 
     /// The struct of the frame's bytes `region`: a field per slot in

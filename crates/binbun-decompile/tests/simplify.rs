@@ -218,6 +218,46 @@ fn a_copy_moves_into_every_reader() {
 }
 
 #[test]
+fn a_constant_of_a_char_pointer_moves_into_every_reader_as_that_type() {
+    // char *s = 0x2000; return s + s: each reader reads a `char *` (the
+    // printer's string literal), with the constant's bits. Null stays a
+    // number.
+    for (value, typed) in [(0x2000, true), (0, false)] {
+        let mut b = Builder::new();
+        let character = b.f.types.intern(Type::Char { signed: true });
+        let pointer = b.f.types.intern(Type::Pointer(Some(character)));
+        let s = b.var(VarKind::Local, 64);
+        b.f.variables[s.0 as usize].ty = pointer;
+        let constant = b.c(64, value);
+        b.assign(s, constant);
+        let (r1, r2) = (b.read(s), b.read(s));
+        let sum = b.bin(Binary::Add, r1, r2);
+        let ret = b.ret(sum);
+        b.copies();
+        assert_eq!(b.f.body, vec![ret]);
+        let Some(&Stmt::Return(Some(returned))) = b.f.stmt(ret) else {
+            panic!("not a return");
+        };
+        let Some(&Expr::Binary(Binary::Add, left, right)) = b.f.expr(returned) else {
+            panic!("not a sum");
+        };
+        for operand in [left, right] {
+            let expr = *b.f.expr(operand).unwrap();
+            if let Expr::Cast { value: inner, ty } = expr {
+                assert!(typed, "null cast");
+                assert_eq!(ty, pointer);
+                assert_eq!(b.text(inner), format!("{value:#x}"));
+            } else if let Expr::Const(bits) = expr {
+                assert!(!typed, "constant without its type");
+                assert_eq!(bits.low_u128(), u128::from(value));
+            } else {
+                panic!("{expr:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn a_saved_copy_put_back_leaves_no_self_assignment() {
     // v = p; p = v; return p
     let mut b = Builder::new();

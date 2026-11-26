@@ -16,7 +16,7 @@
 
 use std::collections::BTreeSet;
 
-use binbun_ast::ir::{Function as Ast, VarKind};
+use binbun_ast::ir::{Function as Ast, Origin, VarKind};
 use binbun_ast::types::{Aggregate, Field, Signature, Type, Types};
 use binbun_decompile::itanium::NONE;
 use binbun_decompile::lower::{Context, Convention, Facts, lower};
@@ -132,6 +132,12 @@ impl Prototypes for Fill {
 /// `l1` lowered, checked against it by structure and from 64 random
 /// states.
 fn lowered(l1: &Function) -> Ast {
+    lowered_assuming(l1, false)
+}
+
+/// [`lowered`], under the reading view's assumption that no code steps
+/// back from a stack address if `forward`.
+fn lowered_assuming(l1: &Function, forward: bool) -> Ast {
     let convention = Convention {
         arguments: vec![A, B, C],
         results: vec![A],
@@ -142,6 +148,7 @@ fn lowered(l1: &Function) -> Ast {
     let context = Context {
         prototypes: &Fill,
         functions: &functions,
+        assume_forward_reach: forward,
         ..Context::new(&DECLARATIONS, SP, LINK, &convention)
     };
     let env = L1Env {
@@ -499,5 +506,107 @@ fn a_slot_also_accessed_in_parts_is_a_field_of_its_whole_accesses() {
             Type::Bits(8) | Type::Int(8) | Type::UInt(8) | Type::Char { .. }
         ),
         "{field:?}"
+    );
+}
+
+/// The names of the slots' fields (`at_…`) of the one frame struct of
+/// `l2`.
+fn frame_slots(l2: &Ast) -> Vec<String> {
+    let [frame] = l2.frames.as_slice() else {
+        panic!("one frame struct: {:?}", l2.frames);
+    };
+    let variable = l2.var(*frame).unwrap();
+    let Some(Type::Struct(aggregate)) = l2.types.get(variable.ty) else {
+        panic!("not a struct");
+    };
+    aggregate
+        .fields
+        .iter()
+        .filter_map(|field| field.name.clone())
+        .filter(|name| name.starts_with("at_"))
+        .collect()
+}
+
+#[test]
+fn assuming_no_step_back_keeps_the_slots_below_an_address_passed_out_of_memory() {
+    // *(sp − 0x30) = b; *(sp − 0x20) = c; unknown(sp − 0x20);
+    // return *(sp − 0x30) + *(sp − 0x20).
+    let mut l1 = L1::new();
+    let [_, b, c, _, memory] = l1.entry;
+    let below = l1.below(0x30);
+    let memory = l1.store(memory, below, b);
+    let buffer = l1.below(0x20);
+    let memory = l1.store(memory, buffer, c);
+    let memory = l1.call(memory, UNKNOWN, buffer);
+    let kept = l1.load(memory, below);
+    let passed = l1.load(memory, buffer);
+    let value = l1.pure(Op::Binary(Binary::Add, kept, passed));
+    let l1 = l1.finish(memory, value);
+    // The callee may step back from its address (`container_of`) to the
+    // slot below: both are the frame struct's.
+    assert_eq!(frame_slots(&lowered(&l1)), ["at_m30", "at_m20"]);
+    // Assumed not to: the slot below is a local, the frame struct holds
+    // only the bytes from the address passed up.
+    let l2 = lowered_assuming(&l1, true);
+    assert_eq!(frame_slots(&l2), ["at_m20"]);
+    assert!(
+        l2.variables
+            .iter()
+            .any(|variable| variable.kind == VarKind::Local
+                && variable.origins.contains(&Origin::Slot(-0x30))),
+        "no local of the slot below"
+    );
+}
+
+#[test]
+fn the_functions_own_step_back_keeps_the_slots_below_in_memory() {
+    // *(sp − 0x30) = b; *(sp − 0x20) = c; unknown(sp − 0x20);
+    // return *(sp − 0x20 − c): the function's own code may read below
+    // the address it passed, which no assumption about the callee rules
+    // out: the slot below stays the frame struct's.
+    let mut l1 = L1::new();
+    let [_, b, c, _, memory] = l1.entry;
+    let below = l1.below(0x30);
+    let memory = l1.store(memory, below, b);
+    let buffer = l1.below(0x20);
+    let memory = l1.store(memory, buffer, c);
+    let memory = l1.call(memory, UNKNOWN, buffer);
+    let back = l1.pure(Op::Binary(Binary::Sub, buffer, c));
+    let value = l1.load(memory, back);
+    let l2 = lowered_assuming(&l1.finish(memory, value), true);
+    assert_eq!(frame_slots(&l2), ["at_m30", "at_m20"]);
+}
+
+#[test]
+fn a_slot_of_its_own_written_in_parts_has_the_type_of_its_whole_accesses() {
+    // *(sp − 0x20) = b; *(uint8_t *)(sp − 0x20) = c; return *(sp − 0x20):
+    // no address is taken, so the slot is a variable of its own; of two
+    // shapes, it lives in memory, as wide as its whole accesses, not 8
+    // bytes.
+    let mut l1 = L1::new();
+    let [_, b, c, _, memory] = l1.entry;
+    let slot = l1.below(0x20);
+    let memory = l1.store(memory, slot, b);
+    let byte = l1.inst(
+        Op::Extract {
+            value: c,
+            offset: 0,
+            width: 8,
+        },
+        &[L1Type::Bits(8)],
+    )[0];
+    let memory = l1.store(memory, slot, byte);
+    let value = l1.load(memory, slot);
+    let l2 = lowered(&l1.finish(memory, value));
+    assert_eq!(l2.frames, []);
+    let variable = l2
+        .variables
+        .iter()
+        .find(|variable| variable.kind == VarKind::Frame(-0x20))
+        .expect("the slot's variable");
+    let ty = l2.types.get(variable.ty).unwrap();
+    assert!(
+        matches!(ty, Type::Bits(64) | Type::Int(64) | Type::UInt(64)),
+        "{ty:?}"
     );
 }

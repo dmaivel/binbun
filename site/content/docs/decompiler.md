@@ -31,6 +31,8 @@ The command line defaults to exact C. The GUI offers **Exact C** and **Reading V
 
 It assumes that addresses used by loads, stores, calls and jumps are canonical. On AArch64 it also assumes that the stack pointer is aligned at entry as the ABI requires and that a signed return address authenticates. Checks settled by these assumptions, and their traps, are hidden. Integer wrapping and unknown values are not discarded.
 
+It also assumes that no code steps back from an address of a function's stack frame that the function passes to a call or stores, as `container_of` does. The locals below every such address are then variables of their own; in exact C, any of them could be reached through the address, so they stay fields of the function's frame struct.
+
 ```sh
 binbun decompile tests/fixtures/program-x86_64.elf classify --view reading
 ```

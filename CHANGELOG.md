@@ -35,6 +35,15 @@ always read by later versions.
 
 ## Unreleased
 
+### Changed
+
+- The reading view assumes that no code steps back from an address of a function's stack frame that the function passes or stores (as `container_of` does), and says so in its header: the locals below every such address are variables of their own instead of fields of the frame struct (most of an `-O0` function's locals).
+- A stack slot that is accessed in parts and lives outside the frame struct has the type of its whole accesses (`int64_t frame_m78`) instead of being bytes (`uint8_t frame_m78[8]`).
+
+### Fixed
+
+- A string constant held in a local and passed to two calls prints as the string literal at both, not as its address.
+
 ## v0.1.0 (2026-11-23)
 
 First release of binbun.

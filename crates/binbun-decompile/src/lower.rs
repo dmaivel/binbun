@@ -52,7 +52,15 @@
 //!    type; once a variadic definition is recognised, one in its save area
 //!    or its `va_list`, only that object's bytes (nothing else uses an
 //!    address in them as a value). A stack address escaping where none of
-//!    these is seen may reach any byte. A slot no such address reaches is
+//!    these is seen may reach any byte; so may one below the entry stack
+//!    pointer reaching any byte above it, since code may step back from it
+//!    (an enclosing object's `container_of`), but where the function's own
+//!    code does not (what it computes from such an address and accesses,
+//!    stores, passes or joins in a block parameter adds only constants
+//!    that are not negative to it) and the reading view assumes that no
+//!    code it is passed or stored to does
+//!    ([`Context::assume_forward_reach`]): there it reaches only the bytes
+//!    above it. A slot no such address reaches is
 //!    as in a frame where none escapes: read only, at or above the stack
 //!    arguments, with one shape, a stack parameter; written, of one shape,
 //!    below the entry stack pointer, a local variable; else a
@@ -87,7 +95,8 @@
 //!    starts on the ABI's 16-byte grid (taking the padding below it, no
 //!    slot's and above every call's stack pointer) so its fields are at
 //!    their natural alignment, as in the stack. A piece that is one value
-//!    has its slot's solved type.
+//!    has its slot's solved type; one that is exactly one slot accessed
+//!    in parts, the type its field of a frame struct would have.
 //!    A stack address is the address of the `Frame` variable holding it
 //!    plus an offset, else of one at the entry stack pointer (the return
 //!    address's bytes, where the call leaves it on the stack).
@@ -776,6 +785,14 @@ pub struct Context<'a> {
     /// other value's private flag over (`x ^ 0x80`); not for a value with
     /// a flag or-ed in alone (`x | 0x80`, maybe an operation passed in).
     pub assume_futex: bool,
+    /// The reading view's assumption that no code steps back from a stack
+    /// address the function passes to a call or stores to the bytes below
+    /// it (an enclosing object's `container_of`): such an address reaches
+    /// only bytes at or above it, so where the function's own code does
+    /// not step back either and nothing else makes the stack escape, the
+    /// slots below every such address are variables of their own, not
+    /// memory ([`Found::steps_back`]; step 3 of the [module](self)).
+    pub assume_forward_reach: bool,
 }
 
 impl fmt::Debug for Context<'_> {
@@ -830,6 +847,7 @@ impl<'a> Context<'a> {
             specialised: &[],
             specialisations: &NO_SPECIALISATIONS,
             assume_futex: false,
+            assume_forward_reach: false,
         }
     }
 
@@ -1085,9 +1103,14 @@ pub struct Found {
     /// Whether it makes a `futex` call whose operation's command its code
     /// does not settle ([`Context::assume_futex`]).
     pub unsettled_futex: bool,
-    /// What [`interface`] finds of it with [`Context::assume_futex`],
-    /// where that differs ([`Self::unsettled_futex`] without it): the
-    /// reading view's.
+    /// Whether its frame is all memory only because a stack address below
+    /// the entry stack pointer may step back from where it points
+    /// ([`Context::assume_forward_reach`]).
+    pub steps_back: bool,
+    /// What [`interface`] finds of it with [`Context::assume_futex`] and
+    /// [`Context::assume_forward_reach`], where that may differ
+    /// ([`Self::unsettled_futex`] or [`Self::steps_back`] without them):
+    /// the reading view's.
     pub assumed: Option<Box<Found>>,
     /// The callee-saved registers it keeps as its convention says: each
     /// saved in a stack slot that holds nothing else, and holding its
@@ -1209,6 +1232,7 @@ pub fn interface(
         arguments: Arguments::new(),
         structs: Contribution::default(),
         unsettled_futex: lowering.unsettled_futex,
+        steps_back: lowering.frame.steps_back,
         assumed: None,
         kept: lowering.kept_registers(),
     })
@@ -1248,6 +1272,7 @@ pub fn summarise(
         arguments: Arguments::new(),
         structs: Contribution::default(),
         unsettled_futex: lowering.unsettled_futex,
+        steps_back: lowering.frame.steps_back,
         assumed: None,
         kept: lowering.kept_registers(),
     };

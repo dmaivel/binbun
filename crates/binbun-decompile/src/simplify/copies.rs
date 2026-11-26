@@ -19,12 +19,16 @@ use crate::pass::{Feeds, L2Env, size};
 
 /// Copy propagation (pass `propagate`): a local assigned once is replaced
 /// by its value in the statements that read it, where the value is
-/// available there ([`Facts::available`]): every reader for a constant,
+/// available there ([`Facts::available`]): every reader for a constant
+/// (or a cast of one),
 /// an address, a copy of a variable not in memory, or a value wider than
 /// C's integers (over 128 bits: a vector, such as the lanes of an
 /// instruction without semantics concatenated) that neither loads, calls
 /// nor has an undefined part, which no C variable could hold; the one
-/// reader of any other value read once. A call's one result in a local
+/// reader of any other value read once. A constant other than 0 of a
+/// local of type `char *` goes in as that type (a cast of its bits), so
+/// each reader keeps what the local said it is: the printer's string
+/// literal where it points to one. A call's one result in a local
 /// read once is such
 /// a value too: the call moves into its reader as an [`Expr::Call`] (as
 /// a load would; into a call statement's arguments, made before its call,
@@ -92,17 +96,10 @@ impl<'e> Pass<Function, L2Env<'e>> for Propagate {
             if read.contains(&var) {
                 continue;
             }
-            let copy = matches!(
-                function.expr(value),
-                Some(Expr::Const(_) | Expr::AddressOf(_))
-            ) || matches!(function.expr(value), Some(&Expr::Var(source)) if !in_memory(function, source))
-                || (info.width(value).is_some_and(|width| width > 128)
-                    && !info.faults(value)
-                    && !info.calls(value)
-                    && !info.undefined(value));
-            if !copy && count != 1 {
+            if !copied(function, &info, value) && count != 1 {
                 continue;
             }
+            let value = typed_constant(function, &mut info, var, value);
             let mut moved = false;
             for &at in facts.readers.get(index).map_or(&[][..], Vec::as_slice) {
                 if at == def
@@ -164,6 +161,27 @@ impl<'e> Pass<Function, L2Env<'e>> for Propagate {
         }
         Ok(changed.into())
     }
+}
+
+/// Whether `value` moves into every reader ([`Propagate`]): a constant
+/// (or a cast of one), an address, a copy of a variable not in memory, or
+/// a value wider than C's integers that neither loads, calls nor has an
+/// undefined part.
+fn copied(function: &Function, info: &Info, value: ExprId) -> bool {
+    match function.expr(value) {
+        Some(Expr::Const(_) | Expr::AddressOf(_)) => return true,
+        Some(&Expr::Var(source)) if !in_memory(function, source) => return true,
+        Some(&Expr::Cast { value: inner, .. })
+            if matches!(function.expr(inner), Some(Expr::Const(_))) =>
+        {
+            return true;
+        }
+        Some(_) | None => {}
+    }
+    info.width(value).is_some_and(|width| width > 128)
+        && !info.faults(value)
+        && !info.calls(value)
+        && !info.undefined(value)
 }
 
 /// The value statement `def` gives `var`, its one assignment: an
@@ -361,6 +379,32 @@ fn substitute(function: &mut Function, info: &mut Info, at: StmtId, var: VarId, 
         matches!(function.expr(id), Some(&Expr::Var(read)) if read == var).then_some(value)
     };
     rewrite(function, info, at, &mut before);
+}
+
+/// `value`, the one value of `var`, as its readers take it: a constant
+/// other than 0 of a `char *` local cast to that type, which says where
+/// a string may be (the printer's literal); else `value` itself.
+fn typed_constant(function: &mut Function, info: &mut Info, var: VarId, value: ExprId) -> ExprId {
+    let Some(&Expr::Const(bits)) = function.expr(value) else {
+        return value;
+    };
+    let Some(ty) = function.var(var).map(|variable| variable.ty) else {
+        return value;
+    };
+    let character = match function.types.get(ty) {
+        Some(&Type::Pointer(Some(target))) => {
+            matches!(function.types.get(target), Some(Type::Char { .. }))
+        }
+        _ => false,
+    };
+    if !character || bits.is_zero() {
+        return value;
+    }
+    let origins = function.provenance.expr(value).to_vec();
+    let cast = function.add_expr(Expr::Cast { value, ty });
+    function.provenance.set_expr(cast, &origins);
+    info.update(function);
+    cast
 }
 
 /// Rebuilds the roots of statement `at` with the nodes `before` replaces
