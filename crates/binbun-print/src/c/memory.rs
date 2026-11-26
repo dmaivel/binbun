@@ -871,8 +871,9 @@ impl Printer<'_> {
     }
 
     /// `base + index * scale + offset` as a pointer (scaled where the
-    /// pointee's size allows, else on a `char *`) or, for an integer base,
-    /// an integer; a pointer `base` itself where nothing is added (any
+    /// pointee's size allows, else in bytes: on a `void *` as it is,
+    /// another pointer as a `uint8_t *`) or, for an integer base, an
+    /// integer; a pointer `base` itself where nothing is added (any
     /// pointer converts to the `T *` an access needs directly).
     pub(super) fn pointer_add(
         &mut self,
@@ -935,7 +936,7 @@ impl Printer<'_> {
                 .is_none_or(|&(_, scale)| i128::from(scale) == size);
         let (mut sum, divisor) = if scaled {
             (base, size)
-        } else if base.ty == CTy::Bytes {
+        } else if base.ty == CTy::Bytes || self.is_void(base.ty) {
             (base, 1)
         } else {
             (self.cast(base, CTy::Bytes), 1)
@@ -1239,10 +1240,11 @@ impl Printer<'_> {
     }
 
     /// `base + index` (`base - index` for `minus`), `index` an integer of
-    /// the pointer width counting bytes: arithmetic on a byte pointer
-    /// (`base` itself where it points to bytes, else `(uint8_t *)base`),
-    /// not through an integer. `index` is zero- or sign-extended exactly
-    /// as C converts it, else cast to the pointer-wide unsigned type.
+    /// the pointer width counting bytes: arithmetic in bytes (on `base`
+    /// itself where it points to bytes or is a `void *`, else on
+    /// `(uint8_t *)base`), not through an integer. `index` is zero- or
+    /// sign-extended exactly as C converts it, else cast to the
+    /// pointer-wide unsigned type.
     pub(super) fn byte_offset(
         &mut self,
         base: Value,
@@ -1255,12 +1257,20 @@ impl Printer<'_> {
         } else {
             self.coerce(index, Class::Zero)?
         };
-        let base = if self.pointee(base.ty).and_then(|(_, size)| size) == Some(1) {
+        let base = if self.pointee(base.ty).and_then(|(_, size)| size) == Some(1)
+            || self.is_void(base.ty)
+        {
             base
         } else {
             self.cast(base, CTy::Bytes)
         };
         Ok(self.pointer_term(base, if minus { "-" } else { "+" }, index))
+    }
+
+    /// Whether `ty` is `void *`, on which GCC and Clang do arithmetic in
+    /// bytes (a GNU extension: `void`'s size is 1 to them).
+    pub(super) fn is_void(&self, ty: CTy) -> bool {
+        matches!(ty, CTy::Pointer(_)) && self.pointee(ty) == Some((None, None))
     }
 
     /// `pointer op term` (a pointer).

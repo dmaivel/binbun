@@ -321,10 +321,11 @@ fn pointer_sums_differences_and_null_tests_need_no_casts() {
 
 #[test]
 fn byte_offsets_are_byte_pointer_sums_and_accesses_cast_the_pointer_itself() {
-    // `p - 16 + n` (an index not scaled to what `p` points to) is a sum on
-    // a byte pointer, not on `p`'s integer value, and needs no cast into a
-    // `void *`; `n + q` puts the pointer first; a load at `p` itself
-    // casts `p` to the type read, with no byte pointer between.
+    // `p - 16 + n` (an index not scaled to what `p` points to) is a sum in
+    // bytes, not on `p`'s integer value: on the `void *` `p` itself (GNU
+    // C's arithmetic), on a byte pointer for the `int32_t *` `q`; `n + q`
+    // puts the pointer first; a load at `p` itself casts `p` to the type
+    // read, with no byte pointer between.
     let mut b = Builder::new(0x9280, "bytes");
     let (word, int32) = (b.uint(64), b.int(32));
     let void = b.ty(Type::Pointer(None));
@@ -350,15 +351,58 @@ fn byte_offsets_are_byte_pointer_sums_and_accesses_cast_the_pointer_itself() {
     let ret = b.ret(last);
     let f = b.done(vec![first, second, nonnull, ret]);
     let (text, printed) = print_with(&f, &Style::kr(), &symbols);
-    assert!(text.contains("v3 = (uint8_t *)a1 - 16 + a2;"), "{text}");
+    assert!(text.contains("v3 = a1 - 16 + a2;"), "{text}");
     assert!(
         text.contains("v4 = (binbun_i32_u *)((uint8_t *)a3 + a2);"),
         "{text}"
     );
     assert!(text.contains("return *(binbun_u64_u *)a1;"), "{text}");
     assert!(text.contains("return *(binbun_u64_u *)v3;"), "{text}");
-    assert_eq!(printed.casts, 5, "{text}");
+    assert_eq!(printed.casts, 4, "{text}");
     let scratch = Scratch::new("bytes");
+    scratch.write("out.c", &text);
+    for compiler in compilers() {
+        let stderr = scratch
+            .compile(compiler, &["-c", "-o", "out.o"], &["out.c"])
+            .unwrap_or_else(|e| panic!("{compiler} failed on\n{text}\n{e}"));
+        assert_eq!(warnings(&stderr), 0, "{compiler}:\n{text}\n{stderr}");
+    }
+}
+
+#[test]
+fn arithmetic_on_a_void_pointer_counts_bytes_without_a_byte_pointer() {
+    // `p + 152`, `p + n`, a load at `p - 32` and the distance `r - q` of
+    // two `void *`s: GCC's and Clang's arithmetic on `void *` (in bytes),
+    // no `(uint8_t *)` cast; the load still casts to the type read.
+    let mut b = Builder::new(0x92a0, "voids");
+    let (word, int32) = (b.uint(64), b.int(32));
+    let void = b.ty(Type::Pointer(None));
+    b.f.returns = Some(word);
+    let (bytes, length) = (b.param(void), b.param(word));
+    let (near, far) = (b.local(void), b.local(void));
+    let (base, offset) = (b.read(bytes), b.c(64, 152));
+    let sum = b.bin(Binary::Add, base, offset);
+    let first = b.assign(near, sum);
+    let (base, count) = (b.read(bytes), b.read(length));
+    let moved = b.bin(Binary::Add, base, count);
+    let second = b.assign(far, moved);
+    let (base, back) = (b.read(bytes), b.c(64, 32u64.wrapping_neg()));
+    let at = b.bin(Binary::Add, base, back);
+    let loaded = b.load_at(at, 0, int32);
+    let loaded = b.ext(true, loaded, 64);
+    let (end, start) = (b.read(far), b.read(near));
+    let distance = b.bin(Binary::Sub, end, start);
+    let total = b.bin(Binary::Add, loaded, distance);
+    let ret = b.ret(total);
+    let f = b.done(vec![first, second, ret]);
+    let (text, printed) = print_with(&f, &Style::kr(), &symbols);
+    assert!(text.contains("v2 = a1 + 152;"), "{text}");
+    assert!(text.contains("v3 = a1 + a2;"), "{text}");
+    assert!(text.contains("*)(a1 - 32)"), "{text}");
+    assert!(text.contains("v3 - v2"), "{text}");
+    assert!(!text.contains("uint8_t *"), "{text}");
+    assert_eq!(printed.casts, 1, "{text}");
+    let scratch = Scratch::new("voids");
     scratch.write("out.c", &text);
     for compiler in compilers() {
         let stderr = scratch

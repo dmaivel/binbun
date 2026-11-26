@@ -6,11 +6,13 @@
 //!
 //! # Exact lowering, minimal casts
 //!
-//! The output is compiled with `-fwrapv -fno-strict-aliasing`. Every C
-//! expression the printer builds carries its C type and what is known of
-//! how its value relates to the L2 value it stands for (of the L2 width
-//! `w`): whether the C value *is* the unsigned value of those `w` bits
-//! ("zero"), the signed value ("sign"), or only agrees in its low `w` bits.
+//! The output is compiled with `-fwrapv -fno-strict-aliasing` by GCC or
+//! Clang, whose extensions it uses: `__int128`, vector types, and
+//! arithmetic on a `void *` in bytes. Every C expression the printer
+//! builds carries its C type and what is known of how its value relates
+//! to the L2 value it stands for (of the L2 width `w`): whether the C
+//! value *is* the unsigned value of those `w` bits ("zero"), the signed
+//! value ("sign"), or only agrees in its low `w` bits.
 //! Each operation asks its operands for what it needs, and a cast is
 //! emitted only where that is not already so:
 //!
@@ -34,11 +36,12 @@
 //! - Pointers: two of one type compare as they are (`==`, `!=`, and
 //!   unsigned `<`, `<=`); a pointer compares with the constant 0 by `==`
 //!   and `!=` as it is (C's null pointer comparison); other comparisons
-//!   take the pointers' bits. `p - q` of two byte pointers of one type is
-//!   their distance; `p + i * s` (no constant) with `p` surely a pointer
-//!   to `s` bytes is `p + i`. A select of a pointer (or function pointer)
-//!   and the constant 0 is the pointer's type, with 0 as C's null
-//!   pointer constant (`c ? p : 0`, not `(T *)(c ? (uint64_t)p : 0)`).
+//!   take the pointers' bits. `p - q` of two byte or `void` pointers of
+//!   one type is their distance; `p + i * s` (no constant) with `p`
+//!   surely a pointer to `s` bytes is `p + i`. A select of a pointer (or
+//!   function pointer) and the constant 0 is the pointer's type, with 0
+//!   as C's null pointer constant (`c ? p : 0`, not
+//!   `(T *)(c ? (uint64_t)p : 0)`).
 //! - Extensions emit nothing (C converts by value); truncations emit
 //!   nothing until a clean value is needed; assignments truncate.
 //! - Literals are printed in the signedness and type the use needs (`int`
@@ -50,10 +53,11 @@
 //!   extension is `-x`.
 //! - Loads are `*(T *)(p + k)` (`*(T *)p` at `p` itself: any pointer
 //!   converts to `T *`), or `p[i]`, `p->field` and `*p` when the pointer's
-//!   type allows; pointer arithmetic is scaled to the pointee or done on a
-//!   byte pointer, a pointer plus or minus a byte index too
-//!   (`(uint8_t *)p + i`, not `(uint64_t)p + i`); an index typed a
-//!   pointer is added as its integer value.
+//!   type allows; pointer arithmetic is scaled to the pointee or done in
+//!   bytes, a pointer plus or minus a byte index too: on a `void *` as it
+//!   is (`p + i`, `*(int32_t *)(p - 32)`), on another pointer through a
+//!   byte pointer (`(uint8_t *)p + i`), not `(uint64_t)p + i`; an index
+//!   typed a pointer is added as its integer value.
 //! - Shifts by counts not below the width, divisions that may trap,
 //!   rotations, counts, byte swaps, flags and double-width products are
 //!   `binbun_defs.h` helpers with L0's meaning.

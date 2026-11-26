@@ -711,6 +711,25 @@ fn odd(cases: &mut Cases) {
             b.bin(Binary::Sub, word, wide)
         },
     );
+    // On the `void *` itself: `*(uint32_t *)(a1 + 40 - (a2 & 7) - 3)`.
+    cases.add(
+        "voidsub",
+        &[Type::Pointer(None), Type::UInt(64)],
+        Type::UInt(32),
+        |b, p| {
+            let base = b.read(p[0]);
+            let forty = b.c(64, 40);
+            let end = b.bin(Binary::Add, base, forty);
+            let i = b.read(p[1]);
+            let seven = b.c(64, 7);
+            let back = b.bin(Binary::And, i, seven);
+            let at = b.bin(Binary::Sub, end, back);
+            let minus = b.c(64, 3u64.wrapping_neg());
+            let at = b.bin(Binary::Add, at, minus);
+            let ty = b.uint(32);
+            b.e(Expr::Load { address: at, ty })
+        },
+    );
 }
 
 /// Sums, differences and products of a literal whose unsigned value is

@@ -222,8 +222,8 @@ fn elf_reaches_memory_through_the_builtin_thread_pointer() {
     for expected in [
         "thread(int64_t a1)",
         "typedef binbun_i64_u *int64_t_p_u __attribute__((aligned(1)));",
-        "*(int64_t_p_u *)((uint8_t *)__builtin_thread_pointer() + 48)",
-        "*(binbun_u16_u *)((uint8_t *)__builtin_thread_pointer() + 44) = ",
+        "*(int64_t_p_u *)(__builtin_thread_pointer() + 48)",
+        "*(binbun_u16_u *)(__builtin_thread_pointer() + 44) = ",
     ] {
         assert!(text.contains(expected), "no {expected:?} in\n{text}");
     }
@@ -233,8 +233,9 @@ fn elf_reaches_memory_through_the_builtin_thread_pointer() {
 
 /// Windows ARM64's TEB and KPCR are in `x18`, an ordinary register: no
 /// segment intrinsic, memory reached through `NtCurrentTeb()` or
-/// `KeGetPcr()` as ELF's through the builtin (compared without white
-/// space: the longer name breaks lines elsewhere).
+/// `KeGetPcr()` as ELF's through the builtin, as a `void *` as the
+/// builtin is (a `struct _TEB *` would count structures; compared without
+/// white space: the longer name breaks lines elsewhere).
 #[test]
 fn windows_arm64_reaches_memory_through_x18s_pointer() {
     let bare = |text: &str| -> String { text.split_whitespace().collect() };
@@ -246,7 +247,7 @@ fn windows_arm64_reaches_memory_through_x18s_pointer() {
         let (text, _) = print_with(&thread(), &Style::kr(), &Windows(pointer));
         assert_eq!(
             bare(&text),
-            elf.replace("__builtin_thread_pointer()", value),
+            elf.replace("__builtin_thread_pointer()", &format!("(void*){value}")),
             "{text}"
         );
     }

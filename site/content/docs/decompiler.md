@@ -70,4 +70,4 @@ Instructions without supported semantics remain explicit escapes. Reading C uses
 
 [Verify](@/docs/verify.md) checks the structured representation against the lifted one and runs both from matching sample states. It does not invoke the native binary or prove every input. Reading-view verification uses the representation with the reading assumptions applied, so agreement cannot validate the assumptions themselves.
 
-Generated C uses `binbun_defs.h` for operations ordinary C does not express faithfully. Its header comment specifies `-fwrapv -fno-strict-aliasing`; vector output uses GCC/Clang extensions. Successful compilation is a separate check from semantic agreement.
+Generated C uses `binbun_defs.h` for operations ordinary C does not express faithfully. Its header comment specifies `-fwrapv -fno-strict-aliasing`; vector output and arithmetic on `void *` (in bytes) use GCC/Clang extensions. Successful compilation is a separate check from semantic agreement.

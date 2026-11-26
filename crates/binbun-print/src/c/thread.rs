@@ -116,8 +116,8 @@ impl Printer<'_> {
     }
 
     /// The value of environment variable `id`, which holds the thread
-    /// pointer: `__builtin_thread_pointer()`, `NtCurrentTeb()` or
-    /// `KeGetPcr()`, a `void *`; where the variable has its platform's
+    /// pointer: `__builtin_thread_pointer()`, `(void *)NtCurrentTeb()` or
+    /// `(void *)KeGetPcr()`, a `void *`; where the variable has its platform's
     /// declared type, `binbun_tcb()` or `NtCurrentTeb()` of that type (the
     /// builtin cast to it where the function names the tag otherwise, or
     /// the platform declares none).
@@ -141,7 +141,13 @@ impl Printer<'_> {
         let void = self.types.intern(Type::Pointer(None));
         let raw = self.helper(name, Vec::new(), CTy::Pointer(void), Class::Low, width);
         let Some(target) = self.thread_structure(variable.ty) else {
-            return Ok(raw);
+            // `NtCurrentTeb()` and `KeGetPcr()` give a `struct _TEB *` and
+            // a `struct _KPCR *`, on which arithmetic would count
+            // structures: as a `void *`, it counts bytes.
+            if name == "__builtin_thread_pointer" {
+                return Ok(raw);
+            }
+            return Ok(self.cast(raw, CTy::Pointer(void)));
         };
         let declared = match self.image.thread_pointer() {
             ThreadPointer::Builtin => Some(("binbun_tcb", "tcbhead_t")),

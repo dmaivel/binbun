@@ -910,10 +910,11 @@ impl Printer<'_> {
                 };
                 self.pointer_add(a, None, offset)
             }
-            // `p ± i` (`i` not a constant) bytes on from `p`: arithmetic on
-            // a byte pointer, not on `p`'s integer view.
+            // `p ± i` (`i` not a constant) bytes on from `p`: arithmetic in
+            // bytes, not on `p`'s integer view.
             Binary::Add | Binary::Sub if byte_index => self.byte_offset(a, op == Binary::Sub, b),
-            // `p - q` of byte pointers of one type: their distance, exactly.
+            // `p - q` of byte or `void` pointers of one type: their
+            // distance, exactly.
             Binary::Sub if difference => {
                 let (doc, depth) = self.binary_doc(a, "-", Op::Additive, b);
                 Ok(Self::built(
@@ -1679,12 +1680,13 @@ impl Printer<'_> {
         }
     }
 
-    /// Whether `a` and `b` are pointers of one type to bytes (`p - q` is
-    /// then their distance in bytes).
+    /// Whether `a` and `b` are pointers of one type to bytes or to `void`
+    /// (`p - q` is then their distance in bytes; GCC and Clang take
+    /// `void`'s size as 1).
     fn byte_pointers(&mut self, a: &Value, b: &Value) -> Result<bool, PrintError> {
         Ok(a.ty.is_pointer()
             && b.ty.is_pointer()
-            && self.pointee(a.ty).and_then(|(_, size)| size) == Some(1)
+            && (self.pointee(a.ty).and_then(|(_, size)| size) == Some(1) || self.is_void(a.ty))
             && self.key(a.ty)? == self.key(b.ty)?)
     }
 
