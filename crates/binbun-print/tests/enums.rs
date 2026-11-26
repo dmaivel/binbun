@@ -193,6 +193,7 @@ fn function() -> Function {
 fn printed(f: &Function, opaque: Opaque) -> String {
     let image = |address: u64| (address == 0x2000).then(|| "open".to_owned());
     let printed = c::function(f, &DECLARATIONS, &Style::kr(), &image, opaque).unwrap();
+    assert_eq!(printed.counts.unplanned, 0);
     layout::render(&printed.document, &Style::kr())
 }
 

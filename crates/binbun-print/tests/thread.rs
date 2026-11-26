@@ -88,6 +88,7 @@ fn a_float_control_register_is_read_once_at_entry() {
     )
     .unwrap();
     let text = binbun_print::layout::render(&printed.document, &Style::kr());
+    assert_eq!(printed.counts.unplanned, 0, "{text}");
     let declared = text.find(" mxcsr_entry = binbun_read_mxcsr();").unwrap();
     let used = text.find("return (mxcsr_entry >> 13)").unwrap();
     assert!(declared < used, "{text}");

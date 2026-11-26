@@ -89,10 +89,10 @@ impl Printer<'_> {
                 return false;
             };
             if let Expr::Var(var) = expr {
-                return self.f.var(var).is_some_and(|v| self.is_char(v.ty));
+                return self.var_ty(var).is_some_and(|ty| self.is_char(ty));
             }
             if let Expr::Assign { var, value } = expr {
-                if self.f.var(var).is_some_and(|v| self.is_char(v.ty)) {
+                if self.var_ty(var).is_some_and(|ty| self.is_char(ty)) {
                     return true;
                 }
                 id = value;
@@ -125,9 +125,9 @@ impl Printer<'_> {
     /// `depth` sums deep.
     fn text_pointer(&self, id: ExprId, depth: usize) -> bool {
         match self.f.expr(id) {
-            Some(&Expr::Var(var)) => self.f.var(var).is_some_and(|variable| {
+            Some(&Expr::Var(var)) => self.var_ty(var).is_some_and(|ty| {
                 matches!(
-                    self.types.get(variable.ty),
+                    self.types.get(ty),
                     Some(&Type::Pointer(Some(target))) if self.is_char(target)
                 )
             }),

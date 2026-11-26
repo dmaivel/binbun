@@ -16,9 +16,10 @@ use binbun_ast::types::{Type, TypeId};
 use binbun_semantics::bits::Bits;
 use binbun_semantics::ir::{Binary, IntrinsicId, Trap, Unary};
 
-use super::convert::{self, Class, IntTy, constant_value};
+use super::convert::{self, Ask, Class, IntTy, constant_value};
 use super::enums::Context;
 use super::expr::{Shape, Shift};
+use super::plan::Site;
 use super::types::{CTy, container, native, with_specifier};
 use super::unlifted::{is_unlifted, pure};
 use super::value::{Op, Value};
@@ -37,6 +38,9 @@ struct Items {
     simple: bool,
     label_last: bool,
 }
+
+/// A statement's items, whether it is simple, and whether it is a label.
+type Statement = (Vec<Doc>, bool, bool);
 
 impl Printer<'_> {
     /// The items of `block`, one per line.
@@ -94,12 +98,7 @@ impl Printer<'_> {
                 continue;
             }
             position += 1;
-            let saved = self.node;
-            self.node = Some(Node::Stmt(id));
-            let declared = self.scoped_declarations(id, false);
-            let printed = declared.and_then(|declared| Ok((declared, self.statement(id)?)));
-            self.node = saved;
-            let (declared, (docs, simple, label)) = printed?;
+            let (declared, (docs, simple, label)) = self.planned_statement(id)?;
             // A statement that is a declaration (`T v = e;`) is one too:
             // its block keeps its braces.
             let declaring =
@@ -124,6 +123,37 @@ impl Printer<'_> {
         items.simple = simple_count == 1 && items.docs.len() == 1;
         self.nesting -= 1;
         Ok(items)
+    }
+
+    /// The locals declared before statement `id` and the statement
+    /// ([`Self::statement`]), its conversions and casts noted in the plan
+    /// ([`super::plan::Ledger::enter`]).
+    fn planned_statement(&mut self, id: StmtId) -> Result<(Vec<Doc>, Statement), PrintError> {
+        let saved = self.node;
+        self.node = Some(Node::Stmt(id));
+        let before = self.ledger.enter(id, || Site {
+            breakable: self.breakable.clone(),
+            nesting: self.nesting,
+        });
+        let declared = self.scoped_declarations(id, false);
+        let printed = declared.and_then(|declared| Ok((declared, self.statement(id)?)));
+        self.node = saved;
+        let printed = printed?;
+        self.ledger.leave(id, before, &[&printed.0, &printed.1.0]);
+        Ok(printed)
+    }
+
+    /// Statement `id` planned again where it was printed (`site`), its
+    /// tokens discarded ([`super::Planner::replan`]).
+    pub(super) fn replan(&mut self, id: StmtId, site: Site) -> Result<(), PrintError> {
+        self.breakable = site.breakable;
+        self.nesting = site.nesting;
+        self.budget = super::expr::BUDGET;
+        self.copied.set(0);
+        let printed = self.planned_statement(id);
+        self.breakable.clear();
+        self.nesting = 0;
+        printed.map(|_| ())
     }
 
     /// `name:` one level left.
@@ -151,7 +181,7 @@ impl Printer<'_> {
 
     /// A statement's items, whether it is simple, and whether it is a
     /// label.
-    fn statement(&mut self, id: StmtId) -> Result<(Vec<Doc>, bool, bool), PrintError> {
+    fn statement(&mut self, id: StmtId) -> Result<Statement, PrintError> {
         let stmt = self
             .f
             .stmt(id)
@@ -434,16 +464,14 @@ impl Printer<'_> {
             return false;
         };
         self.f.va_list() == Some(var)
-            && self.f.var(var).is_some_and(|variable| {
-                matches!(self.types.get(variable.ty), Some(Type::Pointer(_)))
-            })
+            && self
+                .var_ty(var)
+                .is_some_and(|ty| matches!(self.types.get(ty), Some(Type::Pointer(_))))
     }
 
     /// The type of variable `var`.
     fn var_type(&self, var: VarId) -> Result<TypeId, PrintError> {
-        self.f
-            .var(var)
-            .map(|variable| variable.ty)
+        self.var_ty(var)
             .ok_or_else(|| error(Some(Node::Var(var)), "no such variable"))
     }
 
@@ -650,8 +678,7 @@ impl Printer<'_> {
         let rep = self
             .int_rep(ty)
             .ok_or_else(|| error(self.node, "not an integer type"))?;
-        let conversion = convert::assigned(value.form(), rep).map_err(|r| self.refused(r))?;
-        Ok(self.apply(value, conversion))
+        self.asked(value, Ask::Assigned(rep))
     }
 
     /// `x op= b`, `x++`, `x--` for `x = x op b` on a variable of a native
@@ -660,11 +687,11 @@ impl Printer<'_> {
         let Some(&Expr::Binary(op, x, b)) = self.f.expr(value) else {
             return Ok(None);
         };
-        let Some(variable) = self.f.var(var) else {
+        let Some(ty) = self.var_ty(var) else {
             return Ok(None);
         };
         let reads = matches!(self.f.expr(x), Some(&Expr::Var(read)) if read == var);
-        let Some(rep) = self.int_rep(variable.ty) else {
+        let Some(rep) = self.int_rep(ty) else {
             return Ok(None);
         };
         if !reads || rep.boolean || !native(rep.width) {

@@ -27,6 +27,7 @@ const RDI: RegisterId = RegisterId(0);
 /// `f` printed in the view `opaque` stands for, and its unknowns.
 fn printed(f: &Function, opaque: Opaque) -> (String, Unknowns) {
     let printed = c::function(f, &DECLARATIONS, &Style::kr(), &|_: u64| None, opaque).unwrap();
+    assert_eq!(printed.counts.unplanned, 0);
     (
         layout::render(&printed.document, &Style::kr()),
         printed.counts.unknowns,

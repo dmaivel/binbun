@@ -71,11 +71,10 @@ enum Fit<'a> {
 impl Printer<'_> {
     /// Variable `id` read (or written) as an lvalue.
     pub(super) fn var_value(&mut self, id: VarId) -> Result<Value, PrintError> {
-        let variable = self
-            .f
-            .var(id)
-            .ok_or_else(|| error(Some(Node::Var(id)), "no such variable"))?;
-        let (kind, ty) = (variable.kind, variable.ty);
+        let (Some(variable), Some(ty)) = (self.f.var(id), self.var_ty(id)) else {
+            return Err(error(Some(Node::Var(id)), "no such variable"));
+        };
+        let kind = variable.kind;
         if self.thread_variable(id) {
             return self.environment_value(id);
         }
@@ -127,11 +126,9 @@ impl Printer<'_> {
     /// `&v` (an array: `v`, its first element's address; a `char` array
     /// in read-only memory holding a string: that string's literal).
     pub(super) fn address_of(&mut self, id: VarId) -> Result<Value, PrintError> {
-        let variable = self
-            .f
-            .var(id)
+        let ty = self
+            .var_ty(id)
             .ok_or_else(|| error(Some(Node::Var(id)), "no such variable"))?;
-        let ty = variable.ty;
         if let Some((literal, element)) = self.string_literal(id) {
             let pointer_ty = self.pointer_type(element);
             return Ok(Value {
@@ -187,7 +184,7 @@ impl Printer<'_> {
         let &Type::Array {
             element,
             length: Some(length),
-        } = self.types.get(variable.ty)?
+        } = self.types.get(self.var_ty(id)?)?
         else {
             return None;
         };
@@ -412,7 +409,7 @@ impl Printer<'_> {
                 let exact = matches!(fit, Fit::Exact(_));
                 let held = |held| if exact { ty } else { held };
                 if let Some(var) = base.address_of {
-                    let var_ty = self.f.var(var).map(|v| v.ty);
+                    let var_ty = self.var_ty(var);
                     if let Some(var_ty) = var_ty
                         && let Some((form, found)) =
                             self.form(var_ty, (scale, bounds), offset, fit)?
@@ -1069,7 +1066,7 @@ impl Printer<'_> {
     /// or `v.f + k` inside an array field, at a whole element, a pointer
     /// to its element.
     fn member_address(&mut self, var: VarId, offset: i128) -> Option<Value> {
-        let ty = self.f.var(var)?.ty;
+        let ty = self.var_ty(var)?;
         let Some(Type::Struct(aggregate)) = self.types.get(ty) else {
             return None;
         };
@@ -1156,7 +1153,7 @@ impl Printer<'_> {
             return Ok(None);
         }
         let member = if let Some(var) = value.address_of {
-            let Some(ty) = self.f.var(var).map(|variable| variable.ty) else {
+            let Some(ty) = self.var_ty(var) else {
                 return Ok(None);
             };
             let first = match self.types.get(ty) {
@@ -1189,10 +1186,10 @@ impl Printer<'_> {
     /// Whether the `bytes` bytes `offset` bytes into variable `var`, a
     /// struct, are not all of the one field holding the first.
     fn spans_fields(&self, var: VarId, offset: i128, bytes: u64) -> bool {
-        let Some(variable) = self.f.var(var) else {
+        let Some(ty) = self.var_ty(var) else {
             return false;
         };
-        let Some(Type::Struct(aggregate)) = self.types.get(variable.ty) else {
+        let Some(Type::Struct(aggregate)) = self.types.get(ty) else {
             return false;
         };
         let end = offset.saturating_add(i128::from(bytes));
@@ -1328,9 +1325,7 @@ impl Printer<'_> {
         match *place {
             Place::Var(id) => {
                 let ty = self
-                    .f
-                    .var(id)
-                    .map(|variable| variable.ty)
+                    .var_ty(id)
                     .ok_or_else(|| error(Some(Node::Var(id)), "no such variable"))?;
                 let storing = core::mem::replace(&mut self.storing, true);
                 let value = self.var_value(id);

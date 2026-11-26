@@ -324,9 +324,7 @@ impl Printer<'_> {
     fn place_width(&self, place: &Place) -> Result<u16, PrintError> {
         let ty = match *place {
             Place::Var(var) => self
-                .f
-                .var(var)
-                .map(|variable| variable.ty)
+                .var_ty(var)
                 .ok_or_else(|| error(Some(Node::Var(var)), "no such variable"))?,
             Place::Memory { ty, .. } => ty,
         };

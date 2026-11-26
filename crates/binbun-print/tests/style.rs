@@ -20,12 +20,15 @@ use common::samples::{branches, calls, escapes, loops, memory, symbols, wide_lit
 use common::{Builder, DECLARATIONS, LLP64, LP64, Platform};
 
 fn printed(f: &Function, style: &Style) -> Printed {
-    c::function(f, &DECLARATIONS, style, &symbols, c::Opaque::Calls).unwrap()
+    let printed = c::function(f, &DECLARATIONS, style, &symbols, c::Opaque::Calls).unwrap();
+    assert_eq!(printed.counts.unplanned, 0);
+    printed
 }
 
 /// `f` as C under `style` on a platform whose `long` is `long` bits.
 fn on(f: &Function, style: &Style, long: u16) -> String {
     let printed = c::function(f, &DECLARATIONS, style, &Platform(long), c::Opaque::Calls).unwrap();
+    assert_eq!(printed.counts.unplanned, 0);
     render(&printed.document, style)
 }
 

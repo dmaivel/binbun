@@ -473,6 +473,33 @@ pub(super) fn assigned(value: Form, rep: IntRep) -> Result<Conversion, Refusal> 
     coerce(value, if rep.signed { Class::Sign } else { Class::Zero })
 }
 
+/// What a use asks of one value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Ask {
+    /// To be what the class asks for ([`coerce`]).
+    Coerce(Class),
+    /// To be exactly the integer type ([`exact`]).
+    Exact(IntTy),
+    /// To be the argument of a parameter of that signedness ([`arg`]).
+    Arg(bool),
+    /// To be a condition ([`truthy`]).
+    Truthy,
+    /// To be assigned to an integer held as the representation says
+    /// ([`assigned`]).
+    Assigned(IntRep),
+}
+
+/// How `value` is converted to be what `ask` asks for.
+pub(super) fn conversion(ask: Ask, value: Form) -> Result<Conversion, Refusal> {
+    match ask {
+        Ask::Coerce(need) => coerce(value, need),
+        Ask::Exact((signed, bits)) => Ok(exact(value, signed, bits)),
+        Ask::Arg(signed) => arg(value, signed),
+        Ask::Truthy => truthy(value),
+        Ask::Assigned(rep) => assigned(value, rep),
+    }
+}
+
 /// Whether C converts a pointer to another pointer type on assignment
 /// without a cast: to the same type (`same`), or between pointers to data
 /// (`data`) one of which is `void *` (`void`).
@@ -492,7 +519,7 @@ const OPERAND_STEPS: usize = 18;
 
 /// The conversions of a binary operation's two operands, in order, and
 /// the type C computes in (or why there is none).
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Operands {
     steps: [(Side, Conversion); OPERAND_STEPS],
     len: usize,

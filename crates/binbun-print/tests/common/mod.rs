@@ -231,7 +231,8 @@ impl Builder {
     }
 }
 
-/// `f` printed under `style`, with names and read-only data from `image`.
+/// `f` printed under `style`, with names and read-only data from `image`;
+/// every conversion printed as planned.
 pub fn print_with(f: &Function, style: &Style, image: &dyn Image) -> (String, Counts) {
     let printed =
         c::function(f, &DECLARATIONS, style, image, c::Opaque::Calls).unwrap_or_else(|e| {
@@ -241,7 +242,12 @@ pub fn print_with(f: &Function, style: &Style, image: &dyn Image) -> (String, Co
                 binbun_ast::text::print(f, &DECLARATIONS)
             )
         });
-    (layout::render(&printed.document, style), printed.counts)
+    let text = layout::render(&printed.document, style);
+    assert_eq!(
+        printed.counts.unplanned, 0,
+        "unplanned conversions:\n{text}"
+    );
+    (text, printed.counts)
 }
 
 /// `f` printed under `style`, without symbols.

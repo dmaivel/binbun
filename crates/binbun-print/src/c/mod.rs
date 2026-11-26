@@ -78,6 +78,13 @@
 //!   `(u128x2){low, high}` for halves, `mask_bits`, `blend`, `splat` and
 //!   the lane-wise shifts for what C has no operator for.
 //!
+//! The conversions are planned before the function is printed
+//! ([`Planner`]: the printer's own walk, noting each conversion C's rules
+//! decide and each statement's casts), so that a choice of presentation
+//! can be costed in casts first; printing follows the plan ([`planned`]),
+//! still deciding each conversion by the rules, and counts any the plan
+//! lacks ([`Counts::unplanned`]).
+//!
 //! # Names
 //!
 //! Names from the binary are made C identifiers (`foo.cold` →
@@ -139,6 +146,7 @@ mod enums;
 mod expr;
 mod float;
 mod memory;
+mod plan;
 mod stmt;
 mod thread;
 mod types;
@@ -148,10 +156,12 @@ mod value;
 mod vector;
 
 pub use memory::string_literal;
+pub use plan::{Cost, Plan, Planner, planned};
 pub use thread::ThreadPointer;
 pub use unknown::Unknowns;
 pub use unlifted::{Opaque, Unlifted};
 
+use alloc::borrow::Cow;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -192,6 +202,10 @@ pub struct Counts {
     /// Unknown values printed, by where they come from; those the
     /// architecture leaves undefined are processor-dependent.
     pub unknowns: Unknowns,
+    /// Conversions printed that the plan lacked or gave otherwise
+    /// ([`planned`]): 0 unless the plan is wrong, which the printer
+    /// repairs by C's rules.
+    pub unplanned: usize,
 }
 
 /// A printed function.
@@ -361,7 +375,9 @@ impl Image for Unnamed {
 /// `function` as a C translation unit, under `style`'s presentation
 /// options, with intrinsic names from `declarations` and the names of
 /// functions and globals at addresses, and the read-only data, from
-/// `image`; its instructions without semantics as `opaque` says.
+/// `image`; its instructions without semantics as `opaque` says. Its
+/// conversions are planned first ([`Planner`]), then printed as planned
+/// ([`planned`]).
 ///
 /// # Errors
 ///
@@ -374,91 +390,26 @@ pub fn function(
     image: &dyn Image,
     opaque: Opaque,
 ) -> Result<Printed, PrintError> {
-    // The reading view leaves a merged local unassigned on the paths where
-    // it would be given a named unknown value ([`unknown::unassigned`]).
-    let shown;
-    let function = match opaque {
+    let function = shown(function, opaque);
+    let plan = Planner::new(&function, declarations, style, image, opaque)?.into_plan();
+    planned(&function, declarations, style, image, opaque, plan)
+}
+
+/// `function` as view `opaque` prints it: the reading view leaves a
+/// merged local unassigned on the paths where it would be given a named
+/// unknown value.
+pub fn shown(function: &Function, opaque: Opaque) -> Cow<'_, Function> {
+    match opaque {
         Opaque::Asm => {
             let hidden = unknown::unassigned(function, &held(function));
             if hidden.is_empty() {
-                function
+                Cow::Borrowed(function)
             } else {
-                shown = unknown::without(function, &hidden);
-                &shown
+                Cow::Owned(unknown::without(function, &hidden))
             }
         }
-        Opaque::Calls => function,
-    };
-    let mut printer = Printer::new(function, declarations, style, image, opaque)?;
-    printer.unaligned = opaque == Opaque::Calls;
-    printer.prepass(&function.body, &mut Vec::new(), 0);
-    let mut body = printer.block(&function.body)?;
-    body.splice(0..0, printer.unused_parameters());
-    body.splice(0..0, printer.unread_frames());
-    let head = printer.signature()?;
-    let locals = printer.locals()?;
-    let mut items = opening(function, image, &printer.function_name);
-    let declared = printer.declarations()?;
-    let structs = printer.struct_definitions()?;
-    let typedefs = printer.unaligned_definitions(&[&head, &body, &locals, &declared, &structs]);
-    let mut function_body = locals;
-    if !function_body.is_empty() && !body.is_empty() {
-        function_body.push(Doc::Group(Vec::new()));
+        Opaque::Calls => Cow::Borrowed(function),
     }
-    function_body.extend(body);
-    let mut definition = vec![Doc::Group(head)];
-    definition.push(Doc::Block {
-        kind: BlockKind::Function,
-        braces: Braces::Required,
-        body: function_body,
-        node: None,
-    });
-    // The enumerations' constants the output names and the tags it
-    // declares values with (not those of attempts discarded), defined
-    // first.
-    let enums = {
-        let named = Document {
-            items: definition
-                .iter()
-                .chain(&declared)
-                .chain(&structs)
-                .chain(&typedefs)
-                .cloned()
-                .collect(),
-        };
-        let tokens = named.tokens();
-        let used = tokens
-            .iter()
-            .filter(|token| token.kind == TokenKind::Macro)
-            .map(|token| token.text.as_str())
-            .collect();
-        let tags = tokens
-            .iter()
-            .zip(tokens.iter().skip(1))
-            .filter(|(keyword, _)| keyword.kind == TokenKind::Keyword && keyword.text == "enum")
-            .filter(|(_, tag)| tag.kind == TokenKind::Type)
-            .map(|(_, tag)| tag.text.as_str())
-            .collect();
-        printer.enum_definitions(&used, &tags)?
-    };
-    for section in [enums, typedefs, structs, declared] {
-        if !section.is_empty() {
-            items.push(Doc::Group(Vec::new()));
-            items.extend(section);
-        }
-    }
-    items.push(Doc::Group(Vec::new()));
-    items.push(Doc::Group(definition));
-    let document = Document { items };
-    let mut counts = printer.counts;
-    // Casts are the operator parentheses (those of discarded attempts are
-    // not in the document).
-    counts.casts = document
-        .tokens()
-        .iter()
-        .filter(|token| token.kind == TokenKind::Operator && token.text == "(")
-        .count();
-    Ok(Printed { document, counts })
 }
 
 /// A translation unit's first lines: what `function` (printed as `name`)
@@ -948,6 +899,11 @@ struct Printer<'a> {
     copied: Cell<usize>,
     /// How deep the block being printed is.
     nesting: usize,
+    /// The conversion plan made or followed ([`plan`]).
+    ledger: plan::Ledger,
+    /// The types variables are printed as, in place of their L2 types
+    /// ([`Plan::types`]).
+    var_types: BTreeMap<VarId, TypeId>,
 }
 
 impl<'a> Printer<'a> {
@@ -1033,10 +989,124 @@ impl<'a> Printer<'a> {
             budget: expr::BUDGET,
             copied: Cell::new(0),
             nesting: 0,
+            ledger: plan::Ledger::making(Plan::default()),
+            var_types: BTreeMap::new(),
         };
         printer.name_callees();
         printer.name_variables();
         Ok(printer)
+    }
+
+    /// A printer of function `f` (as [`shown`] gives it) ready for its
+    /// body, making or following the plan of `ledger`, its variables of
+    /// the types that plan chose.
+    fn started(
+        f: &'a Function,
+        declarations: &'a Declarations,
+        style: &'a Style,
+        image: &'a dyn Image,
+        opaque: Opaque,
+        ledger: plan::Ledger,
+    ) -> Result<Self, PrintError> {
+        let mut printer = Self::new(f, declarations, style, image, opaque)?;
+        printer.unaligned = opaque == Opaque::Calls;
+        for (&var, ty) in ledger.types() {
+            let id = printer.types.intern(ty.clone());
+            printer.var_types.insert(var, id);
+        }
+        printer.ledger = ledger;
+        printer.prepass(&f.body, &mut Vec::new(), 0);
+        Ok(printer)
+    }
+
+    /// The function as a translation unit ([`function`]).
+    fn finish(mut self) -> Result<Printed, PrintError> {
+        let function = self.f;
+        let mut body = self.block(&function.body)?;
+        body.splice(0..0, self.unused_parameters());
+        body.splice(0..0, self.unread_frames());
+        let head = self.signature()?;
+        let locals = self.locals()?;
+        let mut items = opening(function, self.image, &self.function_name);
+        let declared = self.declarations()?;
+        let structs = self.struct_definitions()?;
+        let typedefs = self.unaligned_definitions(&[&head, &body, &locals, &declared, &structs]);
+        let mut function_body = locals;
+        if !function_body.is_empty() && !body.is_empty() {
+            function_body.push(Doc::Group(Vec::new()));
+        }
+        function_body.extend(body);
+        let mut definition = vec![Doc::Group(head)];
+        definition.push(Doc::Block {
+            kind: BlockKind::Function,
+            braces: Braces::Required,
+            body: function_body,
+            node: None,
+        });
+        let enums = self.used_enums(&definition, &declared, &structs, &typedefs)?;
+        for section in [enums, typedefs, structs, declared] {
+            if !section.is_empty() {
+                items.push(Doc::Group(Vec::new()));
+                items.extend(section);
+            }
+        }
+        items.push(Doc::Group(Vec::new()));
+        items.push(Doc::Group(definition));
+        let document = Document { items };
+        let mut counts = self.counts;
+        // Casts are the operator parentheses (those of discarded attempts are
+        // not in the document).
+        counts.casts = document
+            .tokens()
+            .iter()
+            .filter(|token| token.kind == TokenKind::Operator && token.text == "(")
+            .count();
+        counts.unplanned = self.ledger.unplanned();
+        Ok(Printed { document, counts })
+    }
+
+    /// The enumerations' definitions: of the constants the output names
+    /// and the tags it declares values with (not those of attempts
+    /// discarded), in the sections given.
+    fn used_enums(
+        &mut self,
+        definition: &[Doc],
+        declared: &[Doc],
+        structs: &[Doc],
+        typedefs: &[Doc],
+    ) -> Result<Vec<Doc>, PrintError> {
+        let named = Document {
+            items: definition
+                .iter()
+                .chain(declared)
+                .chain(structs)
+                .chain(typedefs)
+                .cloned()
+                .collect(),
+        };
+        let tokens = named.tokens();
+        let used = tokens
+            .iter()
+            .filter(|token| token.kind == TokenKind::Macro)
+            .map(|token| token.text.as_str())
+            .collect();
+        let tags = tokens
+            .iter()
+            .zip(tokens.iter().skip(1))
+            .filter(|(keyword, _)| keyword.kind == TokenKind::Keyword && keyword.text == "enum")
+            .filter(|(_, tag)| tag.kind == TokenKind::Type)
+            .map(|(_, tag)| tag.text.as_str())
+            .collect();
+        self.enum_definitions(&used, &tags)
+    }
+
+    /// The type variable `var` is printed as: the plan's, else its L2
+    /// type.
+    fn var_ty(&self, var: VarId) -> Option<TypeId> {
+        match self.var_types.get(&var) {
+            Some(&ty) => Some(ty),
+            None => self.f.var(var).map(|variable| variable.ty),
+        }
     }
 
     /// Names the functions called by address or referred to (a constant
@@ -1198,7 +1268,7 @@ impl<'a> Printer<'a> {
             && f.parameters
                 .iter()
                 .zip(&signature.parameters)
-                .all(|(&parameter, &ty)| f.var(parameter).is_some_and(|v| v.ty == ty))
+                .all(|(&parameter, &ty)| self.var_ty(parameter) == Some(ty))
     }
 
     /// Names every variable: its own name, a symbol, or one from its kind
@@ -1425,11 +1495,11 @@ impl<'a> Printer<'a> {
                 parameters.push(Doc::punct(",", None));
                 parameters.push(Doc::Line);
             }
-            let variable = f
-                .var(parameter)
+            let ty = self
+                .var_ty(parameter)
                 .ok_or_else(|| error(None, "missing parameter"))?;
             let name = vec![self.var(parameter)];
-            parameters.extend(self.declare_parameter(variable.ty, name)?);
+            parameters.extend(self.declare_parameter(ty, name)?);
         }
         // Variadic with no named parameter: C11's `()` (no `(...)`).
         if f.variadic && !f.parameters.is_empty() {
@@ -1496,7 +1566,8 @@ impl<'a> Printer<'a> {
                 VarKind::Parameter | VarKind::Global(_) => continue,
             };
             let name = vec![self.var(id)];
-            let mut line = self.declare(variable.ty, name)?;
+            let ty = self.var_ty(id).unwrap_or(variable.ty);
+            let mut line = self.declare(ty, name)?;
             line.extend([
                 Doc::Space,
                 Doc::punct("=", None),
@@ -1520,11 +1591,10 @@ impl<'a> Printer<'a> {
     /// `T v;` declaring local or frame variable `id`; a promoted object's
     /// says where in the frame it is (`/* [entry-0x98] */`).
     fn local_declaration(&mut self, id: VarId) -> Result<Doc, PrintError> {
-        let variable = self
-            .f
-            .var(id)
-            .ok_or_else(|| error(Some(Node::Var(id)), "no such variable"))?;
-        let (kind, ty) = (variable.kind, variable.ty);
+        let (Some(variable), Some(ty)) = (self.f.var(id), self.var_ty(id)) else {
+            return Err(error(Some(Node::Var(id)), "no such variable"));
+        };
+        let kind = variable.kind;
         let mut line = self.declare(ty, vec![self.var(id)])?;
         line.push(Doc::punct(";", None));
         if let VarKind::Frame(offset) = kind
@@ -1607,7 +1677,7 @@ impl<'a> Printer<'a> {
             | Stmt::Try { .. }
             | Stmt::VaStart { .. } => return None,
         };
-        let ty = self.f.var(var)?.ty;
+        let ty = self.var_ty(var)?;
         let declared = self.scoped.get(&id)?.contains(&var);
         let value = !matches!(self.cty(ty), Ok(types::CTy::Other(_)) | Err(_));
         (declared && value && !self.unprinted.contains(&id)).then_some(var)
@@ -1622,10 +1692,11 @@ impl<'a> Printer<'a> {
             if let VarKind::Global(address) = variable.kind {
                 let name = vec![self.var(id)];
                 let mut line = vec![Doc::keyword("extern", None), Doc::Space];
-                let bytes = self.types.width(variable.ty).map_or(0, |width| width / 8);
+                let ty = self.var_ty(id).unwrap_or(variable.ty);
+                let bytes = self.types.width(ty).map_or(0, |width| width / 8);
                 let constant =
                     bytes > 0 && self.image.read_only(address, bytes) && !self.writes(id);
-                line.extend(self.declare_const(variable.ty, name, constant)?);
+                line.extend(self.declare_const(ty, name, constant)?);
                 line.push(Doc::punct(";", None));
                 line.push(Doc::Space);
                 let original = variable

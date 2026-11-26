@@ -12,7 +12,7 @@ use binbun_semantics::ir::{Binary, Flag, FloatOp, FloatOutput, Format, LaneOp, U
 use binbun_ssa::ir::Unknown;
 
 use super::chars::Spelling;
-use super::convert::{self, Class, IntTy, Range, common, constant_value, int_of, promote};
+use super::convert::{Ask, Class, IntTy, Range, common, constant_value, int_of, promote};
 use super::enums::Context;
 use super::types::{CTy, container, native};
 use super::value::{EndLiteral, Op, Value, parenthesized};
@@ -734,18 +734,16 @@ impl Printer<'_> {
 
     /// A literal argument printed in the class of a parameter of
     /// signedness `signed` (so C's conversion does not change its value);
-    /// anything else as it is ([`convert::arg`]).
+    /// anything else as it is ([`super::convert::arg`]).
     pub(super) fn arg(&mut self, value: Value, signed: bool) -> Result<Value, PrintError> {
-        let conversion = convert::arg(value.form(), signed).map_err(|r| self.refused(r))?;
-        Ok(self.apply(value, conversion))
+        self.asked(value, Ask::Arg(signed))
     }
 
     /// A 1-bit condition whose C value is non-zero exactly when it is 1
-    /// ([`convert::truthy`]).
+    /// ([`super::convert::truthy`]).
     pub(super) fn truthy(&mut self, value: Value) -> Result<Value, PrintError> {
         let value = self.int_view(value)?;
-        let conversion = convert::truthy(value.form()).map_err(|r| self.refused(r))?;
-        Ok(self.apply(value, conversion))
+        self.asked(value, Ask::Truthy)
     }
 
     pub(super) fn unary(&mut self, op: Unary, a: Value, width: u16) -> Result<Value, PrintError> {
@@ -1677,7 +1675,7 @@ impl Printer<'_> {
         match self.f.expr(id) {
             Some(Expr::AddressOf(_)) => true,
             Some(&Expr::Var(var)) => {
-                self.thread_variable(var) || self.f.var(var).is_some_and(|v| is_pointer(v.ty))
+                self.thread_variable(var) || self.var_ty(var).is_some_and(is_pointer)
             }
             Some(&(Expr::Cast { ty, .. } | Expr::Load { ty, .. })) => is_pointer(ty),
             Some(_) | None => false,
@@ -1922,10 +1920,10 @@ impl Printer<'_> {
     /// element for an array, the pointer its address prints as).
     fn pointee_of(&self, id: ExprId) -> Option<TypeId> {
         let ty = match *self.f.expr(id)? {
-            Expr::Var(var) => self.f.var(var)?.ty,
+            Expr::Var(var) => self.var_ty(var)?,
             Expr::Cast { ty, .. } | Expr::Load { ty, .. } => ty,
             Expr::AddressOf(var) => {
-                let ty = self.f.var(var)?.ty;
+                let ty = self.var_ty(var)?;
                 if let &Type::Array { element, .. } = self.types.get(ty)? {
                     return Some(element);
                 }

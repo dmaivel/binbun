@@ -156,7 +156,7 @@ impl Printer<'_> {
     pub(super) fn enum_type(&self, id: ExprId) -> Option<TypeId> {
         let expr = *self.f.expr(id)?;
         let ty = if let Expr::Var(var) | Expr::Assign { var, .. } = expr {
-            self.f.var(var)?.ty
+            self.var_ty(var)?
         } else if let Expr::Load { ty, .. } | Expr::Cast { ty, .. } = expr {
             ty
         } else if let Expr::Call(call) = expr {

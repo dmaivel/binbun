@@ -13,7 +13,10 @@ use binbun_ast::types::Type;
 use binbun_semantics::bits::Bits;
 use binbun_semantics::ir::Format;
 
-use super::convert::{self, Class, Conversion, Form, IntTy, Refusal, Side, common, constant_value};
+use super::convert::{
+    self, Ask, Class, Conversion, Form, IntTy, Refusal, Side, common, constant_value,
+};
+use super::plan::{One, Two};
 use super::types::{CTy, VectorTy, native};
 use super::{PrintError, Printer, error, number, string_literal};
 use crate::document::{Doc, Token, TokenKind};
@@ -689,16 +692,38 @@ impl Printer<'_> {
     /// again, a cast to the exact type of its width, or at widths C lacks
     /// a mask or `sext_n` ([`convert::coerce`]).
     pub(super) fn coerce(&mut self, value: Value, need: Class) -> Result<Value, PrintError> {
-        let conversion = convert::coerce(value.form(), need).map_err(|r| self.refused(r))?;
-        Ok(self.apply(value, conversion))
+        self.asked(value, Ask::Coerce(need))
     }
 
     /// `value` (an integer congruent to the L2 value) as exactly C type
     /// `(signed, bits)`, `bits` at least its width: unchanged if it is of
     /// that type, else cast ([`convert::exact`]).
     pub(super) fn exact(&mut self, value: Value, signed: bool, bits: u16) -> Value {
-        let conversion = convert::exact(value.form(), signed, bits);
+        let form = value.form();
+        let conversion = convert::exact(form, signed, bits);
+        self.ledger.note_one(One {
+            node: self.node,
+            ask: Ask::Exact((signed, bits)),
+            form,
+            conversion: Ok(conversion),
+        });
         self.apply(value, conversion)
+    }
+
+    /// `value` made what `ask` asks for, as C's rules decide
+    /// ([`convert::conversion`]), the decision noted in the plan
+    /// ([`super::plan`]).
+    pub(super) fn asked(&mut self, value: Value, ask: Ask) -> Result<Value, PrintError> {
+        let form = value.form();
+        let conversion = convert::conversion(ask, form);
+        self.ledger.note_one(One {
+            node: self.node,
+            ask,
+            form,
+            conversion,
+        });
+        let conversion = conversion.map_err(|r| self.refused(r))?;
+        Ok(self.apply(value, conversion))
     }
 
     /// `value` converted as `conversion` says.
@@ -836,7 +861,16 @@ impl Printer<'_> {
         compare: bool,
         bitwise: bool,
     ) -> Result<(Value, Value, IntTy), PrintError> {
-        let plan = convert::operands(a.form(), b.form(), need, compare, bitwise);
+        let forms = (a.form(), b.form());
+        let plan = convert::operands(forms.0, forms.1, need, compare, bitwise);
+        self.ledger.note_two(Two {
+            node: self.node,
+            need,
+            compare,
+            bitwise,
+            forms,
+            operands: plan.clone(),
+        });
         for &(side, conversion) in plan.steps() {
             match side {
                 Side::Left => a = self.apply(a, conversion),

@@ -123,11 +123,10 @@ impl Printer<'_> {
     /// builtin cast to it where the function names the tag otherwise, or
     /// the platform declares none).
     pub(super) fn environment_value(&mut self, id: VarId) -> Result<Value, PrintError> {
-        let variable = self
-            .f
-            .var(id)
+        let ty = self
+            .var_ty(id)
             .ok_or_else(|| error(Some(Node::Var(id)), "no such variable"))?;
-        let width = self.type_width(variable.ty)?;
+        let width = self.type_width(ty)?;
         if width != self.pointer_width() {
             return Err(error(
                 Some(Node::Var(id)),
@@ -141,7 +140,7 @@ impl Printer<'_> {
         };
         let void = self.types.intern(Type::Pointer(None));
         let raw = self.helper(name, Vec::new(), CTy::Pointer(void), Class::Low, width);
-        let Some(target) = self.thread_structure(variable.ty) else {
+        let Some(target) = self.thread_structure(ty) else {
             // `NtCurrentTeb()` and `KeGetPcr()` give a `struct _TEB *` and
             // a `struct _KPCR *`, on which arithmetic would count
             // structures: as a `void *`, it counts bytes.
@@ -155,7 +154,6 @@ impl Printer<'_> {
             ThreadPointer::Teb | ThreadPointer::TebX18 => Some(("NtCurrentTeb", "_TEB")),
             ThreadPointer::Kpcr | ThreadPointer::KpcrX18 => None,
         };
-        let ty = variable.ty;
         self.aggregate_specifier(target)?;
         if let Some((typed, tag)) = declared
             && self.struct_names.get(&target).map(String::as_str) == Some(tag)
@@ -187,11 +185,7 @@ impl Printer<'_> {
         let Some(&Expr::Var(var)) = self.f.expr(base) else {
             return Ok(None);
         };
-        let Some(target) = self
-            .f
-            .var(var)
-            .and_then(|variable| self.thread_structure(variable.ty))
-        else {
+        let Some(target) = self.var_ty(var).and_then(|ty| self.thread_structure(ty)) else {
             return Ok(None);
         };
         let Some(path) = u64::try_from(offset)
