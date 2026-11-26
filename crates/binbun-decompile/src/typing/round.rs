@@ -26,7 +26,15 @@
 //!   decide `p`'s). If every field has one width `w` (whole bytes) and
 //!   every offset and the family's stride are multiples of `w / 8`, that
 //!   is the element, and a member whose offset and modulus are multiples
-//!   of `w / 8` points to it; with no element (several widths: a struct),
+//!   of `w / 8` points to it. Where they are not, the family's own
+//!   accesses (not the fields a callee's scheme gives the memory it is
+//!   passed) may still be an array of floats: their narrowest width `w`
+//!   (32 or 64) a float's, every wider one a whole number of `w`-bit
+//!   elements at a whole element's offset with a value of no type of its
+//!   own (a SIMD load or store, `movups`: moved, not an integer by an
+//!   operation), or, with none wider, a stride (an array walk); every
+//!   offset and the stride whole elements. With no element (several
+//!   widths: a struct),
 //!   a member points to the element of the fields at its own offset
 //!   (modulo the stride and its modulus); otherwise to nothing
 //!   (`void *`).
@@ -72,7 +80,9 @@
 //!   parameter's variable also counts its entry value or its stack slot.
 //!   An enumeration only where every member is its value (a member of
 //!   another type or of none makes it its integer).
-//! - Loads and stores take the type of the value loaded or stored; the
+//! - Loads and stores take the type of the value loaded or stored, but
+//!   one wider than 64 bits through a family whose element is a float, at
+//!   a whole element's place, a vector of as many elements (`f32x4`); the
 //!   return value takes its variable's joined with the values returned (as
 //!   a class, with the wider registers' values returned read at its
 //!   width), else, where nothing speaks for those, the type of the
@@ -925,9 +935,25 @@ impl<'r, 'a> Rounder<'r, 'a> {
         self.keep_declared(ty, returns.evidence.unwrap_or(Stated::Default))
     }
 
-    /// Loads' and stores' types: their values'.
+    /// Loads' and stores' types: their values', but a field's of a struct
+    /// where they access one exactly, and a vector of a family's float
+    /// elements where they access several at once
+    /// ([`Self::access_lanes`]).
     fn accesses(&mut self, out: &mut BTreeMap<InstId, TypeId>) {
         let view = self.view;
+        let generated = self.generated;
+        let through: BTreeMap<InstId, (usize, Access)> = generated
+            .families
+            .families
+            .iter()
+            .enumerate()
+            .flat_map(|(index, family)| {
+                family
+                    .accesses
+                    .iter()
+                    .map(move |&access| (access.inst, (index, access)))
+            })
+            .collect();
         let loads = view.shapes.iter().enumerate().filter_map(|(index, shape)| {
             let Some(Shape::Load(inst)) = shape else {
                 return None;
@@ -946,6 +972,12 @@ impl<'r, 'a> Rounder<'r, 'a> {
                 out.insert(inst, ty);
                 continue;
             }
+            if let Some(&(family, access)) = through.get(&inst)
+                && let Some(ty) = self.access_lanes(family, &access)
+            {
+                out.insert(inst, ty);
+                continue;
+            }
             let Some(var) = self.generated.var(value) else {
                 continue;
             };
@@ -953,6 +985,28 @@ impl<'r, 'a> Rounder<'r, 'a> {
                 out.insert(inst, ty);
             }
         }
+    }
+
+    /// The type of `access` (of family `index`) where it reads or writes
+    /// several of the family's float elements at once: a vector of them,
+    /// as many as it is wide, where it is wider than any scalar and its
+    /// place is a whole number of elements (its offset, and what that is
+    /// known modulo: [`period`]). Not in a struct of the program's
+    /// table, whose fields say what each access is.
+    fn access_lanes(&mut self, index: usize, access: &Access) -> Option<TypeId> {
+        let family = self.generated.families.get(index)?;
+        if access.bits <= 64 || self.struct_of(index, access.modulus).is_some() {
+            return None;
+        }
+        let period = period(family, access);
+        let (bits, element) = self.object(index, 0).element?;
+        let bytes = i64::from(bits / 8);
+        let float = matches!(self.types.get(element), Some(Type::Float(_)));
+        let lanes = access.bits / bits;
+        let placed = access.offset % bytes == 0
+            && period.is_multiple_of(bytes.unsigned_abs())
+            && access.bits.is_multiple_of(bits);
+        (float && placed && lanes > 1).then(|| self.types.intern(Type::Vector { lanes, element }))
     }
 
     /// Variable `var`'s type at `width` bits, with its strength: its own
@@ -1232,6 +1286,10 @@ impl<'r, 'a> Rounder<'r, 'a> {
     /// where [`counts`] says they are at a known element): one width `w`
     /// (whole bytes) with every offset and the stride whole numbers of
     /// `w / 8` bytes; the fields' type if they agree, else `bits(w)`.
+    /// Where they agree on none, the float its own accesses step through
+    /// or move several of at once ([`Self::lanes`]): what a callee's
+    /// scheme says of memory it is passed (`memcpy`'s words) does not
+    /// decide that.
     fn object(&mut self, index: usize, depth: u8) -> Object {
         if let Some(&known) = self.objects.get(&(index, depth)) {
             return known;
@@ -1261,7 +1319,17 @@ impl<'r, 'a> Rounder<'r, 'a> {
                 }
             }
         }
-        let element = self.element(&fields, family.stride, index, depth);
+        let element = self
+            .element(&fields, family.stride, index, depth)
+            .or_else(|| {
+                let own: Vec<(i64, u16, Option<Var>)> = family
+                    .accesses
+                    .iter()
+                    .filter(|access| counts(access.modulus, access.bits))
+                    .map(|access| (access.offset, access.bits, access.value))
+                    .collect();
+                self.lanes(&own, family.stride, index, depth)
+            });
         self.layouts.insert(index, fields);
         let object = Object { strength, element };
         self.objects.insert((index, depth), object);
@@ -1288,8 +1356,64 @@ impl<'r, 'a> Rounder<'r, 'a> {
         if !aligned {
             return None;
         }
-        // The strongest field type; types that differ at the strongest
-        // evidence give `bits(w)`. A field with no evidence says nothing.
+        let ty = self.fields_type(fields, bits, within, depth);
+        Some((bits, self.types.intern(ty)))
+    }
+
+    /// The float element of `fields` (offset, width, value; offsets known
+    /// modulo `stride`), a family's own accesses: of the narrowest width
+    /// `w` (32 or 64 bits), a float's by the strongest evidence of the
+    /// fields of that width, where every wider field is several such
+    /// elements moved at once (a whole number of them, at an offset that
+    /// is a whole number of elements, its value of no type of its own: a
+    /// SIMD load or store of the array, `movups`, or a copy's word; not a
+    /// value an operation makes an integer); with no wider field, only
+    /// where the family steps through the array (a stride). Every offset
+    /// and the stride are whole numbers of elements.
+    fn lanes(
+        &mut self,
+        fields: &[(i64, u16, Option<Var>)],
+        stride: u64,
+        within: usize,
+        depth: u8,
+    ) -> Option<(u16, TypeId)> {
+        let bits = fields.iter().map(|&(_, width, _)| width).min()?;
+        let uniform = fields.iter().all(|&(_, width, _)| width == bits);
+        if !matches!(bits, 32 | 64) || (uniform && stride == 0) {
+            return None;
+        }
+        let bytes = i64::from(bits / 8);
+        if !stride.is_multiple_of(bytes.unsigned_abs()) {
+            return None;
+        }
+        let mut narrow = Vec::new();
+        for &(offset, width, value) in fields {
+            if offset % bytes != 0 || !width.is_multiple_of(bits) {
+                return None;
+            }
+            if width == bits {
+                narrow.push((offset, width, value));
+            } else if value.is_some_and(|value| {
+                self.field_type(value, width, within, depth)
+                    .is_some_and(|(ty, _)| !matches!(ty, Type::Bits(_)))
+            }) {
+                return None;
+            }
+        }
+        let ty = self.fields_type(&narrow, bits, within, depth);
+        matches!(ty, Type::Float(_)).then(|| (bits, self.types.intern(ty)))
+    }
+
+    /// The type of `fields`' values (each `bits` wide): the strongest
+    /// field type; types that differ at the strongest evidence give
+    /// `bits(w)`. A field with no evidence says nothing; none: `bits(w)`.
+    fn fields_type(
+        &mut self,
+        fields: &[(i64, u16, Option<Var>)],
+        bits: u16,
+        within: usize,
+        depth: u8,
+    ) -> Type {
         let mut best: Option<(Option<Type>, Strength)> = None;
         for &(_, _, value) in fields {
             let Some((ty, strength)) =
@@ -1309,8 +1433,7 @@ impl<'r, 'a> Rounder<'r, 'a> {
                 Some(_) | None => Some((Some(ty), strength)),
             };
         }
-        let ty = best.and_then(|(ty, _)| ty).unwrap_or(Type::Bits(bits));
-        Some((bits, self.types.intern(ty)))
+        best.and_then(|(ty, _)| ty).unwrap_or(Type::Bits(bits))
     }
 
     /// A field's type, with its strength: code (a value loaded and called,

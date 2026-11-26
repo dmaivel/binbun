@@ -13,14 +13,14 @@
 //! Every result is checked against its L1 by structure and from random
 //! states.
 
-use binbun_ast::ir::{Function as Ast, VarId};
+use binbun_ast::ir::{Function as Ast, Place, Stmt, VarId};
 use binbun_ast::types::{Evidence, Type as L2Type};
 use binbun_decompile::itanium::NONE;
 use binbun_decompile::lower::{Context, Convention, Facts, lower_counted};
 use binbun_decompile::validate::{Hashed, Link, Setup, differential, random_states, structure};
 use binbun_semantics::bits::Bits;
 use binbun_semantics::core::pass::{Fuel, Manager};
-use binbun_semantics::ir::{Binary, RegisterId};
+use binbun_semantics::ir::{Binary, FloatOp, FloatOutput, Format, RegisterId};
 use binbun_semantics::{Declarations, RegisterInfo};
 use binbun_ssa::constant::NoMemory;
 use binbun_ssa::ir::{
@@ -365,4 +365,89 @@ fn code_with_no_evidence_keeps_bits() {
     let p = l2.var(l2.parameters[0]).unwrap();
     assert_eq!(type_of(&l2, l2.parameters[0]), &L2Type::Bits(64));
     assert_eq!(p.evidence, Evidence::Default);
+}
+
+/// `*(128 bits *)x = s; *(128 bits *)(x + 16) = s; return (double)*(float
+/// *)(x + 4)`, `s` four floats (1, 2, 3, 4) as a constant, or `y`'s
+/// quotient by 3 as a 128-bit integer where `computed`.
+fn float_array(computed: bool) -> Ast {
+    let (mut l1, [x, y, sp, c, memory]) = L1::new();
+    let lanes = 0x4080_0000_4040_0000_4000_0000_3f80_0000;
+    let mut stored = l1.pure(Op::Const(Bits::from_u128(128, lanes)), 128);
+    if computed {
+        let wide = l1.pure(
+            Op::Extend {
+                signed: false,
+                value: y,
+                width: 128,
+            },
+            128,
+        );
+        let three = l1.pure(Op::Const(Bits::from_u64(128, 3)), 128);
+        stored = l1.binary(Binary::UDiv, wide, three, 128);
+    }
+    let memory = l1.store(memory, x, stored);
+    let sixteen = l1.constant(64, 16);
+    let second = l1.binary(Binary::Add, x, sixteen, 64);
+    let memory = l1.store(memory, second, stored);
+    let four = l1.constant(64, 4);
+    let element = l1.binary(Binary::Add, x, four, 64);
+    let single = l1.load(memory, element, 4);
+    let rounding = l1.constant(2, 0);
+    let double = l1.pure(
+        Op::Float {
+            op: FloatOp::Convert(Format::Double),
+            format: Format::Single,
+            lanes: 1,
+            output: FloatOutput::Value,
+            rounding,
+            operands: [single; 3],
+        },
+        64,
+    );
+    l1.ret(sp, [double, y, c], memory);
+    lowered(&l1.f)
+}
+
+/// The types of `l2`'s stores to memory.
+fn stored_types(l2: &Ast) -> Vec<&L2Type> {
+    l2.stmts
+        .iter()
+        .filter_map(|stmt| {
+            let Stmt::Assign {
+                place: Place::Memory { ty, .. },
+                ..
+            } = stmt
+            else {
+                return None;
+            };
+            l2.types.get(*ty)
+        })
+        .collect()
+}
+
+#[test]
+fn simd_stores_into_a_float_array_store_vectors_of_its_floats() {
+    // The float read makes `x` a `float *`, each 16-byte store four of them.
+    let l2 = float_array(false);
+    let float = L2Type::Float(Format::Single);
+    assert_eq!(target(&l2, parameter(&l2, 0)), Some(&float));
+    let stored = stored_types(&l2);
+    assert_eq!(stored.len(), 2);
+    for ty in stored {
+        let &L2Type::Vector { lanes, element } = ty else {
+            panic!("{ty:?} is not a vector");
+        };
+        assert_eq!(lanes, 4);
+        assert_eq!(l2.types.get(element), Some(&float));
+    }
+    // A value an operation makes a 128-bit integer is no float's: the
+    // bytes are no array of floats.
+    let l2 = float_array(true);
+    assert_ne!(target(&l2, parameter(&l2, 0)), Some(&float));
+    assert!(
+        stored_types(&l2)
+            .iter()
+            .all(|ty| !matches!(ty, L2Type::Vector { .. }))
+    );
 }

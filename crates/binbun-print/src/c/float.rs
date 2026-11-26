@@ -503,7 +503,7 @@ fn take<const N: usize>(operands: Vec<Value>) -> Result<[Value; N], PrintError> 
 /// bits (what Rust prints; a C compiler rounds a decimal literal
 /// correctly), `f` after a `float`'s. Infinities and NaNs have no
 /// literal.
-fn float_literal(bits: &Bits, format: Format) -> Option<String> {
+pub(super) fn float_literal(bits: &Bits, format: Format) -> Option<String> {
     match (format, bits.width()) {
         (Format::Double, 64) => {
             let value = f64::from_bits(bits.low_u64());

@@ -21,6 +21,7 @@
 //! counts, float lanes) is refused as "vector operations".
 
 use alloc::format;
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -29,6 +30,7 @@ use binbun_semantics::bits::Bits;
 use binbun_semantics::ir::{Binary, FloatOp, Format, LaneOp, Unary};
 
 use super::chars::Spelling;
+use super::float::float_literal;
 use super::types::{CTy, LaneKind, VectorTy};
 use super::value::{Class, Op, Value, parenthesized};
 use super::{PrintError, Printer, error};
@@ -229,29 +231,49 @@ impl Printer<'_> {
 
     /// The constant `bits` as a literal of vector type `ty`: `(u8x16){1, 2,
     /// …}`, lane 0 first; all zeros `(u8x16){0}`; float lanes as their
-    /// bits' (`(f32x4)(u32x4){…}`).
+    /// numbers (`(f32x4){1.0f, 0.5f, …}`) where every lane is one, else
+    /// as their bits' (`(f32x4)(u32x4){…}`: an infinity or a NaN has no
+    /// literal).
     fn vector_literal(&mut self, bits: Bits, ty: VectorTy) -> Result<Value, PrintError> {
-        if ty.kind == LaneKind::Float {
-            let int = self.vector_literal(bits, ty.of(LaneKind::Unsigned))?;
-            let mut cast = self.cast(int, CTy::Vector(ty));
-            cast.constant = Some(bits);
-            return Ok(cast);
-        }
         let node = self.node;
+        let mut lanes = Vec::new();
+        if ty.kind == LaneKind::Float {
+            let format = if ty.bits == 64 {
+                Format::Double
+            } else {
+                Format::Single
+            };
+            let numbers: Option<Vec<String>> = (0..ty.lanes)
+                .map(|lane| float_literal(&bits.extract(lane * ty.bits, ty.bits), format))
+                .collect();
+            let Some(numbers) = numbers else {
+                let int = self.vector_literal(bits, ty.of(LaneKind::Unsigned))?;
+                let mut cast = self.cast(int, CTy::Vector(ty));
+                cast.constant = Some(bits);
+                return Ok(cast);
+            };
+            lanes = numbers
+                .into_iter()
+                .map(|number| vec![Doc::number(number, node)])
+                .collect();
+        } else if !bits.is_zero() {
+            for lane in 0..ty.lanes {
+                let value = bits.extract(lane * ty.bits, ty.bits);
+                lanes.push(self.lane_literal(value, ty.kind)?.doc);
+            }
+        }
         let mut doc = parenthesized(vec![self.type_token(ty)], node);
         doc.push(Doc::punct("{", node));
         if bits.is_zero() {
             doc.push(Doc::number("0", node));
         } else {
             let mut items = Vec::new();
-            for lane in 0..ty.lanes {
-                if lane > 0 {
+            for (index, lane) in lanes.into_iter().enumerate() {
+                if index > 0 {
                     items.push(Doc::punct(",", node));
                     items.push(Doc::Line);
                 }
-                let value = bits.extract(lane * ty.bits, ty.bits);
-                let literal = self.lane_literal(value, ty.kind)?;
-                items.extend(literal.doc);
+                items.extend(lane);
             }
             doc.push(Doc::Nest(items));
         }

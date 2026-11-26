@@ -1571,7 +1571,58 @@ fn cases() -> Vec<Case> {
     nested(&mut cases);
     switch(&mut cases);
     vectors(&mut cases);
+    float_lanes(&mut cases);
     cases.cases
+}
+
+/// Constants of vectors of floats (their literals, `(f32x4){1.0f, …}`, and
+/// where a lane is no number, their bits) assigned to a local of that
+/// type: each lane's bits read back, the exclusive or of their 64-bit
+/// parts with the first parameter.
+fn float_lanes(cases: &mut Cases) {
+    let pair = [Type::UInt(64), Type::UInt(64)];
+    let cases_of: [(&str, Format, u16, [u64; 4]); 3] = [
+        // 1, -0, the least denormal, the greatest float.
+        (
+            "f32x4",
+            Format::Single,
+            32,
+            [0x3f80_0000, 0x8000_0000, 0x0000_0001, 0x7f7f_ffff],
+        ),
+        // A NaN: no literal.
+        (
+            "f32x4nan",
+            Format::Single,
+            32,
+            [0x3f80_0000, 0x7fc0_0001, 0x4000_0000, 0x4040_0000],
+        ),
+        // 0.1 and -2.5.
+        (
+            "f64x2",
+            Format::Double,
+            64,
+            [0x3fb9_9999_9999_999a, 0xc004_0000_0000_0000, 0, 0],
+        ),
+    ];
+    for (what, format, bits, lanes) in cases_of {
+        cases.add_body(what, &pair, Type::UInt(64), |b, p, _| {
+            let element = b.ty(Type::Float(format));
+            let count = 128 / bits;
+            let ty = b.ty(Type::Vector {
+                lanes: count,
+                element,
+            });
+            let v = b.local(ty);
+            let value = lanes_constant(b, 128, bits, |i| lanes[usize::from(i)]);
+            let set = b.assign(v, value);
+            let read = b.read(v);
+            let folded = fold(b, read);
+            let first = b.read(p[0]);
+            let result = b.bin(Binary::Xor, folded, first);
+            let ret = b.ret(result);
+            vec![set, ret]
+        });
+    }
 }
 
 /// The C program: every case's function, then `main` printing each
