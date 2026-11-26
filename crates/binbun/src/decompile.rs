@@ -34,7 +34,7 @@ use binbun_decompile::simplify::copies::{Narrow, Propagate, Prune};
 use binbun_decompile::simplify::division::Divisions;
 use binbun_decompile::simplify::fields::DeclaredFields;
 use binbun_decompile::simplify::rules::Rewrite;
-use binbun_decompile::simplify::signs::Signs;
+use binbun_decompile::simplify::signs::{LocalSigns, Signs};
 use binbun_decompile::simplify::sink::Sink;
 use binbun_decompile::structure::{
     ArrayLoops, CommonArms, Conditions, Exits, Forward, LoopHeads, Loops, Rotated, ShortCircuit,
@@ -156,7 +156,7 @@ impl View {
 
 /// The names of the passes, in the order they run: on L1, then (after
 /// lowering) on L2.
-pub fn passes() -> [&'static str; 26] {
+pub fn passes() -> [&'static str; 27] {
     [
         TailJumps::default().name(),
         AssumeCanonical.name(),
@@ -180,6 +180,7 @@ pub fn passes() -> [&'static str; 26] {
         Loops::default().name(),
         Switches.name(),
         DeclaredFields.name(),
+        LocalSigns.name(),
         Signs.name(),
         Conditions.name(),
         Forward.name(),
@@ -274,8 +275,9 @@ impl<F> Recorded<F> {
 ///    then [`Switches`] (comparison chains on one value as `switch`);
 /// 5. [`DeclaredFields`] (what is read and written through the thread
 ///    pointer, typed by the structure its platform declares);
-/// 6. [`Signs`] (operations on values that read the same signed or
-///    unsigned in the signedness of their operands' types);
+/// 6. [`LocalSigns`] (each local's signedness the one more of its reads
+///    ask for), then [`Signs`] (operations on values that read the same
+///    signed or unsigned in the signedness of their operands' types);
 /// 7. [`Conditions`] (an assignment into the condition after it that
 ///    reads it: `if ((v = f()) != 0)`, `while ((c = getc(s)) != -1)`;
 ///    last, so that no other pass sees an assignment expression) and,
@@ -379,6 +381,7 @@ pub(crate) fn l2_passes_recorded<'e>(
     manager.run(&mut loops, l2, env).map_err(fails)?;
     manager.run(&mut Switches, l2, env).map_err(fails)?;
     manager.run(&mut DeclaredFields, l2, env).map_err(fails)?;
+    manager.run(&mut LocalSigns, l2, env).map_err(fails)?;
     manager.run(&mut Signs, l2, env).map_err(fails)?;
     if manager.run(&mut Conditions, l2, env).map_err(fails)? == Changed::Yes {
         manager

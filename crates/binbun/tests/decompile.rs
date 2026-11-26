@@ -1911,7 +1911,7 @@ fn a_variadic_definition_walking_its_list_is_called_as_one() {
         "sum(int32_ta1,...)",
         "va_start(ap,a1);binbun_va_walk(ap);",
         "ap_registers=(uint8_t*)ap->reg_save_area;",
-        "ap_registers+(uint32_t)",
+        "=ap_registers+v6;",
         "+=*ap_stack;",
     ] {
         assert!(c.contains(expected), "{expected}: {c}");
