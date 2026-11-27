@@ -46,6 +46,10 @@ use crate::scroll::{Scroller, Sideways};
 
 /// Bytes a row.
 pub const ROW: u64 = 16;
+/// The most entries a file's table is typed with.
+const TABLE_ENTRIES: u64 = 1 << 20;
+/// The most base relocation blocks typed.
+const RELOCATION_BLOCKS: u64 = 4096;
 
 /// Which space positions are in.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -425,6 +429,7 @@ impl HexImage {
         let strings = sections
             .get(usize::try_from(field("e_shstrndx")).unwrap_or(usize::MAX))
             .and_then(|&offset| read(&shdr, offset, "sh_offset"));
+        let mut section_names = Vec::with_capacity(sections.len());
         for &offset in &sections {
             let get = |name: &str| read(&shdr, offset, name).unwrap_or(0);
             let name = strings
@@ -437,16 +442,9 @@ impl HexImage {
             if !name.is_empty() && shsize == shdr.size {
                 labels.push((offset..offset + shsize, name.clone()));
             }
-            let kind = match get("sh_type") {
-                // SHT_NULL, SHT_NOBITS: no bytes in the file.
-                0 | 8 => continue,
-                // SHT_SYMTAB, SHT_DYNSYM, SHT_HASH, SHT_DYNAMIC, SHT_GNU_HASH,
-                // the symbol versions.
-                2 | 11 | 5 | 6 | 0x6fff_fff6 | 0x6fff_fffe | 0x6fff_ffff => Kind::Table,
-                3 => Kind::String,
-                // SHT_RELA, SHT_REL, SHT_RELR.
-                4 | 9 | 19 => Kind::Relocation,
-                _ => Kind::Section,
+            section_names.push((offset, name.clone()));
+            let Some(kind) = elf_section_kind(get("sh_type")) else {
+                continue;
             };
             let start = get("sh_offset");
             let end = start.saturating_add(get("sh_size")).min(self.file_len);
@@ -458,10 +456,13 @@ impl HexImage {
                 });
             }
         }
+        let out = (&mut members, &mut labels);
+        elf_tables(file, types, (wide, little), &shdr, &section_names, out);
         self.headers.push(file_overlay("ELF", members, labels));
     }
 
     /// The DOS, NT and optional headers, the section table and sections.
+    #[expect(clippy::too_many_lines, reason = "one data directory after another")]
     fn read_pe(&mut self, file: &[u8], types: &mut TypeSet) {
         let (Ok(dos), Ok(section)) = (
             types.layout("IMAGE_DOS_HEADER"),
@@ -524,6 +525,8 @@ impl HexImage {
         if count > 0 {
             members.push(section.root.array(count, "sections", table_at));
         }
+        // Each section's RVAs and file bytes, for the directories.
+        let mut rvas: Vec<(u64, u64, u64)> = Vec::new();
         for i in 0..count {
             let offset = table_at + i * section.size;
             let get = |name: &str| read(&section, offset, name).unwrap_or(0);
@@ -539,6 +542,7 @@ impl HexImage {
             }
             let start = get("PointerToRawData");
             let raw = get("SizeOfRawData");
+            rvas.push((get("VirtualAddress"), start, raw));
             let virtual_size = get("Misc.PhysicalAddress");
             let mapped = if virtual_size == 0 {
                 raw
@@ -558,12 +562,183 @@ impl HexImage {
                 });
             }
         }
+        let headers_size = get("OptionalHeader.SizeOfHeaders");
+        let rva_file = |rva: u64| -> Option<u64> {
+            if rva < headers_size {
+                return Some(rva);
+            }
+            rvas.iter()
+                .find(|&&(va, _, raw)| rva >= va && rva - va < raw)
+                .map(|&(va, file, _)| file + (rva - va))
+        };
+        let directory = |i: usize| {
+            let va = get(&format!("OptionalHeader.DataDirectory[{i}].VirtualAddress"));
+            let size = get(&format!("OptionalHeader.DataDirectory[{i}].Size"));
+            Some((rva_file(va).filter(|_| va != 0 && size != 0)?, size))
+        };
+        let wide = magic == Some(0x20b);
+        let machine = get("FileHeader.Machine");
+        let file_len = self.file_len;
+        let block = types.layout("IMAGE_BASE_RELOCATION").ok();
+        // A table of `count` `ty`s named `name` at `at`; its layout.
+        let mut table = |members: &mut Vec<Node>, ty: &str, count: u64, name: &str, at: u64| {
+            let layout = types.layout(ty).ok()?;
+            if count == 0 || count > TABLE_ENTRIES || at >= file_len {
+                return None;
+            }
+            members.push(if count == 1 {
+                layout.root.member(name, at)
+            } else {
+                layout.root.array(count, name, at)
+            });
+            Some(layout)
+        };
+        // A string an RVA names.
+        let string_at = |rva: u64| rva_file(rva).and_then(|at| c_string(file, at));
+        // Entries of `size` bytes from `at` up to the first all zero (the
+        // end of a descriptor list), at most `most`.
+        let listed = |at: u64, size: u64, most: u64| {
+            (0..most)
+                .take_while(|i| {
+                    let from = usize::try_from(at + i * size).unwrap_or(usize::MAX);
+                    let to = from.saturating_add(usize::try_from(size).unwrap_or(0));
+                    file.get(from..to)
+                        .is_some_and(|b| b.iter().any(|&x| x != 0))
+                })
+                .count() as u64
+        };
+        if let Some((at, _)) = directory(0)
+            && let Some(export) = table(&mut members, "IMAGE_EXPORT_DIRECTORY", 1, "export", at)
+        {
+            let get = |name: &str| read(&export, at, name).unwrap_or(0);
+            let (functions, names) = (get("NumberOfFunctions"), get("NumberOfNames"));
+            for (ty, count, name, rva) in [
+                (
+                    "DWORD",
+                    functions,
+                    "export_functions",
+                    get("AddressOfFunctions"),
+                ),
+                ("DWORD", names, "export_names", get("AddressOfNames")),
+                (
+                    "WORD",
+                    names,
+                    "export_ordinals",
+                    get("AddressOfNameOrdinals"),
+                ),
+            ] {
+                if let Some(table_at) = rva_file(rva) {
+                    table(&mut members, ty, count, name, table_at);
+                }
+            }
+            // Each name's entry by the name.
+            if let Some(names_at) = rva_file(get("AddressOfNames")) {
+                for i in 0..names.min(TABLE_ENTRIES) {
+                    let entry = names_at + i * 4;
+                    let name = at_word(file, entry).and_then(string_at);
+                    if let Some(name) = name {
+                        labels.push((entry..entry + 4, name));
+                    }
+                }
+            }
+        }
+        // Import and delay-import descriptors, each by its library.
+        for (i, ty, size, field, name) in [
+            (1, "IMAGE_IMPORT_DESCRIPTOR", 20, "Name", "imports"),
+            (
+                13,
+                "IMAGE_DELAYLOAD_DESCRIPTOR",
+                32,
+                "DllNameRVA",
+                "delay_imports",
+            ),
+        ] {
+            let Some((at, size_of)) = directory(i) else {
+                continue;
+            };
+            let count = listed(at, size, size_of / size + 1);
+            let Some(layout) = table(&mut members, ty, count, name, at) else {
+                continue;
+            };
+            for k in 0..count {
+                let entry = at + k * size;
+                if let Some(library) = read(&layout, entry, field).and_then(string_at) {
+                    labels.push((entry..entry + size, library));
+                }
+            }
+        }
+        if let Some((at, _)) = directory(2)
+            && let Some(root) = table(&mut members, "IMAGE_RESOURCE_DIRECTORY", 1, "resources", at)
+        {
+            let get = |name: &str| read(&root, at, name).unwrap_or(0);
+            let entries = get("NumberOfNamedEntries") + get("NumberOfIdEntries");
+            table(
+                &mut members,
+                "IMAGE_RESOURCE_DIRECTORY_ENTRY",
+                entries,
+                "resource_entries",
+                at + root.size,
+            );
+        }
+        // x64's unwind table (ARM64's entries differ).
+        if machine == 0x8664
+            && let Some((at, size)) = directory(3)
+        {
+            table(&mut members, "RUNTIME_FUNCTION", size / 12, "pdata", at);
+        }
+        // The base relocations: each block's header and its entries.
+        if let Some((at, size)) = directory(5)
+            && let Some(block) = block
+        {
+            let mut p = at;
+            for i in 0..RELOCATION_BLOCKS {
+                let length = read(&block, p, "SizeOfBlock").unwrap_or(0);
+                if length < block.size || p + length > at + size {
+                    break;
+                }
+                table(
+                    &mut members,
+                    "IMAGE_BASE_RELOCATION",
+                    1,
+                    &format!("reloc{i}"),
+                    p,
+                );
+                let entries = (length - block.size) / 2;
+                let name = format!("reloc{i}_entries");
+                table(&mut members, "WORD", entries, &name, p + block.size);
+                p += length;
+            }
+        }
+        if let Some((at, size)) = directory(6) {
+            table(
+                &mut members,
+                "IMAGE_DEBUG_DIRECTORY",
+                size / 28,
+                "debug",
+                at,
+            );
+        }
+        let (tls, config) = if wide {
+            ("IMAGE_TLS_DIRECTORY64", "IMAGE_LOAD_CONFIG_DIRECTORY64")
+        } else {
+            ("IMAGE_TLS_DIRECTORY32", "IMAGE_LOAD_CONFIG_DIRECTORY32")
+        };
+        if let Some((at, _)) = directory(9) {
+            table(&mut members, tls, 1, "tls", at);
+        }
+        if let Some((at, _)) = directory(10) {
+            table(&mut members, config, 1, "load_config", at);
+        }
         self.headers.push(file_overlay("PE", members, labels));
     }
 
     /// Of a slice of a universal file, the universal header and the other
     /// slices; the slice's Mach-O header, load commands (segments with
     /// their sections' headers), sections and symbol table.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one load command's kind after another"
+    )]
     fn read_macho(&mut self, file: &[u8], image: &Image<'_>, types: &mut TypeSet) {
         if let Some(own) = &image.slice {
             self.read_universal(file, own);
@@ -635,14 +810,150 @@ impl HexImage {
                 // LC_SYMTAB: symoff, nsyms (16-byte `nlist_64`s), stroff,
                 // strsize.
                 0x2 if size >= 24 => {
-                    members.push(command.root.member(&format!("lc{index}"), offset));
+                    let layout = types
+                        .layout("struct symtab_command")
+                        .unwrap_or_else(|_| Arc::clone(&command));
+                    members.push(layout.root.member(&format!("lc{index}"), offset));
                     let field = |at: u64| word(offset + at).unwrap_or(0);
-                    let start = base.saturating_add(field(8));
-                    self.file_part(start, field(12) * 16, Kind::Table, "Symbol table");
-                    let start = base.saturating_add(field(16));
-                    self.file_part(start, field(20), Kind::String, "String table");
+                    let symbols = base.saturating_add(field(8));
+                    let count = field(12);
+                    self.file_part(symbols, count * 16, Kind::Table, "Symbol table");
+                    let strings = base.saturating_add(field(16));
+                    self.file_part(strings, field(20), Kind::String, "String table");
+                    // The symbols, each by its name.
+                    if let Ok(nlist) = types.layout("struct nlist_64")
+                        && (1..=TABLE_ENTRIES).contains(&count)
+                        && symbols.saturating_add(count * nlist.size) <= self.file_len
+                    {
+                        members.push(nlist.root.array(
+                            count,
+                            &format!("lc{index}_symbols"),
+                            symbols,
+                        ));
+                        for i in 0..count {
+                            let entry = symbols + i * nlist.size;
+                            let name = word(entry)
+                                .and_then(|n| c_string(file, strings + n))
+                                .filter(|n| !n.is_empty());
+                            if let Some(name) = name {
+                                labels.push((entry..entry + nlist.size, name));
+                            }
+                        }
+                    }
                 }
-                _ => members.push(command.root.member(&format!("lc{index}"), offset)),
+                // LC_DYSYMTAB: the indirect symbol table (`uint32_t`s at
+                // indirectsymoff, nindirectsyms of them).
+                0xb if size >= 80 => {
+                    let layout = types
+                        .layout("struct dysymtab_command")
+                        .unwrap_or_else(|_| Arc::clone(&command));
+                    members.push(layout.root.member(&format!("lc{index}"), offset));
+                    let start = base.saturating_add(word(offset + 56).unwrap_or(0));
+                    let count = word(offset + 60).unwrap_or(0);
+                    if count > 0 {
+                        self.file_part(start, count * 4, Kind::Table, "Indirect symbols");
+                        if let Ok(entry) = types.layout("uint32_t")
+                            && count <= TABLE_ENTRIES
+                        {
+                            members.push(entry.root.array(
+                                count,
+                                &format!("lc{index}_indirect"),
+                                start,
+                            ));
+                        }
+                    }
+                }
+                // LC_DYLD_INFO(_ONLY): the dynamic loader's streams.
+                0x22 | 0x8000_0022 if size >= 48 => {
+                    let layout = types
+                        .layout("struct dyld_info_command")
+                        .unwrap_or_else(|_| Arc::clone(&command));
+                    members.push(layout.root.member(&format!("lc{index}"), offset));
+                    for (at, name) in [
+                        (8, "Rebase info"),
+                        (16, "Bind info"),
+                        (24, "Weak bind info"),
+                        (32, "Lazy bind info"),
+                        (40, "Export info"),
+                    ] {
+                        let start = base.saturating_add(word(offset + at).unwrap_or(0));
+                        let size = word(offset + at + 4).unwrap_or(0);
+                        if size > 0 {
+                            self.file_part(start, size, Kind::Table, name);
+                        }
+                    }
+                }
+                // A `linkedit_data_command`'s blob: its part, and the
+                // chained fixups' header, the data-in-code entries.
+                0x1d | 0x1e | 0x26 | 0x29 | 0x2b | 0x2e | 0x8000_0033 | 0x8000_0034
+                    if size >= 16 =>
+                {
+                    let layout = types
+                        .layout("struct linkedit_data_command")
+                        .unwrap_or_else(|_| Arc::clone(&command));
+                    members.push(layout.root.member(&format!("lc{index}"), offset));
+                    let start = base.saturating_add(word(offset + 8).unwrap_or(0));
+                    let length = word(offset + 12).unwrap_or(0);
+                    let name = match kind {
+                        0x1d => "Code signature",
+                        0x1e => "Split info",
+                        0x26 => "Function starts",
+                        0x29 => "Data in code",
+                        0x2b => "Code signing requirements",
+                        0x2e => "Linker optimization hints",
+                        0x8000_0033 => "Exports trie",
+                        _ => "Chained fixups",
+                    };
+                    if length > 0 {
+                        self.file_part(start, length, Kind::Table, name);
+                        let data = match kind {
+                            0x29 => Some(("struct data_in_code_entry", 8)),
+                            0x8000_0034 => Some(("struct dyld_chained_fixups_header", 0)),
+                            _ => None,
+                        };
+                        if let Some((ty, entry)) = data
+                            && let Ok(layout) = types.layout(ty)
+                        {
+                            // A header is one; entries as many as fit.
+                            let count = length.checked_div(entry).unwrap_or(1);
+                            let label = format!("lc{index}_data");
+                            if count == 1 {
+                                members.push(layout.root.member(&label, start));
+                            } else if (2..=TABLE_ENTRIES).contains(&count) {
+                                members.push(layout.root.array(count, &label, start));
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    // The command's own structure, a library's or path's
+                    // by its name.
+                    let (ty, named) = match kind {
+                        0x8000_0028 => ("struct entry_point_command", None),
+                        0x1b => ("struct uuid_command", None),
+                        0xc | 0xd | 0x20 | 0x8000_0018 | 0x8000_001f | 0x8000_0023 => {
+                            ("struct dylib_command", Some(8))
+                        }
+                        0xe | 0xf | 0x27 => ("struct dylinker_command", Some(8)),
+                        0x8000_001c => ("struct rpath_command", Some(8)),
+                        0x32 => ("struct build_version_command", None),
+                        0x2a => ("struct source_version_command", None),
+                        _ => ("struct load_command", None),
+                    };
+                    let layout = types
+                        .layout(ty)
+                        .ok()
+                        .filter(|l| l.size <= size)
+                        .unwrap_or_else(|| Arc::clone(&command));
+                    members.push(layout.root.member(&format!("lc{index}"), offset));
+                    let name = named
+                        .and_then(|at| word(offset + at))
+                        .filter(|&n| n < size)
+                        .and_then(|n| c_string(file, offset + n));
+                    if let Some(name) = name {
+                        labels.push((offset..offset + layout.size, name));
+                    }
+                }
             }
             offset += size;
         }
@@ -823,6 +1134,11 @@ impl HexImage {
             .get(i)
             .filter(|(r, _)| r.contains(&address))
             .map(|(_, name)| name.as_str())
+    }
+
+    /// The sections, by address: their addresses and names.
+    pub fn sections(&self) -> &[(Range<u64>, String)] {
+        &self.sections
     }
 
     /// The part of the file holding `offset` (the innermost).
@@ -1251,7 +1567,11 @@ impl HexImage {
 
 /// The file's headers and tables (`members`, at their file offsets) as
 /// one overlay named `name` at offset 0, its parts named by `labels`.
-fn file_overlay(name: &str, members: Vec<Node>, labels: Vec<(Range<u64>, String)>) -> Overlay {
+fn file_overlay(name: &str, members: Vec<Node>, labels: Labels) -> Overlay {
+    let (mut members, mut labels) = (members, labels);
+    // In the file's order (a label is found by its start).
+    members.sort_by_key(|m| m.offset);
+    labels.sort_by_key(|(range, _)| range.start);
     let size = members.iter().map(|m| m.offset + m.size).max().unwrap_or(0);
     let root = Node::new(
         String::new(),
@@ -1276,6 +1596,112 @@ fn file_overlay(name: &str, members: Vec<Node>, labels: Vec<(Range<u64>, String)
         text: None,
         labels,
     }
+}
+
+/// Names of an overlay's parts, by their bytes from its start.
+type Labels = Vec<(Range<u64>, String)>;
+
+/// What an ELF section of type `sh_type` holds; none for one with no bytes
+/// in the file (`SHT_NULL`, `SHT_NOBITS`).
+fn elf_section_kind(sh_type: u64) -> Option<Kind> {
+    Some(match sh_type {
+        0 | 8 => return None,
+        // SHT_SYMTAB, SHT_DYNSYM, SHT_HASH, SHT_DYNAMIC, SHT_GNU_HASH, the
+        // symbol versions.
+        2 | 11 | 5 | 6 | 0x6fff_fff6 | 0x6fff_fffe | 0x6fff_ffff => Kind::Table,
+        3 => Kind::String,
+        // SHT_RELA, SHT_REL, SHT_RELR.
+        4 | 9 | 19 => Kind::Relocation,
+        _ => Kind::Section,
+    })
+}
+
+/// The ELF sections' tables (their section headers' offsets and the
+/// sections' names in `sections`) typed as their entries, members of the
+/// header overlay: the symbol tables (each symbol labelled with its name
+/// from its string table), the relocations, the dynamic section, the
+/// symbol versions.
+fn elf_tables(
+    file: &[u8],
+    types: &mut TypeSet,
+    (wide, little): (bool, bool),
+    shdr: &Layout,
+    sections: &[(u64, String)],
+    (members, labels): (&mut Vec<Node>, &mut Labels),
+) {
+    let at = |offset: u64| file.get(usize::try_from(offset).unwrap_or(usize::MAX)..);
+    let read = |layout: &Layout, offset: u64, field: &str| {
+        at(offset).and_then(|bytes| layout.read(bytes, field, little))
+    };
+    let file_len = file.len() as u64;
+    let entries = if wide {
+        [
+            "Elf64_Sym",
+            "Elf64_Rel",
+            "Elf64_Rela",
+            "Elf64_Dyn",
+            "Elf64_Half",
+        ]
+    } else {
+        [
+            "Elf32_Sym",
+            "Elf32_Rel",
+            "Elf32_Rela",
+            "Elf32_Dyn",
+            "Elf32_Half",
+        ]
+    };
+    let [sym, rel, rela, dynamic, versym] = entries.map(|name| types.layout(name).ok());
+    for (offset, name) in sections {
+        let get = |field: &str| read(shdr, *offset, field).unwrap_or(0);
+        let table = match get("sh_type") {
+            2 | 11 => sym.as_ref(),
+            4 => rela.as_ref(),
+            9 => rel.as_ref(),
+            6 => dynamic.as_ref(),
+            0x6fff_ffff => versym.as_ref(),
+            _ => None,
+        };
+        let start = get("sh_offset");
+        let end = start.saturating_add(get("sh_size")).min(file_len);
+        let Some(table) = table.filter(|t| t.size > 0 && start < end) else {
+            continue;
+        };
+        let count = (end - start) / table.size;
+        if !(1..=TABLE_ENTRIES).contains(&count) {
+            continue;
+        }
+        members.push(table.root.array(count, name, start));
+        // A symbol by its name, from its string table.
+        let strings = sections
+            .get(usize::try_from(get("sh_link")).unwrap_or(usize::MAX))
+            .and_then(|(link, _)| read(shdr, *link, "sh_offset"))
+            .filter(|_| table.name.ends_with("_Sym"));
+        for i in 0..strings.map_or(0, |_| count) {
+            let entry = start + i * table.size;
+            let symbol = strings
+                .zip(read(table, entry, "st_name"))
+                .and_then(|(base, n)| c_string(file, base + n))
+                .filter(|n| !n.is_empty());
+            if let Some(symbol) = symbol {
+                labels.push((entry..entry + table.size, symbol));
+            }
+        }
+    }
+}
+
+/// The NUL-terminated string at `offset` of `file` (at most 256 bytes),
+/// if it is there.
+fn c_string(file: &[u8], offset: u64) -> Option<String> {
+    let bytes = file.get(usize::try_from(offset).ok()?..)?;
+    let end = bytes.iter().take(256).position(|&b| b == 0)?;
+    Some(String::from_utf8_lossy(bytes.get(..end)?).into_owned())
+}
+
+/// The little-endian 32-bit word at `offset` of `file`.
+fn at_word(file: &[u8], offset: u64) -> Option<u64> {
+    let start = usize::try_from(offset).ok()?;
+    read_uint(file.get(start..start.checked_add(4)?)?, true)
 }
 
 /// The 16-byte name (`segname`, `sectname`) at `offset` of `file`: up to
@@ -1312,7 +1738,7 @@ pub fn entropy(histogram: &[u64; 256], total: u64) -> f32 {
 }
 
 /// A listing span's kind and strength.
-fn span_kind(span: &Span) -> (Kind, u8) {
+pub(crate) fn span_kind(span: &Span) -> (Kind, u8) {
     match span.kind {
         SpanKind::Instruction { function: true } => (Kind::Code, 60),
         SpanKind::Instruction { function: false } => (Kind::LooseCode, 60),
@@ -1747,6 +2173,148 @@ mod tests {
         assert_eq!(hex.step(Mode::Address, second + 3, -16), end_of_first - 12);
         assert_eq!(hex.prefix(Mode::Address, 0x11d0), "11D0");
         assert_eq!(hex.prefix(Mode::Address, 0x40), "0040");
+    }
+
+    /// A Mach-O's load commands are typed by their kinds (a library's and
+    /// the dynamic linker's by their paths), its symbols as `nlist_64`s
+    /// (each by its name), and the link-edit data's blobs are parts.
+    #[test]
+    fn mach_o_commands_and_tables_are_typed() {
+        let data = fixture("program-universal.macho");
+        let image = Image::parse(&data).unwrap();
+        let hex = HexImage::new(&data, &image);
+        let macho = hex.headers().iter().find(|o| o.name == "Mach-O").unwrap();
+        let Shape::Record { members, .. } = &macho.layout.root.shape else {
+            panic!("{:?}", macho.layout.root.shape)
+        };
+        let typed = |ty: &str| members.iter().find(|m| m.ty.starts_with(ty));
+        for ty in [
+            "struct symtab_command",
+            "struct dysymtab_command",
+            "struct dyld_info_command",
+            "struct entry_point_command",
+            "struct uuid_command",
+            "struct build_version_command",
+            "struct linkedit_data_command",
+            "struct nlist_64[",
+        ] {
+            assert!(typed(ty).is_some(), "{ty}");
+        }
+        let label = |m: &Node| {
+            macho
+                .labels
+                .iter()
+                .find(|(r, _)| r.start == m.offset)
+                .map(|(_, l)| l.as_str())
+        };
+        assert_eq!(
+            label(typed("struct dylinker_command").unwrap()),
+            Some("/usr/lib/dyld")
+        );
+        assert_eq!(
+            label(typed("struct dylib_command").unwrap()),
+            Some("/usr/lib/libSystem.B.dylib")
+        );
+        let symbols = typed("struct nlist_64[").unwrap();
+        let range = symbols.offset..symbols.offset + symbols.size;
+        assert!(
+            macho
+                .labels
+                .iter()
+                .any(|(r, name)| range.contains(&r.start) && name == "_main")
+        );
+        // (Its data-in-code blob is empty: no part.)
+        for part in ["Function starts", "Indirect symbols", "Export info"] {
+            assert!(hex.parts().iter().any(|p| p.name == part), "{part}");
+        }
+    }
+
+    /// A PE's data directories are typed in the header overlay at their
+    /// RVAs' file bytes: the import descriptors (each by its library),
+    /// the unwind table, the debug directory, the load configuration, the
+    /// base relocations' blocks.
+    #[test]
+    fn pe_directories_are_typed_and_imports_named() {
+        // MinGW's has a TLS directory, MSVC's a debug directory and a load
+        // configuration; both imports, an unwind table and relocations.
+        for (name, tables) in [
+            (
+                "program-x86_64.exe",
+                [("tls", "IMAGE_TLS_DIRECTORY64")].as_slice(),
+            ),
+            (
+                "msvc-x86_64.exe",
+                &[
+                    ("debug", "IMAGE_DEBUG_DIRECTORY"),
+                    ("load_config", "IMAGE_LOAD_CONFIG_DIRECTORY64"),
+                ],
+            ),
+        ] {
+            let data = fixture(name);
+            let image = Image::parse(&data).unwrap();
+            let hex = HexImage::new(&data, &image);
+            let pe = &hex.headers()[0];
+            let Shape::Record { members, .. } = &pe.layout.root.shape else {
+                panic!("{:?}", pe.layout.root.shape)
+            };
+            let member = |name: &str| members.iter().find(|m| m.name == name);
+            for &(table, ty) in [
+                ("imports", "IMAGE_IMPORT_DESCRIPTOR"),
+                ("pdata", "RUNTIME_FUNCTION"),
+                ("reloc0", "IMAGE_BASE_RELOCATION"),
+            ]
+            .iter()
+            .chain(tables)
+            {
+                let m = member(table).unwrap_or_else(|| panic!("{name}: {table}"));
+                assert!(m.ty.starts_with(ty), "{name}: {table}: {}", m.ty);
+            }
+            // The `.pdata` section holds the unwind table at its start.
+            let pdata = hex.parts().iter().find(|p| p.name == ".pdata").unwrap();
+            assert_eq!(member("pdata").unwrap().offset, pdata.file.start, "{name}");
+            // An import descriptor is labelled with its library.
+            let imports = member("imports").unwrap();
+            let range = imports.offset..imports.offset + imports.size;
+            assert!(
+                pe.labels.iter().any(|(r, library)| range.contains(&r.start)
+                    && library.to_ascii_lowercase().ends_with(".dll")),
+                "{name}: {:?}",
+                pe.labels
+            );
+        }
+    }
+
+    /// The ELF tables are typed in the header overlay: the symbol tables
+    /// as `Elf64_Sym`s (each named by its symbol), the relocations as
+    /// `Elf64_Rela`s, the dynamic section as `Elf64_Dyn`s, each at its
+    /// section's bytes.
+    #[test]
+    fn elf_tables_are_typed_and_symbols_named() {
+        let data = fixture("program-x86_64.elf");
+        let image = Image::parse(&data).unwrap();
+        let hex = HexImage::new(&data, &image);
+        let elf = &hex.headers()[0];
+        let Shape::Record { members, .. } = &elf.layout.root.shape else {
+            panic!("{:?}", elf.layout.root.shape)
+        };
+        let part = |name: &str| hex.parts().iter().find(|p| p.name == name).unwrap();
+        for (section, ty) in [
+            (".dynsym", "Elf64_Sym"),
+            (".symtab", "Elf64_Sym"),
+            (".rela.dyn", "Elf64_Rela"),
+            (".dynamic", "Elf64_Dyn"),
+        ] {
+            let member = members.iter().find(|m| m.name == section).unwrap();
+            assert_eq!(member.offset, part(section).file.start, "{section}");
+            assert!(member.ty.starts_with(ty), "{section}: {}", member.ty);
+        }
+        // `main`'s symbol is labelled with its name.
+        let symtab = part(".symtab").file.clone();
+        assert!(
+            elf.labels
+                .iter()
+                .any(|(range, name)| symtab.contains(&range.start) && name == "main"),
+        );
     }
 
     /// The rows an overview's part reads (the feature map judges a part

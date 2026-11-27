@@ -670,18 +670,54 @@ typedef struct {
     Elf64_Addr sh_addr; Elf64_Off sh_offset; Elf64_Xword sh_size; Elf64_Word sh_link;
     Elf64_Word sh_info; Elf64_Xword sh_addralign; Elf64_Xword sh_entsize;
 } Elf64_Shdr;
+enum elf_symbol_type : unsigned char {
+    STT_NOTYPE = 0, STT_OBJECT = 1, STT_FUNC = 2, STT_SECTION = 3, STT_FILE = 4,
+    STT_COMMON = 5, STT_TLS = 6, STT_GNU_IFUNC = 10
+};
+enum elf_symbol_bind : unsigned char {
+    STB_LOCAL = 0, STB_GLOBAL = 1, STB_WEAK = 2, STB_GNU_UNIQUE = 10
+};
 typedef struct {
     Elf32_Word st_name; Elf32_Addr st_value; Elf32_Word st_size;
-    unsigned char st_info; unsigned char st_other; Elf32_Half st_shndx;
+    enum elf_symbol_type st_type : 4; enum elf_symbol_bind st_bind : 4;
+    unsigned char st_other; Elf32_Half st_shndx;
 } Elf32_Sym;
 typedef struct {
-    Elf64_Word st_name; unsigned char st_info; unsigned char st_other;
-    Elf64_Half st_shndx; Elf64_Addr st_value; Elf64_Xword st_size;
+    Elf64_Word st_name; enum elf_symbol_type st_type : 4; enum elf_symbol_bind st_bind : 4;
+    unsigned char st_other; Elf64_Half st_shndx; Elf64_Addr st_value; Elf64_Xword st_size;
 } Elf64_Sym;
+typedef struct { Elf32_Addr r_offset; Elf32_Word r_info; } Elf32_Rel;
+typedef struct { Elf64_Addr r_offset; Elf64_Xword r_info; } Elf64_Rel;
 typedef struct { Elf32_Addr r_offset; Elf32_Word r_info; Elf32_Sword r_addend; } Elf32_Rela;
 typedef struct { Elf64_Addr r_offset; Elf64_Xword r_info; Elf64_Sxword r_addend; } Elf64_Rela;
-typedef struct { Elf32_Sword d_tag; Elf32_Word d_val; } Elf32_Dyn;
-typedef struct { Elf64_Sxword d_tag; Elf64_Xword d_val; } Elf64_Dyn;
+enum elf32_dynamic_tag : int32_t {
+    DT_NULL = 0, DT_NEEDED = 1, DT_PLTRELSZ = 2, DT_PLTGOT = 3, DT_HASH = 4, DT_STRTAB = 5,
+    DT_SYMTAB = 6, DT_RELA = 7, DT_RELASZ = 8, DT_RELAENT = 9, DT_STRSZ = 10, DT_SYMENT = 11,
+    DT_INIT = 12, DT_FINI = 13, DT_SONAME = 14, DT_RPATH = 15, DT_SYMBOLIC = 16, DT_REL = 17,
+    DT_RELSZ = 18, DT_RELENT = 19, DT_PLTREL = 20, DT_DEBUG = 21, DT_TEXTREL = 22,
+    DT_JMPREL = 23, DT_BIND_NOW = 24, DT_INIT_ARRAY = 25, DT_FINI_ARRAY = 26,
+    DT_INIT_ARRAYSZ = 27, DT_FINI_ARRAYSZ = 28, DT_RUNPATH = 29, DT_FLAGS = 30,
+    DT_PREINIT_ARRAY = 32, DT_PREINIT_ARRAYSZ = 33, DT_SYMTAB_SHNDX = 34, DT_RELRSZ = 35,
+    DT_RELR = 36, DT_RELRENT = 37, DT_GNU_HASH = 0x6ffffef5, DT_VERSYM = 0x6ffffff0,
+    DT_RELACOUNT = 0x6ffffff9, DT_RELCOUNT = 0x6ffffffa, DT_FLAGS_1 = 0x6ffffffb,
+    DT_VERDEF = 0x6ffffffc, DT_VERDEFNUM = 0x6ffffffd, DT_VERNEED = 0x6ffffffe,
+    DT_VERNEEDNUM = 0x6fffffff
+};
+enum elf64_dynamic_tag : int64_t {
+    DT_NULL = 0, DT_NEEDED = 1, DT_PLTRELSZ = 2, DT_PLTGOT = 3, DT_HASH = 4, DT_STRTAB = 5,
+    DT_SYMTAB = 6, DT_RELA = 7, DT_RELASZ = 8, DT_RELAENT = 9, DT_STRSZ = 10, DT_SYMENT = 11,
+    DT_INIT = 12, DT_FINI = 13, DT_SONAME = 14, DT_RPATH = 15, DT_SYMBOLIC = 16, DT_REL = 17,
+    DT_RELSZ = 18, DT_RELENT = 19, DT_PLTREL = 20, DT_DEBUG = 21, DT_TEXTREL = 22,
+    DT_JMPREL = 23, DT_BIND_NOW = 24, DT_INIT_ARRAY = 25, DT_FINI_ARRAY = 26,
+    DT_INIT_ARRAYSZ = 27, DT_FINI_ARRAYSZ = 28, DT_RUNPATH = 29, DT_FLAGS = 30,
+    DT_PREINIT_ARRAY = 32, DT_PREINIT_ARRAYSZ = 33, DT_SYMTAB_SHNDX = 34, DT_RELRSZ = 35,
+    DT_RELR = 36, DT_RELRENT = 37, DT_GNU_HASH = 0x6ffffef5, DT_VERSYM = 0x6ffffff0,
+    DT_RELACOUNT = 0x6ffffff9, DT_RELCOUNT = 0x6ffffffa, DT_FLAGS_1 = 0x6ffffffb,
+    DT_VERDEF = 0x6ffffffc, DT_VERDEFNUM = 0x6ffffffd, DT_VERNEED = 0x6ffffffe,
+    DT_VERNEEDNUM = 0x6fffffff
+};
+typedef struct { enum elf32_dynamic_tag d_tag; Elf32_Word d_val; } Elf32_Dyn;
+typedef struct { enum elf64_dynamic_tag d_tag; Elf64_Xword d_val; } Elf64_Dyn;
 ";
 
 /// The PE headers (`<winnt.h>`), their fields' enumerations and flags from
@@ -787,6 +823,75 @@ typedef struct _IMAGE_SECTION_HEADER {
     DWORD PointerToRelocations; DWORD PointerToLinenumbers; WORD NumberOfRelocations;
     WORD NumberOfLinenumbers; enum image_scn_characteristics Characteristics;
 } IMAGE_SECTION_HEADER;
+typedef struct _IMAGE_EXPORT_DIRECTORY {
+    DWORD Characteristics; DWORD TimeDateStamp; WORD MajorVersion; WORD MinorVersion;
+    DWORD Name; DWORD Base; DWORD NumberOfFunctions; DWORD NumberOfNames;
+    DWORD AddressOfFunctions; DWORD AddressOfNames; DWORD AddressOfNameOrdinals;
+} IMAGE_EXPORT_DIRECTORY;
+typedef struct _IMAGE_IMPORT_DESCRIPTOR {
+    DWORD OriginalFirstThunk; DWORD TimeDateStamp; DWORD ForwarderChain; DWORD Name;
+    DWORD FirstThunk;
+} IMAGE_IMPORT_DESCRIPTOR;
+typedef struct _IMAGE_DELAYLOAD_DESCRIPTOR {
+    DWORD Attributes; DWORD DllNameRVA; DWORD ModuleHandleRVA; DWORD ImportAddressTableRVA;
+    DWORD ImportNameTableRVA; DWORD BoundImportAddressTableRVA;
+    DWORD UnloadInformationTableRVA; DWORD TimeDateStamp;
+} IMAGE_DELAYLOAD_DESCRIPTOR;
+typedef struct _IMAGE_RESOURCE_DIRECTORY {
+    DWORD Characteristics; DWORD TimeDateStamp; WORD MajorVersion; WORD MinorVersion;
+    WORD NumberOfNamedEntries; WORD NumberOfIdEntries;
+} IMAGE_RESOURCE_DIRECTORY;
+typedef struct _IMAGE_RESOURCE_DIRECTORY_ENTRY {
+    DWORD Name; DWORD OffsetToData;
+} IMAGE_RESOURCE_DIRECTORY_ENTRY;
+typedef struct _IMAGE_RUNTIME_FUNCTION_ENTRY {
+    DWORD BeginAddress; DWORD EndAddress; DWORD UnwindInfoAddress;
+} RUNTIME_FUNCTION;
+typedef struct _IMAGE_BASE_RELOCATION { DWORD VirtualAddress; DWORD SizeOfBlock; } IMAGE_BASE_RELOCATION;
+enum image_debug_type : DWORD {
+    IMAGE_DEBUG_TYPE_UNKNOWN = 0, IMAGE_DEBUG_TYPE_COFF = 1, IMAGE_DEBUG_TYPE_CODEVIEW = 2,
+    IMAGE_DEBUG_TYPE_FPO = 3, IMAGE_DEBUG_TYPE_MISC = 4, IMAGE_DEBUG_TYPE_EXCEPTION = 5,
+    IMAGE_DEBUG_TYPE_FIXUP = 6, IMAGE_DEBUG_TYPE_OMAP_TO_SRC = 7,
+    IMAGE_DEBUG_TYPE_OMAP_FROM_SRC = 8, IMAGE_DEBUG_TYPE_BORLAND = 9,
+    IMAGE_DEBUG_TYPE_CLSID = 11, IMAGE_DEBUG_TYPE_VC_FEATURE = 12, IMAGE_DEBUG_TYPE_POGO = 13,
+    IMAGE_DEBUG_TYPE_ILTCG = 14, IMAGE_DEBUG_TYPE_MPX = 15, IMAGE_DEBUG_TYPE_REPRO = 16,
+    IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS = 20
+};
+typedef struct _IMAGE_DEBUG_DIRECTORY {
+    DWORD Characteristics; DWORD TimeDateStamp; WORD MajorVersion; WORD MinorVersion;
+    enum image_debug_type Type; DWORD SizeOfData; DWORD AddressOfRawData;
+    DWORD PointerToRawData;
+} IMAGE_DEBUG_DIRECTORY;
+typedef struct _IMAGE_TLS_DIRECTORY32 {
+    DWORD StartAddressOfRawData; DWORD EndAddressOfRawData; DWORD AddressOfIndex;
+    DWORD AddressOfCallBacks; DWORD SizeOfZeroFill; DWORD Characteristics;
+} IMAGE_TLS_DIRECTORY32;
+typedef struct _IMAGE_TLS_DIRECTORY64 {
+    ULONGLONG StartAddressOfRawData; ULONGLONG EndAddressOfRawData; ULONGLONG AddressOfIndex;
+    ULONGLONG AddressOfCallBacks; DWORD SizeOfZeroFill; DWORD Characteristics;
+} IMAGE_TLS_DIRECTORY64;
+typedef struct _IMAGE_LOAD_CONFIG_DIRECTORY32 {
+    DWORD Size; DWORD TimeDateStamp; WORD MajorVersion; WORD MinorVersion;
+    DWORD GlobalFlagsClear; DWORD GlobalFlagsSet; DWORD CriticalSectionDefaultTimeout;
+    DWORD DeCommitFreeBlockThreshold; DWORD DeCommitTotalFreeThreshold;
+    DWORD LockPrefixTable; DWORD MaximumAllocationSize; DWORD VirtualMemoryThreshold;
+    DWORD ProcessHeapFlags; DWORD ProcessAffinityMask; WORD CSDVersion;
+    WORD DependentLoadFlags; DWORD EditList; DWORD SecurityCookie; DWORD SEHandlerTable;
+    DWORD SEHandlerCount; DWORD GuardCFCheckFunctionPointer;
+    DWORD GuardCFDispatchFunctionPointer; DWORD GuardCFFunctionTable;
+    DWORD GuardCFFunctionCount; DWORD GuardFlags;
+} IMAGE_LOAD_CONFIG_DIRECTORY32;
+typedef struct _IMAGE_LOAD_CONFIG_DIRECTORY64 {
+    DWORD Size; DWORD TimeDateStamp; WORD MajorVersion; WORD MinorVersion;
+    DWORD GlobalFlagsClear; DWORD GlobalFlagsSet; DWORD CriticalSectionDefaultTimeout;
+    ULONGLONG DeCommitFreeBlockThreshold; ULONGLONG DeCommitTotalFreeThreshold;
+    ULONGLONG LockPrefixTable; ULONGLONG MaximumAllocationSize;
+    ULONGLONG VirtualMemoryThreshold; ULONGLONG ProcessAffinityMask; DWORD ProcessHeapFlags;
+    WORD CSDVersion; WORD DependentLoadFlags; ULONGLONG EditList; ULONGLONG SecurityCookie;
+    ULONGLONG SEHandlerTable; ULONGLONG SEHandlerCount;
+    ULONGLONG GuardCFCheckFunctionPointer; ULONGLONG GuardCFDispatchFunctionPointer;
+    ULONGLONG GuardCFFunctionTable; ULONGLONG GuardCFFunctionCount; DWORD GuardFlags;
+} IMAGE_LOAD_CONFIG_DIRECTORY64;
 ";
 
 /// The 64-bit Mach-O headers (`<mach-o/loader.h>`): the header, load
@@ -868,6 +973,61 @@ struct section_64 {
     uint32_t align; uint32_t reloff; uint32_t nreloc; enum section_attributes flags;
     uint32_t reserved1; uint32_t reserved2; uint32_t reserved3;
 };
+enum mach_platform : uint32_t {
+    PLATFORM_MACOS = 1, PLATFORM_IOS = 2, PLATFORM_TVOS = 3, PLATFORM_WATCHOS = 4,
+    PLATFORM_BRIDGEOS = 5, PLATFORM_MACCATALYST = 6, PLATFORM_IOSSIMULATOR = 7,
+    PLATFORM_TVOSSIMULATOR = 8, PLATFORM_WATCHOSSIMULATOR = 9, PLATFORM_DRIVERKIT = 10,
+    PLATFORM_VISIONOS = 11, PLATFORM_VISIONOSSIMULATOR = 12
+};
+struct symtab_command {
+    enum load_command_type cmd; uint32_t cmdsize; uint32_t symoff; uint32_t nsyms;
+    uint32_t stroff; uint32_t strsize;
+};
+struct dysymtab_command {
+    enum load_command_type cmd; uint32_t cmdsize; uint32_t ilocalsym; uint32_t nlocalsym;
+    uint32_t iextdefsym; uint32_t nextdefsym; uint32_t iundefsym; uint32_t nundefsym;
+    uint32_t tocoff; uint32_t ntoc; uint32_t modtaboff; uint32_t nmodtab;
+    uint32_t extrefsymoff; uint32_t nextrefsyms; uint32_t indirectsymoff;
+    uint32_t nindirectsyms; uint32_t extreloff; uint32_t nextrel; uint32_t locreloff;
+    uint32_t nlocrel;
+};
+struct linkedit_data_command {
+    enum load_command_type cmd; uint32_t cmdsize; uint32_t dataoff; uint32_t datasize;
+};
+struct dyld_info_command {
+    enum load_command_type cmd; uint32_t cmdsize; uint32_t rebase_off; uint32_t rebase_size;
+    uint32_t bind_off; uint32_t bind_size; uint32_t weak_bind_off; uint32_t weak_bind_size;
+    uint32_t lazy_bind_off; uint32_t lazy_bind_size; uint32_t export_off;
+    uint32_t export_size;
+};
+struct entry_point_command {
+    enum load_command_type cmd; uint32_t cmdsize; uint64_t entryoff; uint64_t stacksize;
+};
+struct uuid_command { enum load_command_type cmd; uint32_t cmdsize; uint8_t uuid[16]; };
+struct dylib_command {
+    enum load_command_type cmd; uint32_t cmdsize; uint32_t name_offset; uint32_t timestamp;
+    uint32_t current_version; uint32_t compatibility_version;
+};
+struct dylinker_command {
+    enum load_command_type cmd; uint32_t cmdsize; uint32_t name_offset;
+};
+struct rpath_command { enum load_command_type cmd; uint32_t cmdsize; uint32_t path_offset; };
+struct build_version_command {
+    enum load_command_type cmd; uint32_t cmdsize; enum mach_platform platform;
+    uint32_t minos; uint32_t sdk; uint32_t ntools;
+};
+struct source_version_command {
+    enum load_command_type cmd; uint32_t cmdsize; uint64_t version;
+};
+struct nlist_64 {
+    uint32_t n_strx; uint8_t n_type; uint8_t n_sect; uint16_t n_desc; uint64_t n_value;
+};
+struct dyld_chained_fixups_header {
+    uint32_t fixups_version; uint32_t starts_offset; uint32_t imports_offset;
+    uint32_t symbols_offset; uint32_t imports_count; uint32_t imports_format;
+    uint32_t symbols_format;
+};
+struct data_in_code_entry { uint32_t offset; uint16_t length; uint16_t kind; };
 ";
 
 impl TypeSet {
@@ -1407,6 +1567,85 @@ mod tests {
         let at = |name: &str| section.field(name).map(|(at, f)| (at, f.size));
         assert_eq!(at("offset"), Some((48, 4)));
         assert_eq!(at("flags"), Some((64, 4)));
+    }
+
+    /// The tables' structures are their formats' sizes, with their
+    /// fields where the formats put them; a symbol's type and binding read
+    /// as their names from its info byte, a dynamic entry's tag as its.
+    #[test]
+    fn table_types_have_their_formats_layouts_and_names() {
+        let mut types = TypeSet::builtin(DataModel::LP64);
+        let size = |types: &mut TypeSet, name: &str| types.layout(name).unwrap().size;
+        for (name, bytes) in [
+            ("Elf64_Sym", 24),
+            ("Elf32_Sym", 16),
+            ("Elf64_Rel", 16),
+            ("Elf64_Rela", 24),
+            ("Elf64_Dyn", 16),
+            ("Elf32_Dyn", 8),
+            ("IMAGE_EXPORT_DIRECTORY", 40),
+            ("IMAGE_IMPORT_DESCRIPTOR", 20),
+            ("IMAGE_DELAYLOAD_DESCRIPTOR", 32),
+            ("IMAGE_RESOURCE_DIRECTORY", 16),
+            ("RUNTIME_FUNCTION", 12),
+            ("IMAGE_BASE_RELOCATION", 8),
+            ("IMAGE_DEBUG_DIRECTORY", 28),
+            ("IMAGE_TLS_DIRECTORY32", 24),
+            ("IMAGE_TLS_DIRECTORY64", 40),
+            ("struct nlist_64", 16),
+            ("struct symtab_command", 24),
+            ("struct dysymtab_command", 80),
+            ("struct dyld_info_command", 48),
+            ("struct linkedit_data_command", 16),
+            ("struct entry_point_command", 24),
+            ("struct build_version_command", 24),
+            ("struct dyld_chained_fixups_header", 28),
+            ("struct data_in_code_entry", 8),
+        ] {
+            assert_eq!(size(&mut types, name), bytes, "{name}");
+        }
+        let config = types.layout("IMAGE_LOAD_CONFIG_DIRECTORY64").unwrap();
+        assert_eq!(config.field("SecurityCookie").unwrap().0, 88);
+        assert_eq!(config.field("GuardFlags").unwrap().0, 144);
+        let config = types.layout("IMAGE_LOAD_CONFIG_DIRECTORY32").unwrap();
+        assert_eq!(config.field("SecurityCookie").unwrap().0, 60);
+        assert_eq!(config.field("GuardFlags").unwrap().0, 88);
+        let value = |layout: &Layout, path: &str, bytes: &[u8]| {
+            layout.field(path).unwrap().1.value(bytes, true, &|_| None)
+        };
+        // `main`: global, a function (STB_GLOBAL << 4 | STT_FUNC).
+        let sym = types.layout("Elf64_Sym").unwrap();
+        let mut entry = [0u8; 24];
+        entry[4] = 0x12;
+        let bits = |layout: &Layout, name: &str| {
+            let Shape::Record { members, .. } = &layout.root.shape else {
+                panic!("{:?}", layout.root.shape)
+            };
+            members
+                .iter()
+                .find_map(|m| match &m.shape {
+                    Shape::Bits(fields) => fields.iter().find(|f| f.name == name).cloned(),
+                    Shape::Scalar { .. }
+                    | Shape::Text
+                    | Shape::Array { .. }
+                    | Shape::Record { .. } => None,
+                })
+                .map(|f| f.value(entry.get(4..5).unwrap(), true))
+                .unwrap()
+        };
+        assert_eq!(bits(&sym, "st_type"), "STT_FUNC");
+        assert_eq!(bits(&sym, "st_bind"), "STB_GLOBAL");
+        let dynamic = types.layout("Elf64_Dyn").unwrap();
+        assert_eq!(value(&dynamic, "d_tag", &1i64.to_le_bytes()), "DT_NEEDED");
+        assert_eq!(
+            value(&dynamic, "d_tag", &0x6fff_fef5i64.to_le_bytes()),
+            "DT_GNU_HASH"
+        );
+        let debug = types.layout("IMAGE_DEBUG_DIRECTORY").unwrap();
+        assert_eq!(
+            value(&debug, "Type", &2u32.to_le_bytes()),
+            "IMAGE_DEBUG_TYPE_CODEVIEW"
+        );
     }
 
     #[test]
