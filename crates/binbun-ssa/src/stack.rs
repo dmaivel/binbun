@@ -1542,6 +1542,12 @@ pub fn top_byte_view(function: &Function, value: Value) -> Option<Value> {
 /// value has one), by the rules of [the module](self): `base` is at 0,
 /// adding or subtracting a constant keeps an offset, a block parameter
 /// whose arguments all have one offset has it; the other inputs vary.
+/// The blocks are visited in order, again from the first once past the
+/// last, until none changes, as sweeping them all would; only those an
+/// offset they read changed since their last visit are ([`Readers`]): a
+/// visit of another would change nothing. So a function's offsets take
+/// time by the offsets that change, not by its blocks times the sweeps
+/// (thousands, where a loop's offset reaches its back edge late).
 fn offsets_from(
     function: &Function,
     constants: &Constants,
@@ -1562,41 +1568,142 @@ fn offsets_from(
             };
         }
     }
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for (index, block) in function.blocks.iter().enumerate() {
-            let id = BlockId(u32::try_from(index).unwrap_or(u32::MAX));
-            for (position, &parameter) in block.parameters.iter().enumerate() {
-                if index == 0 {
-                    continue;
-                }
-                let mut offset = Offset::Unknown;
-                for &(pred, edge) in predecessors
-                    .get(id.0 as usize)
-                    .map_or(&[][..], Vec::as_slice)
-                {
-                    let argument = function
-                        .block(pred)
-                        .and_then(|b| b.terminator.targets().nth(edge))
-                        .and_then(|t| t.arguments.get(position).copied());
-                    let incoming = argument.map_or(Offset::Varies, |a| get(&offsets, a));
-                    offset = offset.meet(incoming);
-                }
-                changed |= update(&mut offsets, parameter, offset);
+    let readers = Readers::new(function);
+    let blocks = u32::try_from(function.blocks.len()).unwrap_or(u32::MAX);
+    let mut dirty: BTreeSet<u32> = (0..blocks).collect();
+    let mut next = 0;
+    while let Some(&index) = dirty.range(next..).next().or_else(|| dirty.first()) {
+        dirty.remove(&index);
+        next = index.saturating_add(1);
+        let Some(block) = function.block(BlockId(index)) else {
+            continue;
+        };
+        for (position, &parameter) in block.parameters.iter().enumerate() {
+            if index == 0 {
+                continue;
             }
-            for &inst in &block.insts {
-                let Some(i) = function.inst(inst) else {
-                    continue;
-                };
-                let offset = instruction_offset(&offsets, constants, &i.op);
-                for &result in &i.results {
-                    changed |= update(&mut offsets, result, offset);
+            let mut offset = Offset::Unknown;
+            for &(pred, edge) in predecessors
+                .get(index as usize)
+                .map_or(&[][..], Vec::as_slice)
+            {
+                let argument = function
+                    .block(pred)
+                    .and_then(|b| b.terminator.targets().nth(edge))
+                    .and_then(|t| t.arguments.get(position).copied());
+                let incoming = argument.map_or(Offset::Varies, |a| get(&offsets, a));
+                offset = offset.meet(incoming);
+            }
+            if update(&mut offsets, parameter, offset) {
+                dirty.extend(readers.of(parameter));
+            }
+        }
+        for &inst in &block.insts {
+            let Some(i) = function.inst(inst) else {
+                continue;
+            };
+            let offset = instruction_offset(&offsets, constants, &i.op);
+            for &result in &i.results {
+                if update(&mut offsets, result, offset) {
+                    dirty.extend(readers.of(result));
                 }
             }
         }
     }
     offsets
+}
+
+/// The blocks whose offsets ([`offsets_from`]) read each value's: those
+/// of the instructions whose offset it is an operand of
+/// ([`offset_operands`]), and those its jumps pass it to as an argument.
+/// Each value's run of `blocks` starts at its place in `starts`.
+struct Readers {
+    starts: Vec<u32>,
+    blocks: Vec<u32>,
+}
+
+impl Readers {
+    /// The readers of each of `function`'s values.
+    fn new(function: &Function) -> Self {
+        // Each value read and the block reading it, in block order.
+        let each = |visit: &mut dyn FnMut(Value, u32)| {
+            for (index, block) in function.blocks.iter().enumerate() {
+                let index = u32::try_from(index).unwrap_or(u32::MAX);
+                for &inst in &block.insts {
+                    for value in function
+                        .inst(inst)
+                        .and_then(|i| offset_operands(&i.op))
+                        .into_iter()
+                        .flatten()
+                    {
+                        visit(value, index);
+                    }
+                }
+                for target in block.terminator.targets() {
+                    for &value in &target.arguments {
+                        visit(value, target.block.0);
+                    }
+                }
+            }
+        };
+        let mut starts = vec![0u32; function.values.len() + 1];
+        each(&mut |value, _| {
+            if let Some(count) = starts.get_mut(value.0 as usize + 1) {
+                *count += 1;
+            }
+        });
+        for i in 1..starts.len() {
+            let before = starts.get(i - 1).copied().unwrap_or(0);
+            if let Some(start) = starts.get_mut(i) {
+                *start += before;
+            }
+        }
+        let mut blocks = vec![0u32; starts.last().copied().unwrap_or(0) as usize];
+        let mut filled = starts.clone();
+        each(&mut |value, block| {
+            if let Some(at) = filled.get_mut(value.0 as usize) {
+                if let Some(slot) = blocks.get_mut(*at as usize) {
+                    *slot = block;
+                }
+                *at += 1;
+            }
+        });
+        Self { starts, blocks }
+    }
+
+    /// The blocks reading `value`'s offset.
+    fn of(&self, value: Value) -> &[u32] {
+        let at = value.0 as usize;
+        match (self.starts.get(at), self.starts.get(at + 1)) {
+            (Some(&from), Some(&to)) => self.blocks.get(from as usize..to as usize).unwrap_or(&[]),
+            _ => &[],
+        }
+    }
+}
+
+/// The operands whose offsets [`instruction_offset`] reads for `op`: an
+/// addition's or a subtraction's; the others' offsets vary whatever.
+fn offset_operands(op: &Op) -> Option<[Value; 2]> {
+    match *op {
+        Op::Binary(Binary::Add | Binary::Sub, a, b) => Some([a, b]),
+        Op::Const(_)
+        | Op::Undefined(..)
+        | Op::Unary(..)
+        | Op::Binary(..)
+        | Op::Flag(..)
+        | Op::Extract { .. }
+        | Op::Concat { .. }
+        | Op::Extend { .. }
+        | Op::Select { .. }
+        | Op::Lanes { .. }
+        | Op::Float { .. }
+        | Op::Load { .. }
+        | Op::Store { .. }
+        | Op::Intrinsic { .. }
+        | Op::Call { .. }
+        | Op::SystemCall { .. }
+        | Op::Landing { .. } => None,
+    }
 }
 
 /// The offset of the result of `op`, from its operands' `offsets`.

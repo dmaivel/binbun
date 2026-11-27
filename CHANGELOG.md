@@ -73,6 +73,7 @@ always read by later versions.
 
 ### Fixed
 
+- A function of very many blocks no longer takes time quadratic in them to lift (its stack offsets were found by sweeping every block until none changed): a 73,000-instruction function of zellij lifts in 2 s instead of 40 s, and every function of perf decompiles in the exact view in 95 s instead of 113 s, as before.
 - Finding every function's callers (the GUI's "Reading callers" stage, `binbun decompile` of a whole program) keeps at most about 2 GB of the functions' lifted code between its passes, lifting the others again, instead of all of it: on a 50 MB program of 38,000 functions (zellij) it finishes at a peak of 9.6 GB where it ran the machine out of memory past 19 GB; on perf (7,600 functions) it peaks at 3.4 GB instead of 4.3 GB and takes 51 s instead of 47 s; bash's is all kept, as before.
 - GUI: a pane's view button, pressed again, closes its open menu instead of opening it anew.
 - GUI: a font button in Settings, pressed again, closes its open menu instead of opening it anew.
