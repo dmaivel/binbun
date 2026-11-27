@@ -5,7 +5,8 @@
 //! (quiet One tokens; zeros muted), a hairline where an item starts; a
 //! typed overlay's fields tinted instead, neighbours alternating through
 //! the players' colours, the field under the cursor outlined, a card on
-//! hover with the field's path, type and value; the selection a range of
+//! hover with the field's path, type and value, the byte under the pointer
+//! lit in both columns; the selection a range of
 //! bytes, synced with the shared cursor; the overview strip in place of
 //! the scrollbar (the whole image by kind or entropy). Each hex pane has
 //! its own side area, the structure tree (every overlay a root) over the
@@ -143,6 +144,9 @@ pub struct HexUi {
     /// The field under the pointer, for its card: its pane, where the
     /// pointer is (in the window), the overlay's index and the leaf.
     hover: Option<(PaneId, Point<Pixels>, Placed)>,
+    /// The byte under the pointer, lit in both columns: its pane and where
+    /// it is.
+    hover_byte: Option<(PaneId, u64)>,
 }
 
 /// A hex pane's side area as drawn (its state is the pane's
@@ -713,10 +717,10 @@ impl Workspace {
         }
     }
 
-    /// The leaf under `position` in pane `id`, for its card; whether it
-    /// changed.
+    /// The byte under `position` in pane `id`, and its leaf for its card;
+    /// whether either changed.
     fn hex_hover(&mut self, id: PaneId, position: Point<Pixels>) -> bool {
-        let placed = match self.hex_hit(id, position) {
+        let at = match self.hex_hit(id, position) {
             Some(HexHit::Bytes { line, col }) => self.hex_image().and_then(|image| {
                 let mode = self.panes.get(&id)?.hex.mode;
                 let columns = Columns {
@@ -725,16 +729,24 @@ impl Workspace {
                 if col < columns.prefix + 2 || col >= columns.width() {
                     return None;
                 }
-                let (at, _) = self.hex_position(id, line, col)?;
-                image.placed(&self.hex.overlays, mode, at..at + 1).pop()
+                self.hex_position(id, line, col).map(|(at, _)| at)
             }),
             Some(HexHit::Strip(_)) | None => None,
         };
+        let placed = at.and_then(|at| {
+            let mode = self.panes.get(&id)?.hex.mode;
+            self.hex_image()?
+                .placed(&self.hex.overlays, mode, at..at + 1)
+                .pop()
+        });
         let leaf = |p: &Placed| (p.overlay, p.offset);
         let before = self.hex.hover.as_ref().map(|(_, _, p)| leaf(p));
         let after = placed.as_ref().map(leaf);
         self.hex.hover = placed.map(|p| (id, position, p));
-        before != after
+        let byte = at.map(|at| (id, at));
+        let moved = self.hex.hover_byte != byte;
+        self.hex.hover_byte = byte;
+        before != after || moved
     }
 
     /// Scrolls pane `id`'s hex view to its cursor as `how` says.
@@ -1140,8 +1152,12 @@ impl Workspace {
                 cx.notify();
             }))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                if !*hovered && this.hex.hover.take().is_some() {
-                    cx.notify();
+                if !*hovered {
+                    let card = this.hex.hover.take().is_some();
+                    let byte = this.hex.hover_byte.take().is_some();
+                    if card || byte {
+                        cx.notify();
+                    }
                 }
             }))
             .on_key_down(cx.listener(move |this, e: &KeyDownEvent, _, cx| {
@@ -1210,6 +1226,11 @@ impl Workspace {
         let offset = hex.scroll.anchor.offset;
         let end = first.saturating_add(visible + 1).min(rows);
         let mut quads: Vec<Quad> = Vec::new();
+        let hover_byte = self
+            .hex
+            .hover_byte
+            .filter(|(pane, _)| *pane == id)
+            .map(|(_, at)| at);
         // The leaf under the cursor, outlined wherever it shows.
         let current = image
             .placed(&overlays, mode, cursor..cursor + 1)
@@ -1221,6 +1242,22 @@ impl Workspace {
                 continue;
             };
             let in_row = start..start + ROW;
+            // The byte under the pointer, lit in the digits and the
+            // characters alike.
+            if let Some(at) = hover_byte.filter(|at| in_row.contains(at)) {
+                let i = at - start;
+                let hex = (x_of(columns.hex(i)) - 1.0, x_of(columns.hex(i) + 2) + 1.0);
+                let text = (x_of(columns.text(i)), x_of(columns.text(i) + 1));
+                for (x0, x1) in [hex, text] {
+                    quads.push(Quad {
+                        x: x0.round(),
+                        y,
+                        w: (x1 - x0).round(),
+                        h: row_h,
+                        color: with_alpha(theme.border_focused, 0x66),
+                    });
+                }
+            }
             let cells = image.cells(bytes, lines, mode, in_row.clone());
             // Each byte's leaf (the last overlay's: the user's over the
             // debug information's over the headers').
