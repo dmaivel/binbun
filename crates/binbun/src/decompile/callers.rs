@@ -677,10 +677,14 @@ fn settle(
 }
 
 /// The functions of `work` (in `order`, at their `place`s there) in
-/// levels, each above every callee of `work` before it in `order`:
-/// those whose interfaces its lowering reads (what it calls or jumps to,
-/// as recovery found it, and as the sweep's lowering of it, `found`, and
-/// each view's last, `settling`, read).
+/// levels, each above every callee of `work` before it in `order`, and no
+/// lower than any function of `work` before it that it is a callee of:
+/// so a function reads the interfaces of its callees before it as found
+/// in the levels below, and of those after it (a cycle's) before the
+/// level that finds them, as in `order`. Its callees are those whose
+/// interfaces its lowering reads: what it calls or jumps to, as recovery
+/// found it, and as the sweep's lowering of it, `found`, and each view's
+/// last, `settling`, read.
 fn levels(
     program: &Program,
     work: &[FunctionId],
@@ -690,11 +694,13 @@ fn levels(
 ) -> Vec<Vec<FunctionId>> {
     let in_work: BTreeSet<FunctionId> = work.iter().copied().collect();
     let mut level: BTreeMap<FunctionId, usize> = BTreeMap::new();
+    // Each function's least level: its callers' before it in `order`.
+    let mut floor: BTreeMap<FunctionId, usize> = BTreeMap::new();
     let mut levels: Vec<Vec<FunctionId>> = Vec::new();
     for &id in work {
         let entry = program.functions.get(id).map(|f| f.entry);
         let swept = entry.and_then(|entry| found.get(&entry));
-        let read = targets(program, id)
+        let read: BTreeSet<FunctionId> = targets(program, id)
             .into_iter()
             .chain(swept.into_iter().flat_map(|f| f.callees.iter().copied()))
             .chain(
@@ -702,14 +708,26 @@ fn levels(
                     .iter()
                     .filter_map(|view| view.read.get(&id))
                     .flat_map(|(_, callees)| callees.iter().copied()),
-            );
-        let below = read
+            )
             .filter_map(|target| program.function_at(target))
-            .filter(|callee| in_work.contains(callee) && place.get(callee) < place.get(&id))
-            .filter_map(|callee| level.get(&callee).copied())
+            .filter(|callee| in_work.contains(callee))
+            .collect();
+        let below = read
+            .iter()
+            .filter(|&callee| place.get(callee) < place.get(&id))
+            .filter_map(|callee| level.get(callee).copied())
             .max();
-        let at = below.map_or(0, |below| below + 1);
+        let at = below
+            .map_or(0, |below| below + 1)
+            .max(floor.get(&id).copied().unwrap_or(0));
         level.insert(id, at);
+        for &callee in read
+            .iter()
+            .filter(|&callee| place.get(callee) > place.get(&id))
+        {
+            let least = floor.entry(callee).or_insert(at);
+            *least = (*least).max(at);
+        }
         match levels.get_mut(at) {
             Some(functions) => functions.push(id),
             None => levels.push(vec![id]),
