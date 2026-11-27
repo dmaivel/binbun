@@ -45,6 +45,7 @@ always read by later versions.
 
 ### Changed
 
+- Finding every function's callers settles their interfaces on all the threads, a level of the call graph at a time, instead of on one: on zellij (38,000 functions) its last pass takes 33 s instead of 81 s and the whole 278 s instead of 324 s; on perf 43 s instead of 47 s. Every function's C is as before.
 - The `binbun` command and the GUI allocate memory with jemalloc (but on Windows, where they are built with MSVC), which serves the analysis's many threads faster than the system's allocator: on zellij (50 MB) finding the functions takes 12 s instead of 15 s and the cross-references 14 s instead of 17 s.
 - GUI: the status bar no longer names the C view (`Reading` or `Exact`); the pane's view button does.
 - GUI: `Ctrl+F` in the map (the left sidebar) opens its filter field, empty, for typing a name; typing there filtered before, but nothing showed it. `Escape` clears the filter, then closes the field.
