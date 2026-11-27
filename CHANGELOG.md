@@ -72,6 +72,7 @@ always read by later versions.
 
 ### Fixed
 
+- GUI: a font button in Settings, pressed again, closes its open menu instead of opening it anew.
 - A variable or object that holds allocations of known sizes (`malloc(3)` and `malloc(2)` on two paths) is no pointer to a struct larger than the smallest of them, so clang no longer warns that an allocation is too small for its type: on bash, 14 of those warnings go from the exact view.
 - A struct that starts some bytes into an object a call returns (Lua's `lua_State`, 8 bytes into the `LG` its `global_State` follows) takes no fields from that function's accesses to the object, so it is not printed as large as the whole object: on Lua's interpreter, struct field precision rises from 61% to 67%, and pointer parameters whose pointee has the right size from 36% to 43%.
 - A string constant held in a local and passed to two calls prints as the string literal at both, not as its address.

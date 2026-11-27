@@ -23,8 +23,8 @@ use gpui_kit::component::switch::Switch;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    AnyElement, Context, DismissEvent, Entity, Focusable, KeyDownEvent, ScrollEvent, Window,
-    anchored, deferred, div, font, px,
+    AnyElement, Context, DismissEvent, Entity, Focusable, KeyDownEvent, MouseButton, ScrollEvent,
+    Window, anchored, deferred, div, font, px,
 };
 
 use crate::fonts::{BUNDLED_CODE, BUNDLED_UI};
@@ -670,9 +670,24 @@ impl Workspace {
             .rounded(self.z(4.0))
             .bg(hsla(solid(theme.editor)))
             .hover(|s| s.bg(hsla(theme.element_hover)))
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.open_font_menu(key, monospace, window, cx);
-            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, window, cx| {
+                    // Pressed again, its open menu closes.
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    if this
+                        .font_menu
+                        .as_ref()
+                        .is_some_and(|(open, ..)| *open == key)
+                    {
+                        this.font_menu = None;
+                        cx.notify();
+                    } else {
+                        this.open_font_menu(key, monospace, window, cx);
+                    }
+                }),
+            )
             .child(
                 div()
                     .min_w_0()
