@@ -73,6 +73,7 @@ always read by later versions.
 
 ### Fixed
 
+- Finding every function's callers (the GUI's "Reading callers" stage, `binbun decompile` of a whole program) keeps at most about 2 GB of the functions' lifted code between its passes, lifting the others again, instead of all of it: on a 50 MB program of 38,000 functions (zellij) it finishes at a peak of 9.6 GB where it ran the machine out of memory past 19 GB; on perf (7,600 functions) it peaks at 3.4 GB instead of 4.3 GB and takes 51 s instead of 47 s; bash's is all kept, as before.
 - GUI: a pane's view button, pressed again, closes its open menu instead of opening it anew.
 - GUI: a font button in Settings, pressed again, closes its open menu instead of opening it anew.
 - A variable or object that holds allocations of known sizes (`malloc(3)` and `malloc(2)` on two paths) is no pointer to a struct larger than the smallest of them, so clang no longer warns that an allocation is too small for its type: on bash, 14 of those warnings go from the exact view.

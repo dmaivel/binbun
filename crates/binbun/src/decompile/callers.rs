@@ -377,9 +377,34 @@ pub fn callers_for(
     assume: &[bool],
     progress: &Progress,
 ) -> Vec<Callers> {
+    callers_within(
+        image, program, summaries, references, prototypes, data, disabled, threads, assume,
+        progress, KEPT_BYTES,
+    )
+}
+
+/// [`callers_for`], the functions' L1 kept from one pass to the next while
+/// it takes at most `budget` bytes ([`Kept`]).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "what the sweep reads of the program, how to share the lifting, what to keep"
+)]
+fn callers_within(
+    image: &Image<'_>,
+    program: &Program,
+    summaries: &Summaries,
+    references: &References,
+    prototypes: &dyn Prototypes,
+    data: &dyn Data,
+    disabled: &[String],
+    threads: usize,
+    assume: &[bool],
+    progress: &Progress,
+    budget: usize,
+) -> Vec<Callers> {
     let names = names(image);
     let order = targets_first(program);
-    let mut kept = Kept::new();
+    let mut kept = Kept::new(budget);
     // The sweep, with the functions `preferred` returning in the vector
     // result register: what is known after it, the functions whose
     // body's interface stays (callers we do not see, or whose calls
@@ -708,13 +733,68 @@ fn settle(
 }
 
 /// Each function's L1 ([`decompile_l1`](super::decompile_l1)), kept from
-/// one pass to the next: it reads only the summaries, never what a pass
-/// finds, so a pass would lift it again the same.
-type Kept = BTreeMap<FunctionId, Result<Prepared, String>>;
+/// one pass to the next while the kept take at most a budget of bytes
+/// ([`KEPT_BYTES`]): it reads only the summaries, never what a pass finds,
+/// so a pass lifts one not kept again the same. Those visited first are
+/// kept; a large program's others are lifted again each pass, on the
+/// lifting threads, ahead of the sweep.
+struct Kept {
+    /// The functions kept.
+    functions: BTreeMap<FunctionId, Result<Prepared, String>>,
+    /// About how many bytes they take ([`weight`]).
+    bytes: usize,
+    /// The most they may take.
+    budget: usize,
+}
+
+impl Kept {
+    /// None kept yet, at most `budget` bytes to be.
+    fn new(budget: usize) -> Self {
+        Self {
+            functions: BTreeMap::new(),
+            bytes: 0,
+            budget,
+        }
+    }
+
+    /// Function `id`'s L1, if kept.
+    fn get(&self, id: FunctionId) -> Option<&Result<Prepared, String>> {
+        self.functions.get(&id)
+    }
+
+    /// Keeps function `id`'s L1 `prepared` if it fits the budget.
+    fn keep(&mut self, id: FunctionId, prepared: Result<Prepared, String>) {
+        let bytes = self.bytes.saturating_add(weight(&prepared));
+        if bytes <= self.budget {
+            self.bytes = bytes;
+            self.functions.insert(id, prepared);
+        }
+    }
+}
+
+/// About how many resident bytes `prepared` takes kept: its L1 and the
+/// analyses lowering reads, [`NODE_BYTES`] for each of the L1's
+/// instructions and values (none for a function that does not lift).
+fn weight(prepared: &Result<Prepared, String>) -> usize {
+    prepared.as_ref().map_or(0, |prepared| {
+        (prepared.l1.insts.len() + prepared.l1.values.len()).saturating_mul(NODE_BYTES)
+    })
+}
+
+/// About how many resident bytes a kept function takes per instruction
+/// and value of its L1: 120 to 210 measured (zellij, perf, bash), half of
+/// it the analyses lowering reads.
+const NODE_BYTES: usize = 200;
+
+/// The most bytes [`Kept`] keeps ([`weight`]). A whole program's L1 takes
+/// about 0.9 GB for bash, 3.3 GB for perf (7,600 functions), 15 GB for a
+/// 50 MB program (zellij, 38,000 functions), which kept whole runs a
+/// machine out of memory.
+const KEPT_BYTES: usize = 2 << 30;
 
 /// [`lifted`] for the passes of [`callers_for`]: each of `order` handed
 /// to `visit` in that order, those `kept` from an earlier pass as kept,
-/// the others lifted (on `threads` threads) and kept.
+/// the others lifted (on `threads` threads) and kept while they fit.
 #[expect(
     clippy::too_many_arguments,
     reason = "lifted's arguments and what is kept"
@@ -732,7 +812,7 @@ fn each_lifted(
     let missing: Vec<FunctionId> = order
         .iter()
         .copied()
-        .filter(|id| !kept.contains_key(id))
+        .filter(|&id| kept.get(id).is_none())
         .collect();
     // The next of `order` to visit: those kept before a function lifted
     // are visited first.
@@ -748,18 +828,18 @@ fn each_lifted(
             while let Some(&before) = order.get(next)
                 && before != id
             {
-                if let Some(prepared) = kept.get(&before) {
+                if let Some(prepared) = kept.get(before) {
                     visit(before, prepared);
                 }
                 next += 1;
             }
             next += 1;
             visit(id, &prepared);
-            kept.insert(id, prepared);
+            kept.keep(id, prepared);
         },
     );
     for id in order.iter().skip(next) {
-        if let Some(prepared) = kept.get(id) {
+        if let Some(prepared) = kept.get(*id) {
             visit(*id, prepared);
         }
     }
@@ -2152,5 +2232,48 @@ mod tests {
                 (0x500, vec![RegisterId(6)])
             ])
         );
+    }
+
+    /// Both views' callers are the same whatever of the functions' L1 is
+    /// kept from one pass to the next: with none kept (every pass lifts
+    /// every function again) as with all of it, on programs that take
+    /// several rounds to settle (cycles of calls, a parameter dropped).
+    #[test]
+    fn the_callers_are_the_same_whatever_l1_is_kept() {
+        use crate::Database;
+        use crate::analysis::Seeds;
+
+        for name in [
+            "cycles-x86_64.elf",
+            "forwarded-x86_64.elf",
+            "program-x86_64.elf",
+        ] {
+            let path = format!("{}/../../tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+            let data = std::fs::read(path).unwrap();
+            let image = Image::parse(&data).unwrap();
+            let database = Database::new(&image, Seeds::ALL).unwrap();
+            let program = database.program();
+            let (references, summaries) =
+                References::build(&image, program, 1, &Progress::default());
+            let prototypes = database.prototypes();
+            let found = |budget| {
+                callers_within(
+                    &image,
+                    program,
+                    &summaries,
+                    &references,
+                    &prototypes,
+                    database.data(),
+                    &[],
+                    2,
+                    &[false, true],
+                    &Progress::default(),
+                    budget,
+                )
+            };
+            let all = found(usize::MAX);
+            assert!(all.len() == 2, "{name}");
+            assert!(found(0) == all, "{name}: nothing kept differs");
+        }
     }
 }
