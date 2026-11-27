@@ -50,6 +50,10 @@ regex = "1.13.1"
 resvg = { version = "0.46.0", default-features = false }
 rustix = { version = "1.1.6", default-features = false, features = ["std", "process"] }
 serde_json = "1.0.154"
+# The GUI's allocator (not on MSVC, which jemalloc does not build for),
+# as the root workspace's `binbun`'s. jemalloc BSD-2-Clause, the crate
+# MIT OR Apache-2.0.
+tikv-jemallocator = "0.7.0"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time"] }
 toml_edit = { version = "0.25.19", default-features = false, features = ["parse", "display"] }
 # The avatars' initials' ink (an outline's bounds; already GPUI's, through

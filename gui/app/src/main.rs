@@ -94,6 +94,13 @@ use std::time::Instant;
 
 use gpui_kit::App;
 
+/// jemalloc: the analysis allocates and frees on many threads at once,
+/// faster than with the system's allocator (none on MSVC, which jemalloc
+/// does not build for).
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 /// When the process started.
 pub static STARTED: LazyLock<Instant> = LazyLock::new(Instant::now);
 

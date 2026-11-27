@@ -41,6 +41,10 @@ tokio = { workspace = true, optional = true }
 # `binbun update --check` and the GUI's checks (`update`).
 ureq.workspace = true
 
+# The command's allocator (`main.rs`).
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator.workspace = true
+
 # `binbun mcp`: the interpreter killed with what it started (its process
 # group).
 [target.'cfg(unix)'.dependencies]

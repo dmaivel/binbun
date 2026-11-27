@@ -7,6 +7,13 @@
 
 use std::process::ExitCode;
 
+/// jemalloc: the analysis allocates and frees on many threads at once,
+/// faster than with the system's allocator (none on MSVC, which jemalloc
+/// does not build for).
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 fn main() -> ExitCode {
     binbun_cli::main(None)
 }

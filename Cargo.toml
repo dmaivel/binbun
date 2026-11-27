@@ -90,6 +90,11 @@ prettyplease = "0.3.0"
 proc-macro2 = "1.0.107"
 # `binbun-py`: binbun as a Python extension module.
 pyo3 = "0.30.1"
+# The `binbun` command's allocator (not on MSVC, which jemalloc does not
+# build for): the analysis allocates and frees on many threads at once,
+# faster than with the system's. jemalloc BSD-2-Clause, the crate MIT OR
+# Apache-2.0.
+tikv-jemallocator = "0.7.0"
 quote = "1.0.47"
 # Windows' script socket (`binbun-protocol`): a named pipe made with a
 # security descriptor (interprocess's safe wrappers; its Tokio pipes so

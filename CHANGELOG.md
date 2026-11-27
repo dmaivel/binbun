@@ -45,6 +45,7 @@ always read by later versions.
 
 ### Changed
 
+- The `binbun` command and the GUI allocate memory with jemalloc (but on Windows, where they are built with MSVC), which serves the analysis's many threads faster than the system's allocator: on zellij (50 MB) finding the functions takes 12 s instead of 15 s and the cross-references 14 s instead of 17 s.
 - GUI: the status bar no longer names the C view (`Reading` or `Exact`); the pane's view button does.
 - GUI: `Ctrl+F` in the map (the left sidebar) opens its filter field, empty, for typing a name; typing there filtered before, but nothing showed it. `Escape` clears the filter, then closes the field.
 - A struct on the stack whose address is passed to calls is one struct for all of them, and where a library function's declaration types the parameter it is passed as (`gettimeofday`'s `struct timeval *`), it is that declared struct: `difftimeval(struct timeval *, struct timeval *, struct timeval *)` instead of three structs of `difftimeval`'s own. On bash built with debug information, `struct timeval` is one struct instead of twelve names. The declared type names the struct only where its fields fit it, and not where they fit its first member alone: a stack slot the compiler reuses for a `scratch_buffer` and for `uname`'s `struct utsname` is no `utsname`, and `print_timeval(&self.ru_utime)` takes no `struct rusage *`.

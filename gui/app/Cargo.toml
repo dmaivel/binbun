@@ -32,6 +32,10 @@ ttf-parser.workspace = true
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["time"] }
 
+# The allocator (`main.rs`).
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator.workspace = true
+
 # binbun.exe's icon (build.rs; does nothing for other targets, kept
 # unconditional so cross builds for Windows get it too).
 [build-dependencies]
