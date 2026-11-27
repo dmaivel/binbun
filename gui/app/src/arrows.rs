@@ -161,6 +161,18 @@ pub struct Geometry {
     pub offset: f32,
     /// A label character's width.
     pub label_char: f32,
+    /// How a stub says where its other end is.
+    pub stubs: StubStyle,
+}
+
+/// How an arrow drawn as stubs says where its other end is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StubStyle {
+    /// A label naming it, at the arrow's strength (the listing's).
+    Labelled,
+    /// A tail leading toward it, above or below, at full strength (the
+    /// unified listing's, whose rows name the ends already).
+    Leading,
 }
 
 impl Geometry {
@@ -322,10 +334,25 @@ pub fn lay_out(
                 if !g.visible(y) {
                     continue;
                 }
-                draw_stub(&mut out.quads, g, pen, y, end);
+                let leading = g.stubs == StubStyle::Leading;
+                if leading {
+                    let other = g.y(if end == End::Source {
+                        arrow.to
+                    } else {
+                        arrow.from
+                    });
+                    let full = Pen { color, ..pen };
+                    draw_lead(&mut out.quads, g, full, (y, other < y), end);
+                } else {
+                    draw_stub(&mut out.quads, g, pen, y, end);
+                }
                 let right = g.tip() - STUB - 2.0;
                 // Less its padding.
-                let text = label(arrow, end, column(right - 4.0, g.label_char));
+                let text = if leading {
+                    String::new()
+                } else {
+                    label(arrow, end, column(right - 4.0, g.label_char))
+                };
                 let w = f(columns(&text) as u64) * g.label_char + 4.0;
                 out.hits.push(Hit {
                     left: right - w,
@@ -335,12 +362,14 @@ pub fn lay_out(
                     from: arrow.from,
                     to: arrow.to,
                 });
-                out.labels.push(Label {
-                    text,
-                    right,
-                    y,
-                    color: label_color,
-                });
+                if !leading {
+                    out.labels.push(Label {
+                        text,
+                        right,
+                        y,
+                        color: label_color,
+                    });
+                }
             }
         }
     }
@@ -430,6 +459,44 @@ fn draw_stub(out: &mut Vec<Quad>, g: &Geometry, pen: Pen, y: f32, end: End) {
             segment(out, pen, start, y, STUB - 4.0, true);
             arrowhead(out, pen, tip, y);
         }
+    }
+}
+
+/// A stub at `end` on the row whose middle is `y`, leading toward its
+/// other end (above it if `up`): a short slant from that side (the
+/// innermost lane's column is where it starts, so a tail along it would
+/// hide in that lane's line) into the dot or the arrowhead.
+fn draw_lead(out: &mut Vec<Quad>, g: &Geometry, pen: Pen, (y, up): (f32, bool), end: End) {
+    let tip = g.tip();
+    let reach = match end {
+        End::Source => STUB - dot(pen),
+        End::Target => STUB - 4.0,
+    };
+    let rise = (g.row * 0.35).max(reach);
+    let slope = rise / reach;
+    let side = if up { -1.0 } else { 1.0 };
+    // A column of the pen's width a pixel wide each step along it.
+    let mut step = 0.0;
+    while step < reach {
+        let at = y + side * rise * (1.0 - step / reach);
+        let h = slope + pen.width;
+        out.push(Quad {
+            x: tip - STUB + step,
+            y: if up {
+                at - pen.width / 2.0
+            } else {
+                at - h + pen.width / 2.0
+            },
+            w: 1.0,
+            h,
+            color: pen.color,
+            round: false,
+        });
+        step += 1.0;
+    }
+    match end {
+        End::Source => push_dot(out, pen, tip, y),
+        End::Target => arrowhead(out, pen, tip, y),
     }
 }
 
@@ -530,7 +597,7 @@ mod tests {
     use binbun_gui_view::listing::Arrow;
 
     use super::{
-        DASH, DASH_GAP, End, Geometry, Kind, colour, dashes, hit_at, lay_out, other_end,
+        DASH, DASH_GAP, End, Geometry, Kind, StubStyle, colour, dashes, hit_at, lay_out, other_end,
         stub_label, width,
     };
     /// Eight distinct colours: the lanes' palette in these tests (each
@@ -559,6 +626,7 @@ mod tests {
             first: 100,
             offset: 0.0,
             label_char: 4.0,
+            stubs: StubStyle::Labelled,
         }
     }
 

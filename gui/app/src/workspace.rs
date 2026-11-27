@@ -39,6 +39,7 @@ use binbun_gui_view::slices::{self, Chosen, Slice};
 use binbun_gui_view::structedit::StructTarget;
 use binbun_gui_view::symbols::Bar;
 use binbun_gui_view::tabs::{Opening, Places, retarget};
+use binbun_gui_view::unified::UnifiedPane;
 use binbun_gui_view::{Answer, FunctionId, Node, NumberForm, Stage, View};
 use binbun_session::journal::Origin;
 use gpui_kit::base::TextSelection;
@@ -75,6 +76,7 @@ use crate::symbol_cache::SymbolCacheUi;
 use crate::theme::{self, Theme, Themes};
 use crate::threads_view::{Dock, ThreadsUi};
 use crate::type_field::CTypeField;
+use crate::unified_view::UnifiedUi;
 use crate::window_tabs::WindowTabs;
 
 /// What a tab shows.
@@ -203,6 +205,8 @@ pub struct PaneState {
     pub graph: GraphPane,
     /// Its listing shown as the hex view.
     pub hex: HexPane,
+    /// Its listing shown as the unified listing.
+    pub unified: UnifiedPane,
     /// Its C pane shown as the IR viewer.
     pub ir: IrPane,
     /// Its listing shown as the call graph.
@@ -625,6 +629,8 @@ pub struct Workspace {
     pub last_graph: bool,
     /// The hex view's byte space, overlays and inspector.
     pub hex: HexUi,
+    /// The unified listing's document.
+    pub unified: UnifiedUi,
     /// The feature map: its bands, marks and hover.
     pub feature_map: FeatureMapUi,
     /// The map's folders opened as tabs: their rows, each tab's sort.
@@ -818,6 +824,7 @@ impl Workspace {
             overview: true,
             last_graph: false,
             hex: HexUi::default(),
+            unified: UnifiedUi::default(),
             feature_map: FeatureMapUi::default(),
             folders: FolderUi::default(),
             calls: CallsUi::default(),
@@ -1589,6 +1596,7 @@ impl Workspace {
                 ..GraphPane::default()
             },
             hex: HexPane::default(),
+            unified: UnifiedPane::default(),
             ir: IrPane::default(),
             calls: CallsPane::default(),
             tab_scroll: ScrollHandle::new(),
@@ -1630,6 +1638,7 @@ impl Workspace {
         match self.layout.active(id)? {
             TabKind::Listing if state.hex.on => self.hex_address(id),
             TabKind::Listing if state.calls.on => self.calls_address(id),
+            TabKind::Listing if state.unified.on => self.unified_address(id),
             TabKind::Listing => self
                 .listing
                 .as_ref()?
@@ -1692,6 +1701,7 @@ impl Workspace {
                 state.listing.token = None;
                 state.graph.landing = focus;
                 state.hex.target = Some((address, focus));
+                state.unified.target = Some((address, focus));
                 state.calls.target = Some(address);
                 if focus {
                     state
@@ -2316,6 +2326,7 @@ impl Workspace {
             ligatures: self.settings.ligatures,
             islands: self.settings.islands,
             graph: self.shows_graph(id),
+            unified: self.shows_unified(id),
             function: self
                 .current_address()
                 .zip(self.listing.as_ref())
@@ -2376,6 +2387,7 @@ impl Workspace {
         self.alt_tap = false;
         if self.correction_command(command, window, cx)
             || self.hex_command(command, window, cx)
+            || self.unified_command(command, window, cx)
             || self.calls_command(command, window, cx)
             || self.struct_command(command, window, cx)
             || self.symbols_command(command, window, cx)
@@ -2411,6 +2423,8 @@ impl Workspace {
             | Command::StageWarmed
             // Taken by `hex_command` where they apply.
             | Command::ToggleHex
+            // Taken by `unified_command`.
+            | Command::ToggleUnified
             | Command::ShowInHex
             | Command::HexFileOffsets
             | Command::HexEntropy

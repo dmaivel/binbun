@@ -165,6 +165,9 @@ pub enum Command {
     /// Shows the pane's listing as the structured hex view, or the
     /// listing again.
     ToggleHex,
+    /// Shows the pane's listing as the unified listing (the whole file in
+    /// order: headers, tables, code and data), or the listing again.
+    ToggleUnified,
     /// Shows the cursor's address in a hex view.
     ShowInHex,
     /// Switches the hex view between addresses and file offsets.
@@ -1069,6 +1072,14 @@ pub const COMMANDS: &[Info] = &[
         C::ToggleHex,
         "view.hex",
         "Hex View",
+        Some(M::View),
+        &[],
+        Code,
+    ),
+    info(
+        C::ToggleUnified,
+        "view.unified",
+        "Unified View",
         Some(M::View),
         &[],
         Code,
@@ -2242,6 +2253,8 @@ pub struct Facts {
     pub overview: bool,
     /// The focused pane shows the hex view.
     pub hex: bool,
+    /// The focused pane shows the unified listing.
+    pub unified: bool,
     /// The focused hex view shows file offsets.
     pub file_offsets: bool,
     /// The focused hex view's overview shows entropy.
@@ -2492,12 +2505,19 @@ fn state_of(command: Command, facts: &Facts) -> State {
             enabled: facts.open && facts.stage >= 1,
             checked: Some(facts.hex),
         },
+        C::ToggleUnified => State {
+            enabled: facts.open && facts.stage >= 1,
+            checked: Some(facts.unified),
+        },
         C::ShowInHex => on(facts.open && facts.stage >= 1 && facts.address),
         C::HexFileOffsets => hex_toggle(facts.file_offsets),
         C::HexEntropy => hex_toggle(facts.entropy),
         C::HexSide => hex_toggle(facts.hex_side),
-        C::ApplyType | C::CopyHex | C::CopyEscaped | C::CopyCArray => on(facts.hex),
-        C::RemoveType => on(facts.hex && facts.user_type),
+        // Bytes: the hex view's, the unified listing's rows'.
+        C::ApplyType | C::CopyHex | C::CopyEscaped | C::CopyCArray => {
+            on(facts.hex || facts.unified)
+        }
+        C::RemoveType => on((facts.hex || facts.unified) && facts.user_type),
         calls_commands!() => calls_state(command, facts),
         C::Back => on(facts.back),
         C::Forward => on(facts.forward),
@@ -3390,13 +3410,42 @@ mod tests {
         };
         assert!(state(Command::ToggleMaximize, &split).enabled);
         assert_eq!(state(Command::ToggleMaximize, &split).checked, Some(true));
-        // The hex view's commands need it shown; removing a type needs one
-        // the user laid.
+    }
+
+    #[test]
+    fn the_byte_commands_follow_the_view() {
+        let open = Facts {
+            open: true,
+            stage: 3,
+            address: true,
+            ..Facts::default()
+        };
+        // The byte commands need the hex view or the unified listing shown
+        // (the hex view's own toggles, the hex view); removing a type needs
+        // one the user laid.
         assert!(state(Command::ToggleHex, &open).enabled);
         assert!(!state(Command::ApplyType, &open).enabled);
+        assert!(!state(Command::CopyCArray, &open).enabled);
         let hex = Facts { hex: true, ..open };
         assert!(state(Command::ApplyType, &hex).enabled);
         assert!(!state(Command::RemoveType, &hex).enabled);
+        let unified = Facts {
+            unified: true,
+            ..open
+        };
+        assert!(state(Command::ApplyType, &unified).enabled);
+        assert!(state(Command::CopyCArray, &unified).enabled);
+        assert!(!state(Command::HexEntropy, &unified).enabled);
+        assert!(
+            state(
+                Command::RemoveType,
+                &Facts {
+                    user_type: true,
+                    ..unified
+                }
+            )
+            .enabled
+        );
         assert!(
             state(
                 Command::RemoveType,

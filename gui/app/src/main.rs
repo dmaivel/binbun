@@ -82,6 +82,8 @@ mod theme;
 mod threads_view;
 mod titlebar;
 mod type_field;
+mod unified_rows;
+mod unified_view;
 mod window_tabs;
 mod workspace;
 

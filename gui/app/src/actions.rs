@@ -182,6 +182,7 @@ command_actions!(
     Top,
     Bottom,
     ToggleHex,
+    ToggleUnified,
     ShowInHex,
     HexFileOffsets,
     HexEntropy,

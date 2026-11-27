@@ -580,7 +580,13 @@ impl Workspace {
             return;
         }
         let rows = self.rows(id, height);
-        let total = if c {
+        let unified = self.shows_unified(id);
+        let total = if unified {
+            self.panes
+                .get(&id)
+                .and_then(|s| s.unified.flat.as_ref())
+                .map_or(0, |f| f.len() as u64)
+        } else if c {
             self.layout
                 .active(id)
                 .and_then(|k| self.document(k))
@@ -591,7 +597,9 @@ impl Workspace {
         let Some(state) = self.panes.get_mut(&id) else {
             return;
         };
-        let scroll = if c {
+        let scroll = if unified {
+            &mut state.unified.scroll
+        } else if c {
             &mut state.c.scroll
         } else {
             // The arrow under the pointer moves away with the content.
@@ -863,7 +871,13 @@ impl Workspace {
         let ir = self.shows_ir(id);
         let c = matches!(self.layout.active(id), Some(TabKind::C { .. }));
         let rows = self.rows(id, self.line_height(id));
-        let total = if ir {
+        let unified = self.shows_unified(id);
+        let total = if unified {
+            self.panes
+                .get(&id)
+                .and_then(|s| s.unified.flat.as_ref())
+                .map_or(0, |f| f.len() as u64)
+        } else if ir {
             self.ir_total(id)
         } else if c {
             self.layout
@@ -875,7 +889,9 @@ impl Workspace {
         };
         let state = self.panes.get_mut(&id)?;
         let b = state.bounds.get();
-        let scroll = if ir {
+        let scroll = if unified {
+            &mut state.unified.scroll
+        } else if ir {
             &mut state.ir.scroll
         } else if c {
             &mut state.c.scroll
@@ -953,6 +969,7 @@ impl Workspace {
             first: state.listing.scroll.anchor.line,
             offset: state.listing.scroll.anchor.offset,
             label_char: self.char_width.unwrap_or(8.0) * LABEL_SCALE,
+            stubs: arrows::StubStyle::Labelled,
         };
         let address = |line: u64| listing.line(line).map(|l| l.address);
         let cursor = address(state.listing.cursor);
@@ -1075,7 +1092,7 @@ pub fn token_at(tokens: &[Token], col: usize) -> Option<usize> {
 }
 
 /// Whether clicking a token of `role` highlights its equals.
-fn highlightable(role: Role) -> bool {
+pub(crate) fn highlightable(role: Role) -> bool {
     matches!(
         role,
         Role::Prefix
@@ -1094,7 +1111,7 @@ fn highlightable(role: Role) -> bool {
 }
 
 /// Whether hovering a token of `role` peeks at its target.
-fn peekable(role: Role) -> bool {
+pub(crate) fn peekable(role: Role) -> bool {
     matches!(
         role,
         Role::CodeName | Role::DataName | Role::ImportName | Role::CodeXref | Role::DataXref

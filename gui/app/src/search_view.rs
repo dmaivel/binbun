@@ -72,6 +72,9 @@ pub struct FindBar {
     pub query: Query,
     /// In a hex view: the text read as hex bytes (else as a string).
     pub hex: bool,
+    /// In the unified listing: the image's bytes searched for the text
+    /// read as hex bytes (else the listing's text).
+    pub bytes: bool,
     /// What it last searched.
     pub kind: Option<FindKind>,
     /// The matches.
@@ -214,6 +217,11 @@ impl Workspace {
     fn find_kind(&self, id: PaneId) -> Option<FindKind> {
         let state = self.panes.get(&id)?;
         match self.layout.active(id)? {
+            TabKind::Listing
+                if state.unified.on && self.search.bars.get(&id).is_some_and(|b| b.bytes) =>
+            {
+                Some(FindKind::Hex(Mode::Address))
+            }
             TabKind::Listing if state.hex.on => Some(FindKind::Hex(state.hex.mode)),
             TabKind::Listing if self.shows_graph(id) || self.shows_calls(id) => None,
             TabKind::Listing => self.listing.as_ref().map(|_| FindKind::Listing),
@@ -281,6 +289,7 @@ impl Workspace {
                 input,
                 query: Query::default(),
                 hex: true,
+                bytes: false,
                 kind: None,
                 found: Found::new(Plan::new(0, 1, 0)),
                 search: None,
@@ -312,6 +321,7 @@ impl Workspace {
         match kind {
             FindKind::Listing => state.listing.cursor,
             FindKind::C(..) => state.c.line as u64,
+            FindKind::Hex(_) if state.unified.on => self.unified_address(id).unwrap_or(0),
             FindKind::Hex(_) => state.hex.cursor,
         }
     }
@@ -464,10 +474,19 @@ impl Workspace {
         match kind {
             Some(FindKind::Listing) => {
                 let total = self.listing.as_ref().map_or(0, |l| l.len());
+                let address = self
+                    .listing
+                    .as_ref()
+                    .and_then(|l| l.line(hit.line))
+                    .map(|l| l.address);
                 if let Some(state) = self.panes.get_mut(&id) {
                     state.listing.scroll.smooth.stop();
                     state.listing.cursor = hit.line;
                     state.listing.token = None;
+                    // The unified listing, if it shows the listing, there too.
+                    if state.unified.on {
+                        state.unified.target = address.map(|a| (a, true));
+                    }
                     state
                         .listing
                         .scroll
@@ -492,6 +511,12 @@ impl Workspace {
                         .scroll
                         .anchor
                         .reveal(hit.line, total, rows_c, rows_c / 3);
+                }
+                self.moved(id);
+            }
+            Some(FindKind::Hex(_)) if self.shows_unified(id) => {
+                if let Some(state) = self.panes.get_mut(&id) {
+                    state.unified.target = Some((hit.line, true));
                 }
                 self.moved(id);
             }
@@ -573,7 +598,6 @@ impl Workspace {
         }
         let theme = self.theme;
         let bar = self.search.bars.get(&id)?;
-        let hex = matches!(bar.kind, Some(FindKind::Hex(_)));
         let count = if bar.query.text.is_empty() {
             String::new()
         } else {
@@ -582,31 +606,7 @@ impl Workspace {
                 None => bar.found.len().to_string(),
             }
         };
-        let toggle = |name: IconName, on: bool, which: u8, cx: &mut Context<Self>| {
-            self.small_toggle(("find-toggle", u32::from(which) + id.0 * 8), name, on)
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    if let Some(bar) = this.search.bars.get_mut(&id) {
-                        match which {
-                            0 => bar.query.case = !bar.query.case,
-                            1 => bar.query.regex = !bar.query.regex,
-                            _ => bar.hex = !bar.hex,
-                        }
-                    }
-                    this.refind(id, cx);
-                    cx.notify();
-                }))
-        };
-        let toggles: Vec<AnyElement> = if hex {
-            vec![
-                toggle(IconName::Binary, bar.hex, 2, cx).into_any_element(),
-                toggle(IconName::CaseSensitive, bar.query.case, 0, cx).into_any_element(),
-            ]
-        } else {
-            vec![
-                toggle(IconName::CaseSensitive, bar.query.case, 0, cx).into_any_element(),
-                toggle(IconName::Regex, bar.query.regex, 1, cx).into_any_element(),
-            ]
-        };
+        let toggles = self.find_toggles(id, bar, cx);
         let step = |name: IconName, forward: bool, cx: &mut Context<Self>| {
             self.small_toggle(("find-step", u32::from(forward) + id.0 * 8), name, false)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
@@ -663,6 +663,48 @@ impl Workspace {
                 )
                 .into_any_element(),
         )
+    }
+
+    /// Pane `id`'s find bar's toggles: in the unified listing, its bytes
+    /// (else its text's case and regex); in a hex view, the text as hex
+    /// and its case; else the case and regex.
+    fn find_toggles(&self, id: PaneId, bar: &FindBar, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let toggle = |name: IconName, on: bool, which: u8, cx: &mut Context<Self>| {
+            self.small_toggle(("find-toggle", u32::from(which) + id.0 * 8), name, on)
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    if let Some(bar) = this.search.bars.get_mut(&id) {
+                        match which {
+                            0 => bar.query.case = !bar.query.case,
+                            1 => bar.query.regex = !bar.query.regex,
+                            3 => bar.bytes = !bar.bytes,
+                            _ => bar.hex = !bar.hex,
+                        }
+                    }
+                    this.refind(id, cx);
+                    cx.notify();
+                }))
+                .into_any_element()
+        };
+        let text = |cx: &mut Context<Self>| {
+            [
+                toggle(IconName::CaseSensitive, bar.query.case, 0, cx),
+                toggle(IconName::Regex, bar.query.regex, 1, cx),
+            ]
+        };
+        if self.shows_unified(id) {
+            let mut toggles = vec![toggle(IconName::Binary, bar.bytes, 3, cx)];
+            if !bar.bytes {
+                toggles.extend(text(cx));
+            }
+            toggles
+        } else if matches!(bar.kind, Some(FindKind::Hex(_))) {
+            vec![
+                toggle(IconName::Binary, bar.hex, 2, cx),
+                toggle(IconName::CaseSensitive, bar.query.case, 0, cx),
+            ]
+        } else {
+            text(cx).into()
+        }
     }
 
     /// A small icon button of the search bars: muted at rest, filled when

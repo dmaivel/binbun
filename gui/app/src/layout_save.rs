@@ -16,6 +16,7 @@ use binbun_gui_view::hex::SideSplit;
 use binbun_gui_view::layout::{PaneId, Tab, TabId};
 use binbun_gui_view::layout_file::{SavedLayout, SavedPlace, SavedSplit, SavedTab};
 use binbun_gui_view::session::{Project, Session};
+use binbun_gui_view::tabs::View;
 use gpui_kit::Context;
 
 use crate::sidebar::{MAX_WIDTH, MIN_WIDTH};
@@ -66,20 +67,29 @@ impl Workspace {
                     self.places.view(id)
                 };
                 let code = matches!(tab.content, SavedTab::Listing | SavedTab::C { .. });
+                let listing = matches!(tab.content, SavedTab::Listing);
                 let at = if pane.synced && code {
                     self.shared.or_else(|| self.places.at(id))
                 } else {
                     self.places.at(id)
                 };
+                // The unified listing's layers and folds: the pane's for
+                // its shown tab, as kept for the others.
+                let unified_view = if index == pane.active {
+                    self.unified_view_of(pane.id)
+                } else {
+                    self.places.unified(id).cloned()
+                };
                 let place = SavedPlace {
                     at,
-                    graph: matches!(tab.content, SavedTab::Listing)
-                        && view.is_some_and(|v| v.graph),
+                    graph: listing && view.is_some_and(|v| v.graph),
                     zoom: memory.and_then(GraphMemory::zoom),
                     pan: memory.and_then(GraphMemory::latest).map(|pan| Pan {
                         followed: None,
                         ..*pan
                     }),
+                    unified: listing && view.is_some_and(|v| v.unified),
+                    unified_view: unified_view.filter(|_| listing).unwrap_or_default(),
                 };
                 if place != SavedPlace::default() {
                     places.insert(id, place);
@@ -225,8 +235,14 @@ impl Workspace {
             .flat_map(|p| p.tabs.iter().map(Tab::id))
             .collect();
         for tab in tabs {
-            let place = split.places.get(&tab).copied().unwrap_or_default();
-            self.places.restore(tab, place.at, place.graph);
+            let place = split.places.get(&tab).cloned().unwrap_or_default();
+            let view = View {
+                graph: place.graph,
+                unified: place.unified,
+                ..View::default()
+            };
+            self.places.restore(tab, place.at, view);
+            self.places.keep_unified(tab, place.unified_view);
             if place.zoom.is_some() || place.pan.is_some() {
                 *self.places.graph_memory_mut(tab) = GraphMemory::saved(place.zoom, place.pan);
             }

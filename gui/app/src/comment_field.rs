@@ -94,6 +94,14 @@ impl Workspace {
         let session = self.session.as_ref()?;
         let comments = &session.overlay().comments;
         match self.layout.active(id)? {
+            // The unified listing: its cursor row's item's.
+            TabKind::Listing if state.unified.on => {
+                let listing = self.listing.as_ref()?;
+                let n = listing.line_of(self.unified_subject(id)?);
+                let (address, ..) =
+                    listing.comment_place(session.database()?, n, session.overlay())?;
+                Some((CommentField::open(address, comments), None))
+            }
             // The listing, or its graph (the same lines).
             TabKind::Listing if !state.hex.on && !state.calls.on => {
                 let listing = self.listing.as_ref()?;

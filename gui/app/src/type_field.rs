@@ -43,6 +43,8 @@ pub enum Place {
     C(usize, usize),
     /// Over the selected row's type in the pane's hex structure tree.
     Tree,
+    /// Over the cursor row's text in the pane's unified listing.
+    Unified,
 }
 
 /// The open Set type field.
@@ -296,7 +298,7 @@ impl Workspace {
             return;
         }
         self.c_type = None;
-        if place != Place::Tree {
+        if matches!(place, Place::C(..)) {
             self.pin_active(pane);
         }
         if let Subject::Member { key, name } = subject_kept
@@ -326,7 +328,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         match place {
-            Place::C(..) => self.focus_pane(pane, window, cx),
+            Place::C(..) | Place::Unified => self.focus_pane(pane, window, cx),
             Place::Tree => self.focus_hex_tree(pane, window, cx),
         }
     }
@@ -374,6 +376,13 @@ impl Workspace {
                     return None;
                 }
                 self.hex_type_at(id)
+            }
+            Place::Unified => {
+                if !self.shows_unified(id) {
+                    self.c_type = None;
+                    return None;
+                }
+                self.unified_type_at(id)
             }
         };
         let (origin, row_h) = at?;

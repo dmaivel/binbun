@@ -115,6 +115,7 @@ impl Workspace {
         let listing = self.listing.as_ref()?;
         let session = self.session.as_ref()?;
         match self.layout.active(id)? {
+            TabKind::Listing if state.unified.on => self.unified_subject(id),
             TabKind::Listing => {
                 let db = session.database()?;
                 let rendered = listing.render(db, state.listing.cursor, session.overlay());

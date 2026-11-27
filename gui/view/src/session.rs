@@ -464,6 +464,13 @@ impl Session {
         self.inner.database()
     }
 
+    /// How far the session's state has come
+    /// ([`binbun_session::Session::revision`]): what was read from it is
+    /// current while it is the same.
+    pub fn revision(&self) -> binbun_session::Revision {
+        self.inner.revision()
+    }
+
     /// The source file (its path) the debug information states the
     /// function at `entry` is defined in, if a debug file was found.
     pub fn source_file(&self, entry: u64) -> Option<String> {

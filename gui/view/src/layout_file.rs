@@ -22,6 +22,7 @@
 //! closes.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::path::Path;
 
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, TableLike, Value};
@@ -29,7 +30,10 @@ use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Tab
 use crate::View;
 use crate::crash_safe;
 use crate::graph_memory::Pan;
+use crate::hex::Anchor;
+use crate::hex_tree::Step;
 use crate::layout::{Axis, Layout, Node, Pane, PaneId, Tab, TabId};
+use crate::unified::{Expanded, Fold, Layers, UnifiedView};
 
 /// The format this module writes and reads (`format = 2`): panes as views.
 pub const FORMAT: i64 = 2;
@@ -100,7 +104,7 @@ pub struct SavedLayout {
 
 /// Where a tab of code was, its view, and where its graph was left (its
 /// zoom, the last function's pan).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct SavedPlace {
     /// Its cursor's address.
     pub at: Option<u64>,
@@ -111,6 +115,10 @@ pub struct SavedPlace {
     /// Its graph's pan for the function shown last (what it followed is
     /// not saved).
     pub pan: Option<Pan>,
+    /// Its listing was shown as the unified listing.
+    pub unified: bool,
+    /// Its unified listing's layers and folds.
+    pub unified_view: UnifiedView,
 }
 
 impl SavedLayout {
@@ -508,6 +516,102 @@ fn place_value(table: &mut InlineTable, place: &SavedPlace) {
         at.insert("y", Value::from(rounded(pan.y)));
         table.insert("pan", Value::InlineTable(at));
     }
+    if place.unified {
+        table.insert("unified", Value::from(true));
+    }
+    let view = &place.unified_view;
+    if view.layers != Layers::default() {
+        let mut layers = InlineTable::new();
+        layers.insert("bytes", Value::from(view.layers.bytes));
+        layers.insert("hex", Value::from(view.layers.hex));
+        layers.insert("structure", Value::from(view.layers.structure));
+        table.insert("layers", Value::InlineTable(layers));
+    }
+    if !view.folds.is_empty() {
+        let folds: Array = view.folds.iter().map(|&f| fold_text(f)).collect();
+        table.insert("folds", Value::Array(folds));
+    }
+    if !view.expanded.is_empty() {
+        let rows: Array = view.expanded.iter().map(expanded_text).collect();
+        table.insert("expanded", Value::Array(rows));
+    }
+}
+
+/// A tree's expanded row as written: its overlay's place (`a` an address,
+/// `f` a file offset) and each step (`m` a member, `c` a chunk, `e` an
+/// element, `b` a bit-field), `a0x404040/m0/e3`.
+fn expanded_text(row: &Expanded) -> String {
+    let mut text = match row.anchor {
+        Anchor::Address(at) => format!("a0x{at:X}"),
+        Anchor::File(at) => format!("f0x{at:X}"),
+    };
+    for step in &row.steps {
+        let _ = match step {
+            Step::Member(i) => write!(text, "/m{i}"),
+            Step::Chunk(i) => write!(text, "/c{i}"),
+            Step::Element(i) => write!(text, "/e{i}"),
+            Step::Bit(i) => write!(text, "/b{i}"),
+        };
+    }
+    text
+}
+
+/// A tree's expanded row read back ([`expanded_text`]); `None` if it does
+/// not read.
+fn read_expanded(text: &str) -> Option<Expanded> {
+    let mut parts = text.split('/');
+    let place = parts.next()?;
+    let at = |s: &str| u64::from_str_radix(s.strip_prefix("0x")?, 16).ok();
+    let anchor = match place.split_at_checked(1)? {
+        ("a", rest) => Anchor::Address(at(rest)?),
+        ("f", rest) => Anchor::File(at(rest)?),
+        _ => return None,
+    };
+    let steps = parts
+        .map(|step| {
+            let (kind, n) = step.split_at_checked(1)?;
+            Some(match kind {
+                "m" => Step::Member(n.parse().ok()?),
+                "c" => Step::Chunk(n.parse().ok()?),
+                "e" => Step::Element(n.parse().ok()?),
+                "b" => Step::Bit(n.parse().ok()?),
+                _ => return None,
+            })
+        })
+        .collect::<Option<Vec<Step>>>()?;
+    Some(Expanded { anchor, steps })
+}
+
+/// A fold as written: its kind's letter and where it starts (`f:0x401000`;
+/// an item's file offset and address, `i:0x40:0x400040`).
+fn fold_text(fold: Fold) -> String {
+    match fold {
+        Fold::Item(offset, None) => format!("i:0x{offset:X}"),
+        Fold::Item(offset, Some(address)) => format!("i:0x{offset:X}:0x{address:X}"),
+        Fold::Function(address) => format!("f:0x{address:X}"),
+        Fold::Bytes(offset) => format!("x:0x{offset:X}"),
+        Fold::Block(address) => format!("b:0x{address:X}"),
+    }
+}
+
+/// A fold read back ([`fold_text`]); `None` if it does not read.
+fn read_fold(text: &str) -> Option<Fold> {
+    let number = |s: &str| u64::from_str_radix(s.strip_prefix("0x")?, 16).ok();
+    let mut parts = text.split(':');
+    let kind = parts.next()?;
+    let first = number(parts.next()?)?;
+    let second = parts.next().map(number);
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(match (kind, second) {
+        ("i", None) => Fold::Item(first, None),
+        ("i", Some(address)) => Fold::Item(first, Some(address?)),
+        ("f", None) => Fold::Function(first),
+        ("x", None) => Fold::Bytes(first),
+        ("b", None) => Fold::Block(first),
+        _ => return None,
+    })
 }
 
 /// A tab's place read back; `None` if it has none of it. A graph's zoom or
@@ -534,11 +638,49 @@ fn read_place(table: &InlineTable) -> Option<SavedPlace> {
                 followed: None,
             })
         });
+    let unified = table
+        .get("unified")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let layers = table
+        .get("layers")
+        .and_then(Value::as_inline_table)
+        .map_or_else(Layers::default, |layers| {
+            let on = |name: &str, default: bool| {
+                layers.get(name).and_then(Value::as_bool).unwrap_or(default)
+            };
+            let all = Layers::default();
+            Layers {
+                bytes: on("bytes", all.bytes),
+                hex: on("hex", all.hex),
+                structure: on("structure", all.structure),
+            }
+        });
+    let folds = table
+        .get("folds")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flat_map(Array::iter)
+        .filter_map(|f| read_fold(f.as_str()?))
+        .collect();
+    let expanded = table
+        .get("expanded")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flat_map(Array::iter)
+        .filter_map(|row| read_expanded(row.as_str()?))
+        .collect();
     let place = SavedPlace {
         at,
         graph,
         zoom,
         pan,
+        unified,
+        unified_view: UnifiedView {
+            layers,
+            folds,
+            expanded,
+        },
     };
     (place != SavedPlace::default()).then_some(place)
 }
@@ -556,7 +698,7 @@ fn resolve_places(
             .map(Tab::id)
     };
     read.iter()
-        .filter_map(|&(pane, index, place)| Some((tab_at(pane, index)?, place)))
+        .filter_map(|(pane, index, place)| Some((tab_at(*pane, *index)?, place.clone())))
         .collect()
 }
 
@@ -836,8 +978,33 @@ tabs = [{ kind = "xrefs", of = "0x10" }, { kind = "strings", preview = true }]
             .layout
             .open_new(PaneId(2), SavedTab::Listing, false)
             .unwrap();
+        // The unified listing, a layer off, folds of each kind flipped.
         let listing = SavedPlace {
             at: Some(0x40_1010),
+            unified: true,
+            unified_view: UnifiedView {
+                layers: Layers {
+                    bytes: false,
+                    ..Layers::default()
+                },
+                folds: vec![
+                    Fold::Item(0x40, None),
+                    Fold::Item(0x1000, Some(0x40_1000)),
+                    Fold::Function(0x40_1000),
+                    Fold::Bytes(0x2000),
+                    Fold::Block(0x40_1020),
+                ],
+                expanded: vec![
+                    Expanded {
+                        anchor: Anchor::File(0),
+                        steps: vec![Step::Member(2), Step::Chunk(1), Step::Element(3)],
+                    },
+                    Expanded {
+                        anchor: Anchor::Address(0x40_4040),
+                        steps: vec![Step::Member(0), Step::Bit(4)],
+                    },
+                ],
+            },
             ..SavedPlace::default()
         };
         // A graph zoomed out and panned on its function.
@@ -851,14 +1018,15 @@ tabs = [{ kind = "xrefs", of = "0x10" }, { kind = "strings", preview = true }]
                 y: 1312.5,
                 followed: None,
             }),
+            ..SavedPlace::default()
         };
         let in_c = SavedPlace {
             at: Some(0x40_1004),
             ..SavedPlace::default()
         };
-        before.places.insert(source, listing);
-        before.places.insert(graph, following);
-        before.places.insert(c, in_c);
+        before.places.insert(source, listing.clone());
+        before.places.insert(graph, following.clone());
+        before.places.insert(c, in_c.clone());
         let text = before.to_toml();
         let after = SavedLayout::from_toml(&text).unwrap();
         let tab =
@@ -879,6 +1047,13 @@ tabs = [{ kind = "xrefs", of = "0x10" }, { kind = "strings", preview = true }]
         let kept = partly.places.get(&graph).unwrap();
         assert_eq!((kept.zoom, kept.pan), (None, None));
         assert_eq!(kept.at, Some(0x40_1010));
+        // A fold that does not read is left out, the others kept.
+        let odd = text.replace("\"f:0x401000\"", "\"q:0x401000\"");
+        assert_ne!(odd, text);
+        let partly = SavedLayout::from_toml(&odd).unwrap();
+        let folds = &partly.places.get(&source).unwrap().unified_view.folds;
+        assert_eq!(folds.len(), 4);
+        assert!(!folds.contains(&Fold::Function(0x40_1000)));
 
         // Restored, the tabs keep their identities (and so their places).
         let restored = after.layout.map_tabs(|t| Some(t.clone()));
@@ -973,7 +1148,7 @@ tabs = [{ kind = "xrefs", of = "0x10" }, { kind = "strings", preview = true }]
             at: Some(0x40_2020),
             ..SavedPlace::default()
         };
-        before.places.insert(listing, place);
+        before.places.insert(listing, place.clone());
         let text = before.to_toml();
         let after = SavedLayout::from_toml(&text).unwrap();
         assert!(same_tree(after.layout.tree(), before.layout.tree()));

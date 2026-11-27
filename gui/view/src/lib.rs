@@ -134,6 +134,7 @@ pub mod symbols;
 pub mod tabs;
 pub mod talk;
 pub mod theme_css;
+pub mod unified;
 pub mod updates;
 
 /// A local symbol server for the tests (the engine's, shared).

@@ -169,6 +169,9 @@ impl Workspace {
         {
             self.places.keep_calls(tab, state.calls.clone());
         }
+        if let Some(unified) = self.unified_view_of(id) {
+            self.places.keep_unified(tab, unified);
+        }
         self.places.set_view(tab, view);
     }
 
@@ -185,6 +188,7 @@ impl Workspace {
             hex: s.hex.on,
             calls: s.calls.on,
             ir: s.ir.on,
+            unified: s.unified.on,
         })
     }
 
@@ -196,6 +200,10 @@ impl Workspace {
             .calls
             .then(|| self.places.calls(tab).cloned())
             .flatten();
+        // Its unified listing's layers and folds (a tab first shown: as
+        // they start), at its place.
+        let unified = self.places.unified(tab).cloned().unwrap_or_default();
+        let at = self.places.at(tab);
         let Some(state) = self.panes.get_mut(&id) else {
             return;
         };
@@ -207,7 +215,13 @@ impl Workspace {
         state.calls.graph = view.graph;
         state.hex.on = view.hex;
         state.hex.graph = view.graph;
-        let graph = view.graph && !view.hex && !calls_on;
+        state.unified.set_view(&unified);
+        let unified_on = view.unified && !view.hex && !calls_on;
+        if unified_on && !state.unified.on && state.unified.target.is_none() {
+            state.unified.target = at.map(|a| (a, true));
+        }
+        state.unified.on = unified_on;
+        let graph = view.graph && !view.hex && !calls_on && !unified_on;
         if graph && !state.graph.on {
             // An arrival: as the tab's memory says.
             state.graph.tab = None;

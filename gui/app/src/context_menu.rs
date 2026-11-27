@@ -37,6 +37,9 @@ pub struct ContextMenu {
     position: Point<Pixels>,
     /// The menu.
     popup: Entity<PopupMenu>,
+    /// The control that opened it (a button's, a chip's key), if one did:
+    /// pressed again, it closes the menu rather than opening it anew.
+    opener: Option<SharedString>,
     _sub: Subscription,
 }
 
@@ -337,6 +340,52 @@ impl Workspace {
         self.show_menu(position, popup, window, cx);
     }
 
+    /// The control `opener` (a button, a chip) pressed: its menu of
+    /// `items` opened at `position`, or closed if it is the one open (the
+    /// press dismissing a menu does not open it again where it was made).
+    pub fn toggle_own_menu(
+        &mut self,
+        opener: impl Into<SharedString>,
+        position: Point<Pixels>,
+        items: Vec<OwnItem>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let opener = opener.into();
+        if self
+            .context_menu
+            .as_ref()
+            .is_some_and(|m| m.opener.as_ref() == Some(&opener))
+        {
+            self.menu_gone(true, window, cx);
+            return;
+        }
+        self.open_own_menu(position, items, window, cx);
+        if let Some(menu) = &mut self.context_menu {
+            menu.opener = Some(opener);
+        }
+    }
+
+    /// The context menu gone (dismissed, or its opener pressed again): its
+    /// subject with it, and the focus back to the focused pane if it was
+    /// the menu's (`kept`) and nothing the menu ran took it.
+    fn menu_gone(&mut self, kept: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.context_menu = None;
+        self.menu_subject = None;
+        self.menu_folder = None;
+        if !self.about
+            && kept
+            && !self.files_and_folders.is_open()
+            && self.picker.is_none()
+            && self.prompt.is_none()
+            && self.field.is_none()
+        {
+            let id = self.layout.focused();
+            self.focus_pane(id, window, cx);
+        }
+        cx.notify();
+    }
+
     /// Opens a menu of `items` at `position`.
     pub fn open_own_menu(
         &mut self,
@@ -407,23 +456,10 @@ impl Workspace {
             |this, menu, _: &DismissEvent, window, cx| {
                 // A command the menu ran has run by now (its dispatch comes
                 // before the dismissal): the subject was for it alone.
-                this.context_menu = None;
-                this.menu_subject = None;
-                this.menu_folder = None;
                 let kept = window
                     .focused(cx)
                     .is_none_or(|f| menu.focus_handle(cx).contains(&f, window));
-                if !this.about
-                    && kept
-                    && !this.files_and_folders.is_open()
-                    && this.picker.is_none()
-                    && this.prompt.is_none()
-                    && this.field.is_none()
-                {
-                    let id = this.layout.focused();
-                    this.focus_pane(id, window, cx);
-                }
-                cx.notify();
+                this.menu_gone(kept, window, cx);
             },
         );
         popup.update(cx, |p, cx| {
@@ -437,6 +473,7 @@ impl Workspace {
         self.context_menu = Some(ContextMenu {
             position,
             popup,
+            opener: None,
             _sub: sub,
         });
         cx.notify();

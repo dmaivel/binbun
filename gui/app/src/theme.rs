@@ -524,7 +524,7 @@ fn luminance(c: u32) -> f64 {
 }
 
 /// `fg` composited over the opaque `bg`.
-fn over(fg: u32, bg: u32) -> u32 {
+pub(crate) fn over(fg: u32, bg: u32) -> u32 {
     let a = f64::from(fg & 0xff) / 255.0;
     let mix = |shift: u32| {
         let f = f64::from((fg >> shift) & 0xff);

@@ -195,7 +195,7 @@ impl HexUi {
 }
 
 /// The colour a kind's bytes are tinted with, if any.
-fn kind_color(theme: &Theme, kind: Kind) -> Option<u32> {
+pub(crate) fn kind_color(theme: &Theme, kind: Kind) -> Option<u32> {
     match kind {
         Kind::Header => Some(theme.keyword),
         Kind::Table => Some(theme.type_),
@@ -387,6 +387,13 @@ impl Workspace {
         laid
     }
 
+    /// Lays out every one of the whole program's globals not laid out yet
+    /// (the unified listing shows them all); whether any was.
+    pub(crate) fn lay_out_all_globals(&mut self) -> bool {
+        let n = self.hex.program.globals().len();
+        self.lay_out_globals((0..n).collect())
+    }
+
     /// The user renamed something: the globals' names again.
     pub fn hex_renamed(&mut self) {
         let Some(session) = &self.session else {
@@ -400,6 +407,11 @@ impl Workspace {
     /// The byte space, if the image is parsed.
     pub(crate) fn hex_image(&self) -> Option<Arc<HexImage>> {
         self.hex.image.as_ref().map(|(_, h)| Arc::clone(h))
+    }
+
+    /// The overlays: the headers', the typed globals', the user's.
+    pub(crate) fn hex_overlays(&self) -> Arc<Vec<Overlay>> {
+        Arc::clone(&self.hex.overlays)
     }
 
     /// The overview of `mode`.
@@ -476,20 +488,42 @@ impl Workspace {
             file_offsets: shown && hex.is_some_and(|h| h.mode == Mode::File),
             entropy: hex.is_some_and(|h| h.entropy),
             hex_side: hex.is_some_and(|h| !h.side_hidden),
-            user_type: shown && self.user_overlay_at(id).is_some(),
+            user_type: self.user_overlay_at(id).is_some(),
             ..Facts::default()
         }
     }
 
+    /// Pane `id`'s byte cursor and the bytes it selects (in its space): the
+    /// hex view's, else the unified listing's rows' (their first byte the
+    /// cursor); none in other views.
+    fn pane_byte_range(&self, id: PaneId) -> Option<(Mode, u64, Range<u64>)> {
+        if self.shows_unified(id) {
+            let (mode, bytes) = self.unified_byte_range(id)?;
+            let cursor = self.unified_place(id)?.1;
+            return Some((mode, cursor, bytes));
+        }
+        let hex = &self.panes.get(&id).filter(|_| self.shows_hex(id))?.hex;
+        Some((hex.mode, hex.cursor, hex.selection()))
+    }
+
     /// The index in the user's overlays of the one holding pane `id`'s
-    /// cursor.
+    /// byte cursor.
     fn user_overlay_at(&self, id: PaneId) -> Option<usize> {
         let image = self.hex.image.as_ref().map(|(_, h)| h)?;
-        let hex = &self.panes.get(&id)?.hex;
+        let (mode, cursor, _) = self.pane_byte_range(id)?;
         self.hex
             .user
             .iter()
-            .rposition(|o| image.locate(o, hex.mode, hex.cursor).is_some())
+            .rposition(|o| image.locate(o, mode, cursor).is_some())
+    }
+
+    /// Removes the user's type holding pane `id`'s byte cursor.
+    pub(crate) fn remove_user_type(&mut self, id: PaneId) {
+        if let Some(k) = self.user_overlay_at(id) {
+            self.hex.user.remove(k);
+            self.hex.dirty = true;
+            self.save_user_overlays();
+        }
     }
 
     /// Runs `command` where the hex view takes it; whether it did.
@@ -580,13 +614,7 @@ impl Workspace {
                 }
             }
             Command::ApplyType => self.open_type_field(id, window, cx),
-            Command::RemoveType => {
-                if let Some(k) = self.user_overlay_at(id) {
-                    self.hex.user.remove(k);
-                    self.hex.dirty = true;
-                    self.save_user_overlays();
-                }
-            }
+            Command::RemoveType => self.remove_user_type(id),
             Command::Follow => {
                 let little = image.little();
                 let width = u64::from(image.model().pointer);
@@ -616,6 +644,7 @@ impl Workspace {
         let Some(state) = self.panes.get_mut(&id) else {
             return;
         };
+        state.unified.on = false;
         if !state.hex.on {
             state.hex.on = true;
             state.hex.graph = state.graph.on;
@@ -800,19 +829,20 @@ impl Workspace {
         self.hex_moved(id);
     }
 
-    /// Copies pane `id`'s selection as `format`.
-    fn copy_hex(&self, id: PaneId, format: CopyFormat, cx: &mut Context<Self>) {
-        let (Some(image), Some(session), Some(state)) =
-            (self.hex_image(), self.session.as_ref(), self.panes.get(&id))
-        else {
+    /// Copies pane `id`'s selected bytes as `format`.
+    pub(crate) fn copy_hex(&self, id: PaneId, format: CopyFormat, cx: &mut Context<Self>) {
+        let (Some(image), Some(session), Some((mode, _, selection))) = (
+            self.hex_image(),
+            self.session.as_ref(),
+            self.pane_byte_range(id),
+        ) else {
             return;
         };
         let Some((bytes, _)) = session.loaded() else {
             return;
         };
-        let selection = state.hex.selection();
         let end = selection.end.min(selection.start + COPIED);
-        let read = image.read(bytes, state.hex.mode, selection.start..end);
+        let read = image.read(bytes, mode, selection.start..end);
         if !read.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(copy_text(&read, format)));
         }
@@ -820,17 +850,22 @@ impl Workspace {
 
     // ---- the apply-type field ----
 
-    /// `Alt+Q`: the field for a C type at pane `id`'s cursor (the user's
-    /// type there to edit, if any).
-    fn open_type_field(&mut self, id: PaneId, window: &mut Window, cx: &mut Context<Self>) {
+    /// `Alt+Q`: the field for a C type at pane `id`'s selected bytes (the
+    /// user's type there to edit, if any).
+    pub(crate) fn open_type_field(
+        &mut self,
+        id: PaneId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(image) = self.hex_image() else {
             return;
         };
-        let Some(hex) = self.panes.get(&id).map(|s| &s.hex) else {
+        let Some((mode, _, selection)) = self.pane_byte_range(id) else {
             return;
         };
-        let start = hex.selection().start;
-        let anchor = match (hex.mode, image.address_of(start, hex.mode)) {
+        let start = selection.start;
+        let anchor = match (mode, image.address_of(start, mode)) {
             (_, Some(address)) => Anchor::Address(address),
             (Mode::File, None) => Anchor::File(start),
             (Mode::Address, None) => return,
@@ -1709,42 +1744,28 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// The apply-type field, under its pane's cursor row: an overlay of
-    /// the window, outside the pane's key context (so its keys are text,
-    /// never the pane's commands).
+    /// The apply-type field, under its pane's cursor row (the hex view's,
+    /// the unified listing's): an overlay of the window, outside the
+    /// pane's key context (so its keys are text, never the pane's
+    /// commands).
     pub fn render_type_field(&mut self) -> Option<AnyElement> {
         let theme = self.theme;
         let id = self.hex.field.as_ref()?.pane;
-        if !self.shows_hex(id) {
+        let (left, top) = if self.shows_hex(id) {
+            self.hex_field_place(id)?
+        } else if self.shows_unified(id) {
+            let (at, row_h) = self.unified_type_at(id)?;
+            (at.x, at.y + px(row_h + 2.0))
+        } else {
             self.hex.field = None;
             return None;
-        }
-        let image = self.hex_image()?;
-        let mode = self.panes.get(&id)?.hex.mode;
+        };
         let field = self.hex.field.as_ref()?;
-        let state = self.panes.get(&id)?;
-        let hex = &state.hex;
-        let origin = state.bounds.get().origin;
-        let row_h = self.row(self.settings.listing_line_height);
-        let cw = self.char_width.unwrap_or(8.0);
-        let columns = Columns {
-            prefix: image.prefix_width(mode),
-        };
-        let row = image.row_of(hex.mode, hex.cursor);
-        let first = hex.scroll.anchor.line;
-        let y = if row >= first {
-            f(row - first + 1) * row_h - hex.scroll.anchor.offset
-        } else {
-            0.0
-        };
-        let start = image.row_start(hex.mode, row).unwrap_or(hex.cursor);
-        let x = self.row(MARGIN) + f(columns.hex(hex.cursor.saturating_sub(start)) as u64) * cw
-            - hex.side.x;
         Some(
             div()
                 .absolute()
-                .top(origin.y + px(y + 2.0))
-                .left(origin.x + px(x))
+                .top(top)
+                .left(left)
                 .w(self.z(460.0))
                 .flex()
                 .flex_col()
@@ -1778,6 +1799,32 @@ impl Workspace {
                 })
                 .into_any_element(),
         )
+    }
+
+    /// Where the apply-type field goes in hex pane `id`, in the window:
+    /// under the cursor's row, at its byte.
+    fn hex_field_place(&self, id: PaneId) -> Option<(Pixels, Pixels)> {
+        let image = self.hex_image()?;
+        let state = self.panes.get(&id)?;
+        let hex = &state.hex;
+        let mode = hex.mode;
+        let origin = state.bounds.get().origin;
+        let row_h = self.row(self.settings.listing_line_height);
+        let cw = self.char_width.unwrap_or(8.0);
+        let columns = Columns {
+            prefix: image.prefix_width(mode),
+        };
+        let row = image.row_of(hex.mode, hex.cursor);
+        let first = hex.scroll.anchor.line;
+        let y = if row >= first {
+            f(row - first + 1) * row_h - hex.scroll.anchor.offset
+        } else {
+            0.0
+        };
+        let start = image.row_start(hex.mode, row).unwrap_or(hex.cursor);
+        let x = self.row(MARGIN) + f(columns.hex(hex.cursor.saturating_sub(start)) as u64) * cw
+            - hex.side.x;
+        Some((origin.x + px(x), origin.y + px(y + 2.0)))
     }
 
     /// What is under `position` in pane `id`: the strip (and where on it,

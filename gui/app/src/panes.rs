@@ -65,6 +65,7 @@ const HAIRLINE: f32 = 1.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ViewChoice {
     Listing,
+    Unified,
     Graph,
     Hex,
     Calls,
@@ -79,6 +80,7 @@ impl ViewChoice {
     const fn label(self) -> &'static str {
         match self {
             Self::Listing => "Listing",
+            Self::Unified => "Unified",
             Self::Graph => "Graph",
             Self::Hex => "Hex",
             Self::Calls => "Calls",
@@ -95,7 +97,9 @@ impl ViewChoice {
         match self {
             Self::Exact => "Exact C",
             Self::Reading | Self::C => "C",
-            Self::Listing | Self::Graph | Self::Hex | Self::Calls | Self::Ir => self.label(),
+            Self::Listing | Self::Unified | Self::Graph | Self::Hex | Self::Calls | Self::Ir => {
+                self.label()
+            }
         }
     }
 
@@ -103,6 +107,7 @@ impl ViewChoice {
     const fn command(self) -> Command {
         match self {
             Self::Listing | Self::C => Command::SwitchView,
+            Self::Unified => Command::ToggleUnified,
             Self::Graph => Command::ToggleGraph,
             Self::Hex => Command::ToggleHex,
             Self::Calls => Command::ToggleCalls,
@@ -401,6 +406,7 @@ impl Workspace {
     ) -> AnyElement {
         let kind = self.layout.active(id).cloned();
         let content = match &kind {
+            Some(TabKind::Listing) if self.shows_unified(id) => self.render_unified(id, window, cx),
             Some(TabKind::Listing) if self.shows_hex(id) => self.render_hex(id, window, cx),
             Some(TabKind::Listing) if self.shows_calls(id) => self.render_calls(id, window, cx),
             Some(TabKind::Listing) if self.shows_graph(id) => self.render_graph(id, window, cx),
@@ -1041,6 +1047,7 @@ impl Workspace {
             }
         }
         if matches!(self.layout.active(id), Some(TabKind::Listing)) {
+            row = row.children(self.unified_tools(id, cx));
             row = row.children(self.hex_tools(id, cx));
             row = row.children(self.calls_tools(id, cx));
         }
@@ -1063,7 +1070,8 @@ impl Workspace {
         let theme = self.theme;
         let listing = matches!(self.layout.active(id), Some(TabKind::Listing));
         let c = self.c_view_of(id);
-        let hex = listing && self.shows_hex(id);
+        let unified = listing && self.shows_unified(id);
+        let hex = listing && !unified && self.shows_hex(id);
         let calls = listing && self.shows_calls(id);
         let graph = listing && !hex && !calls && self.shows_graph(id);
         let ir = c.is_some() && self.shows_ir(id);
@@ -1075,6 +1083,7 @@ impl Workspace {
             Some(_) if ir => ViewChoice::Ir,
             Some(View::Reading) => ViewChoice::Reading,
             Some(View::Exact) => ViewChoice::Exact,
+            None if unified => ViewChoice::Unified,
             None if hex => ViewChoice::Hex,
             None if calls => ViewChoice::Calls,
             None if graph => ViewChoice::Graph,
@@ -1083,6 +1092,7 @@ impl Workspace {
         // Each view, whether it can be shown here, its keys.
         let choices = [
             (ViewChoice::Listing, true),
+            (ViewChoice::Unified, true),
             (ViewChoice::Graph, in_function || graph),
             (ViewChoice::Hex, self.hex_image().is_some() || hex),
             (ViewChoice::Calls, in_function || calls),
@@ -1131,7 +1141,7 @@ impl Workspace {
                             item
                         })
                         .collect();
-                    this.open_own_menu(e.position, items, window, cx);
+                    this.toggle_own_menu(format!("view {}", id.0), e.position, items, window, cx);
                 }),
             )
             .child(shown.menu_label())
@@ -1174,12 +1184,18 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if choice != ViewChoice::Unified {
+            self.leave_unified(id);
+        }
         match choice {
             ViewChoice::Listing | ViewChoice::Graph => {
                 self.set_code_view(id, &TabKind::Listing);
                 self.leave_hex(id);
                 self.leave_calls(id);
                 self.set_graph(id, choice == ViewChoice::Graph);
+            }
+            ViewChoice::Unified => {
+                self.enter_unified(id);
             }
             ViewChoice::Hex => {
                 self.set_code_view(id, &TabKind::Listing);

@@ -378,6 +378,7 @@ impl Workspace {
                 || s.c.scroll.smooth.is_moving()
                 || s.list.scroll.smooth.is_moving()
                 || s.ir.scroll.smooth.is_moving()
+                || s.unified.scroll.smooth.is_moving()
         }) || self
             .sidebar
             .as_ref()
@@ -421,6 +422,11 @@ impl Workspace {
                 continue;
             };
             let list_total = state.list.rows.len() as u64;
+            let unified_total = state.unified.flat.as_ref().map_or(0, |f| f.len() as u64);
+            state
+                .unified
+                .scroll
+                .frame(dt, duration, l_row, unified_total, l_rows);
             state
                 .listing
                 .scroll

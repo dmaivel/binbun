@@ -674,6 +674,12 @@ impl Listing {
         &self.stats
     }
 
+    /// The first line (a header, a label, a cross-reference: the first of
+    /// any) of the items at `address` and after.
+    pub fn first_line(&self, address: u64) -> u64 {
+        self.rows.partition_point(|r| r.address < address) as u64
+    }
+
     /// The content line (instruction or data, not header or label) of the
     /// item holding `address`, else the nearest line after it.
     pub fn line_of(&self, address: u64) -> u64 {

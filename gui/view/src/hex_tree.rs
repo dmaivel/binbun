@@ -35,7 +35,7 @@ use crate::hex_types::{BitField, Node, Shape};
 pub const CHUNK: u64 = 100;
 
 /// A step from a row to one of its children.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Step {
     /// A record's member, by index.
     Member(usize),
@@ -352,6 +352,7 @@ pub fn row(
     let overlay = overlays.get(key.root)?;
     let found = resolve(overlays, key)?;
     let range = found.offset..found.offset + found.size;
+    let ty = type_of(found.item);
     let (ty, bits, value) = match found.item {
         Item::Node(node) => {
             let value = if node.is_leaf() && node.size <= 4096 {
@@ -359,19 +360,11 @@ pub fn row(
             } else {
                 overlay.label(&range).unwrap_or_default().to_owned()
             };
-            (node.ty.clone(), None, value)
+            (ty, None, value)
         }
-        Item::Chunk {
-            element,
-            first,
-            end,
-        } => (
-            format!("{}[{}]", element.ty, end - first),
-            None,
-            String::new(),
-        ),
+        Item::Chunk { .. } => (ty, None, String::new()),
         Item::Bit { field, .. } => (
-            format!("{} : {}", field.ty, field.width),
+            ty,
             Some((field.bit, field.width)),
             field.value(&bytes(overlay, range), little),
         ),
@@ -384,6 +377,48 @@ pub fn row(
         bits,
         value,
     })
+}
+
+/// Row `item`'s type as C writes it ([`Row::ty`]).
+fn type_of(item: Item<'_>) -> String {
+    match item {
+        Item::Node(node) => node.ty.clone(),
+        Item::Chunk {
+            element,
+            first,
+            end,
+        } => format!("{}[{}]", element.ty, end - first),
+        Item::Bit { field, .. } => format!("{} : {}", field.ty, field.width),
+    }
+}
+
+/// The widest name and the widest type (in characters) among the children
+/// of row `parent`, as [`row`] writes them: the columns they line up in.
+/// The type column is as wide as the types of the children with values
+/// of their own (leaves, bit-fields: their `=` lines up after it), if any.
+pub fn child_columns(overlays: &[Overlay], parent: &Key) -> (usize, usize) {
+    let Some(found) = resolve(overlays, parent) else {
+        return (0, 0);
+    };
+    let (names, valued, types) = found
+        .item
+        .children()
+        .into_iter()
+        .filter_map(|step| resolve(overlays, &parent.child(step)))
+        .fold((0, 0, 0), |(names, valued, types), child| {
+            let width = type_of(child.item).chars().count();
+            let leaf = match child.item {
+                Item::Node(node) => node.is_leaf(),
+                Item::Bit { .. } => true,
+                Item::Chunk { .. } => false,
+            };
+            (
+                names.max(child.name.chars().count()),
+                if leaf { valued.max(width) } else { valued },
+                types.max(width),
+            )
+        });
+    (names, if valued > 0 { valued } else { types })
 }
 
 /// The tree's state: what is expanded, the selected row.
@@ -420,6 +455,16 @@ impl StructTree {
         }
     }
 
+    /// The rows whose children are shown.
+    pub fn expanded(&self) -> impl Iterator<Item = &Key> {
+        self.expanded.iter()
+    }
+
+    /// Shows `key`'s children.
+    pub fn expand(&mut self, key: Key) {
+        self.expanded.insert(key);
+    }
+
     /// Selects `key`, every row above it expanded.
     pub fn reveal(&mut self, key: &Key) {
         let mut above = key.parent();
@@ -437,6 +482,14 @@ impl StructTree {
         for root in 0..overlays.len() {
             self.push(overlays, &Key::root(root), 0, &mut out);
         }
+        out
+    }
+
+    /// The lines `key` shows, whatever its ancestors' state: its own (at
+    /// depth 0), and its children's if it is expanded, depth first.
+    pub fn lines_under(&self, overlays: &[Overlay], key: &Key) -> Vec<Line> {
+        let mut out = Vec::new();
+        self.push(overlays, key, 0, &mut out);
         out
     }
 

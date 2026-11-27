@@ -61,7 +61,7 @@ impl Workspace {
             && self
                 .panes
                 .get(&id)
-                .is_some_and(|s| !s.hex.on && !s.graph.on && !s.calls.on)
+                .is_some_and(|s| !s.hex.on && !s.graph.on && !s.calls.on && !s.unified.on)
     }
 
     /// Whether pane `id` shows C (not as the IR).
@@ -87,6 +87,9 @@ impl Workspace {
     pub fn pane_bytes(&self, id: PaneId) -> Option<(u64, u64, bool)> {
         if self.shows_hex(id) {
             return self.hex_bytes(id);
+        }
+        if self.shows_unified(id) {
+            return self.unified_bytes(id);
         }
         if !self.shows_listing_text(id) {
             return None;
@@ -114,6 +117,11 @@ impl Workspace {
         let id = self.layout.focused();
         (self.shows_listing_text(id) && self.listing_selection(id).is_some())
             || (self.shows_c(id) && self.c_selection(id).is_some())
+            || (self.shows_unified(id)
+                && self
+                    .panes
+                    .get(&id)
+                    .is_some_and(|s| s.unified.selection.anchor.is_some()))
     }
 
     /// Pane `id`'s selection as presence says it: addresses in the listing
@@ -204,6 +212,7 @@ impl Workspace {
     pub fn clear_selection(&mut self) -> bool {
         let id = self.layout.focused();
         let (listing, c) = (self.shows_listing_text(id), self.shows_c(id));
+        let unified = self.shows_unified(id);
         let Some(state) = self.panes.get_mut(&id) else {
             return false;
         };
@@ -212,6 +221,8 @@ impl Workspace {
             state.listing.selection.clear()
         } else if c {
             state.c.selection.clear(cursor)
+        } else if unified {
+            state.unified.selection.clear()
         } else {
             false
         };
@@ -234,6 +245,9 @@ impl Workspace {
     /// The text Copy takes from the focused pane's selection.
     fn selection_text(&self) -> Option<String> {
         let id = self.layout.focused();
+        if self.shows_unified(id) {
+            return self.unified_selection_text(id);
+        }
         if self.shows_listing_text(id) {
             let lines = self.listing_selection(id)?;
             let session = self.session.as_ref()?;
@@ -432,6 +446,10 @@ impl Workspace {
     /// fixed end to the end, so the view stays at the top.
     pub fn select_all(&mut self) {
         let id = self.layout.focused();
+        if self.shows_unified(id) {
+            self.unified_select_all(id);
+            return;
+        }
         if self.shows_c(id) {
             let Some(document) = self
                 .layout

@@ -19,6 +19,7 @@ use crate::calls::CallsPane;
 use crate::graph_memory::GraphMemory;
 use crate::layout::{PaneId, TabId};
 use crate::listing::Listing;
+use crate::unified::UnifiedView;
 
 /// How a navigation opens its target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -102,6 +103,8 @@ pub struct View {
     pub calls: bool,
     /// Its C shown as the IR.
     pub ir: bool,
+    /// Its listing shown as the unified listing.
+    pub unified: bool,
 }
 
 /// Each tab's place and view, and which tab each pane showed last (a
@@ -119,6 +122,8 @@ pub struct Places {
     shown: HashMap<PaneId, TabId>,
     /// Where each tab's graph was left ([`GraphMemory`]).
     graphs: HashMap<TabId, GraphMemory>,
+    /// Each tab's unified listing's layers and folds, as last left.
+    unified: HashMap<TabId, UnifiedView>,
 }
 
 impl Places {
@@ -163,6 +168,17 @@ impl Places {
         self.calls.get(&tab)
     }
 
+    /// Tab `tab`'s unified listing was left with `view`.
+    pub fn keep_unified(&mut self, tab: TabId, view: UnifiedView) {
+        self.unified.insert(tab, view);
+    }
+
+    /// The layers and folds tab `tab`'s unified listing was left with, if
+    /// any.
+    pub fn unified(&self, tab: TabId) -> Option<&UnifiedView> {
+        self.unified.get(&tab)
+    }
+
     /// Tab `tab` is at `address` now.
     pub fn set(&mut self, tab: TabId, address: u64) {
         self.at.insert(tab, address);
@@ -176,6 +192,7 @@ impl Places {
         self.views.retain(|&tab, _| live(tab));
         self.calls.retain(|&tab, _| live(tab));
         self.graphs.retain(|&tab, _| live(tab));
+        self.unified.retain(|&tab, _| live(tab));
     }
 
     /// Pane `pane` shows tab `tab` now, the tab it showed before left in
@@ -206,18 +223,12 @@ impl Places {
     }
 
     /// Tab `tab` as it was saved (`layout.toml`): its place, its view (the
-    /// graph or the text).
-    pub fn restore(&mut self, tab: TabId, at: Option<u64>, graph: bool) {
+    /// graph, the unified listing or the text).
+    pub fn restore(&mut self, tab: TabId, at: Option<u64>, view: View) {
         if let Some(at) = at {
             self.at.insert(tab, at);
         }
-        self.views.insert(
-            tab,
-            View {
-                graph,
-                ..View::default()
-            },
-        );
+        self.views.insert(tab, view);
     }
 }
 
