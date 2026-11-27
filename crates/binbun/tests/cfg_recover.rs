@@ -1053,3 +1053,48 @@ fn a_single_target_that_is_a_slot_with_a_known_value_or_an_address_is_followed()
     assert!(returns(&program, BASE));
     assert_eq!(program.unresolved().count(), 0);
 }
+
+#[test]
+fn nested_loops_have_their_headers_dominators_and_bodies() {
+    let code = [
+        0x31, 0xc0, // 1000 xor eax, eax
+        0x31, 0xc9, // 1002 xor ecx, ecx       (the outer loop's head)
+        0xff, 0xc0, // 1004 inc eax            (the inner loop's head)
+        0x39, 0xf8, // 1006 cmp eax, edi
+        0x7c, 0xfa, // 1008 jl 1004
+        0xff, 0xc1, // 100a inc ecx
+        0x39, 0xf1, // 100c cmp ecx, esi
+        0x7c, 0xf2, // 100e jl 1002
+        0xc3, //       1010 ret
+    ];
+    let program = run(&code, &[BASE], &NothingKnown);
+    let function = program.function_at(BASE).unwrap();
+    let start = |id| program.blocks[id].start;
+    let mut dominators: Vec<(u64, u64)> = program
+        .dominators(function)
+        .into_iter()
+        .map(|(block, dominator)| (start(block), start(dominator)))
+        .collect();
+    dominators.sort_unstable();
+    assert_eq!(
+        dominators,
+        [
+            (0x1002, 0x1000),
+            (0x1004, 0x1002),
+            (0x100a, 0x1004),
+            (0x1010, 0x100a)
+        ]
+    );
+    let loops: Vec<(u64, Vec<u64>)> = program
+        .loops(function)
+        .into_iter()
+        .map(|l| (start(l.header), l.blocks.into_iter().map(start).collect()))
+        .collect();
+    assert_eq!(
+        loops,
+        [
+            (0x1002, vec![0x1002, 0x1004, 0x100a]),
+            (0x1004, vec![0x1004])
+        ]
+    );
+}

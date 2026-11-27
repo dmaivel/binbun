@@ -78,6 +78,7 @@
 //! its [`Function::funclets`] and marked [`Function::part_of`] (a
 //! function's funclets are its root's: joined parts' funclets too).
 
+mod loops;
 mod parts;
 mod recover;
 
@@ -86,6 +87,7 @@ use std::collections::BTreeMap;
 use binbun_isa::Target;
 use binbun_semantics::core::{Arena, Id, Memory};
 
+pub use loops::Loop;
 pub use recover::{Options, recover};
 
 /// A basic block's id.
