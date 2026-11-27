@@ -1075,12 +1075,13 @@ fn brightness(c: u32) -> u32 {
     2126 * u32::from(r) + 7152 * u32::from(g) + 722 * u32::from(b)
 }
 
-/// An edge's colour by kind: taken green, not taken red, unwinding the
-/// number token, the rest the muted foreground.
+/// An edge's colour by kind: taken the theme's green, not taken its red
+/// (`--branch-taken`, `--branch-not-taken`), unwinding the number token,
+/// the rest the muted foreground.
 fn edge_colour(theme: &Theme, kind: EdgeKind) -> u32 {
     match kind {
-        EdgeKind::Taken => theme.string,
-        EdgeKind::NotTaken => theme.error,
+        EdgeKind::Taken => theme.branch_taken,
+        EdgeKind::NotTaken => theme.branch_not_taken,
         EdgeKind::Unwind => theme.number,
         EdgeKind::Jump | EdgeKind::Next | EdgeKind::Case => theme.text_placeholder,
     }

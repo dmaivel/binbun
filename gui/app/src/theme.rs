@@ -279,6 +279,12 @@ theme! {
     map_import: "--map-import",
     /// The feature map's unexplored bytes (else `--number`).
     map_unexplored: "--map-unexplored",
+    /// The graph's edges of taken branches: a green of the theme's (else
+    /// `--success`).
+    branch_taken: "--branch-taken",
+    /// The graph's edges of branches not taken: a red of the theme's (else
+    /// `--error`).
+    branch_not_taken: "--branch-not-taken",
 }
 
 impl Theme {
@@ -672,6 +678,8 @@ const PARENTS: &[(&str, &str)] = &[
     ("--map-string", "--string"),
     ("--map-import", "--keyword"),
     ("--map-unexplored", "--number"),
+    ("--branch-taken", "--success"),
+    ("--branch-not-taken", "--error"),
 ];
 
 /// `n` (a checked fraction, 0 to 1) as an `f32`.

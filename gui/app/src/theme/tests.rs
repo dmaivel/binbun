@@ -445,6 +445,31 @@ fn the_feature_maps_kinds_are_distinct_colours_off_the_panel() {
     assert!(found.is_empty(), "{found:#?}");
 }
 
+#[test]
+fn the_graphs_branches_are_a_green_and_a_red_in_every_theme() {
+    let themes = Themes::new(None);
+    // CIE L*a*b* hue angle (degrees) and chroma.
+    let hue = |c: u32| {
+        let [_, a, b] = lab(c);
+        (b.atan2(a).to_degrees().rem_euclid(360.0), a.hypot(b))
+    };
+    let mut found = Vec::new();
+    for &(name, dark) in NAMES {
+        let theme = themes.load(name, dark).theme;
+        let (taken, chroma) = hue(theme.branch_taken);
+        if !(100.0..=170.0).contains(&taken) || chroma < 25.0 {
+            found.push(format!("{name} taken: hue {taken:.0}, chroma {chroma:.0}"));
+        }
+        let (not_taken, chroma) = hue(theme.branch_not_taken);
+        if (45.0..345.0).contains(&not_taken) || chroma < 25.0 {
+            found.push(format!(
+                "{name} not taken: hue {not_taken:.0}, chroma {chroma:.0}"
+            ));
+        }
+    }
+    assert!(found.is_empty(), "{found:#?}");
+}
+
 impl Scratch {
     fn new(name: &str) -> Self {
         let dir = std::env::temp_dir().join(format!("binbun-themes-{name}-{}", std::process::id()));

@@ -92,6 +92,8 @@
  * Deviation: #8c93b7 is 2.33:1 against the editor, so --address-function,
  * --address-data, --data-xref take #727ca8 (the inlay-hint colour, --hint,
  * 3.14:1), the nearest palette colour of that hue reaching 3:1.
+ * The graph's taken branches take the green (--branch-taken): --success
+ * is the git-add teal.
  */
 
 :root {
@@ -198,6 +200,7 @@
   --lit: color-mix(in srgb, var(--panel) 50%, transparent);
   --lit-edge: var(--border-focused);
   --agreed: var(--success);
+  --branch-taken: var(--green);
   --arrow-1: var(--blue);
   --arrow-2: var(--orange);
   --arrow-3: var(--magenta);

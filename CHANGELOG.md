@@ -72,6 +72,7 @@ always read by later versions.
 - A variable or object that holds allocations of known sizes (`malloc(3)` and `malloc(2)` on two paths) is no pointer to a struct larger than the smallest of them, so clang no longer warns that an allocation is too small for its type: on bash, 14 of those warnings go from the exact view.
 - A struct that starts some bytes into an object a call returns (Lua's `lua_State`, 8 bytes into the `LG` its `global_State` follows) takes no fields from that function's accesses to the object, so it is not printed as large as the whole object: on Lua's interpreter, struct field precision rises from 61% to 67%, and pointer parameters whose pointee has the right size from 36% to 43%.
 - A string constant held in a local and passed to two calls prints as the string literal at both, not as its address.
+- GUI: the graph's taken and not-taken edges are green and red in every bundled theme. Taken edges took the theme's string colour (orange in Dark Modern, blue in the GitHub themes, yellow in Dracula and Monokai, cyan in Solarized), and Solarized Dark's not-taken edges were near white. A theme sets them with `--branch-taken` and `--branch-not-taken`, else its `--success` and `--error`.
 
 ## v0.1.0 (2026-11-23)
 

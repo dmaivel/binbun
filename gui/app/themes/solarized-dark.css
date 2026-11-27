@@ -61,6 +61,8 @@
  * Deviation: the comment colour, base01, is 2.79:1 against the editor,
  * so function addresses take base00, the nearest Solarized grey that
  * reaches 3:1.
+ * The graph's branches not taken take the red (--branch-not-taken):
+ * --error is the theme's pale #ffeaea.
  */
 
 :root {
@@ -164,6 +166,7 @@
   --lit: color-mix(in srgb, var(--panel) 50%, transparent);
   --lit-edge: var(--border-focused);
   --agreed: var(--success);
+  --branch-not-taken: var(--red);
   --arrow-1: var(--blue);
   --arrow-2: var(--orange);
   --arrow-3: var(--violet);

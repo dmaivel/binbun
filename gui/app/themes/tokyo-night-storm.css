@@ -76,6 +76,8 @@
  * Deviation: #ba3c97 is 2.90:1 against the editor, so --code-xref takes
  * #b267e6 (the theme's debug-token violet, 4.14:1), the nearest palette
  * colour of that hue reaching 3:1.
+ * The graph's taken branches take the green (--branch-taken): --success
+ * is the git-add teal.
  */
 
 :root {
@@ -182,6 +184,7 @@
   --lit: color-mix(in srgb, var(--panel) 50%, transparent);
   --lit-edge: var(--border-focused);
   --agreed: var(--success);
+  --branch-taken: var(--green);
   --arrow-1: var(--blue);
   --arrow-2: var(--orange);
   --arrow-3: var(--magenta);
