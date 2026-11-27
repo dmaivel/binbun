@@ -3,8 +3,9 @@
 //! address right-aligned in muted tabular figures (unless the name already
 //! says it: `sub_180001000`); folders open and close
 //! in place. Keyboard first: arrows move, Left and Right close and open,
-//! Enter goes there (or opens the folder); typing filters, Escape clears
-//! the filter, then gives the focus back to the code. A click opens an
+//! Enter goes there (or opens the folder); typing filters (`Ctrl+F` shows
+//! the filter's field first, empty), Escape clears the filter, then
+//! closes its field, then gives the focus back to the code. A click opens an
 //! item in the code pane's preview tab, the focus kept here (a double
 //! click pins it and gives it the focus; Ctrl+click or a middle click: a
 //! new tab). The bookmarks are a folder pinned at the top (Delete removes
@@ -85,6 +86,7 @@ impl Workspace {
             map: Map::default(),
             open: Map::default_open(),
             query: String::new(),
+            filtering: false,
             rows: Vec::new(),
             selected: 0,
             scroll: Scroller::default(),
@@ -290,6 +292,7 @@ impl Workspace {
         };
         let last = s.rows.len().saturating_sub(1);
         let filtered = !s.query.is_empty();
+        let field = s.filtering;
         let page = rows.saturating_sub(1).max(1);
         let select = |this: &mut Self, to: &dyn Fn(usize) -> usize| {
             if let Some(s) = &mut this.sidebar {
@@ -310,9 +313,14 @@ impl Workspace {
                 let k = s.selected;
                 self.map_activate(k, Opening::Linked { focus: true }, window, cx);
             }
-            "escape" if !filtered => {
+            "escape" if !filtered && !field => {
                 let to = self.layout.focused();
                 self.focus_pane(to, window, cx);
+            }
+            "escape" if !filtered => {
+                if let Some(s) = &mut self.sidebar {
+                    s.filtering = false;
+                }
             }
             "escape" | "backspace" => {
                 if let Some(s) = &mut self.sidebar {
@@ -469,6 +477,20 @@ impl Workspace {
                 .iter()
                 .position(|r| !r.positions.is_empty())
                 .unwrap_or(0);
+        }
+    }
+
+    /// Whether the map has the focus.
+    pub fn map_focused(&self, window: &Window) -> bool {
+        self.sidebar
+            .as_ref()
+            .is_some_and(|s| s.focus.is_focused(window))
+    }
+
+    /// `Ctrl+F` in the map: its filter's field shows, for typing into.
+    pub fn open_map_filter(&mut self) {
+        if let Some(s) = &mut self.sidebar {
+            s.filtering = true;
         }
     }
 
@@ -670,7 +692,26 @@ impl Workspace {
             );
         }
         let list = list.child(shown);
-        let filter = (!sidebar.query.is_empty()).then(|| {
+        // The field: shown while there is a filter, or while it is open and
+        // the map has the focus; its caret while the map has the focus.
+        let filter = (!sidebar.query.is_empty() || (sidebar.filtering && focused)).then(|| {
+            let caret = focused.then(|| {
+                div()
+                    .flex_none()
+                    .w(px(1.0))
+                    .h(self.z(ICON))
+                    .bg(hsla(theme.accent))
+            });
+            let text = div().flex().items_center().min_w_0().overflow_hidden();
+            let text = if sidebar.query.is_empty() {
+                text.children(caret).child(
+                    div()
+                        .text_color(hsla(theme.text_placeholder))
+                        .child("Filter"),
+                )
+            } else {
+                text.child(sidebar.query.clone()).children(caret)
+            };
             div()
                 .flex()
                 .flex_none()
@@ -681,7 +722,7 @@ impl Workspace {
                 .border_b_1()
                 .border_color(hsla(theme.border_variant))
                 .child(icon(IconName::Search, self.z(ICON), hsla(theme.text_muted)))
-                .child(sidebar.query.clone())
+                .child(text)
         });
         div()
             .id("sidebar")

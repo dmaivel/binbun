@@ -15,7 +15,7 @@ The tabs along the top are places, each titled by the function it is in. A tab's
 
 ## The map
 
-The map on the left lists what the binary holds: its sections, functions (by source file or namespace), imports, exports, data and types, each folder with how many items it has. **Data** holds two folders: **Globals** (the symbol table's and those the analysis found once the whole program is analysed, whatever their type) and **Strings** (each by its text), each in address order; a string the symbol table names is a global. **Open as Tab** in a folder's right-click menu opens it as a table: type to filter, click a column's title to sort by it. The functions' table has each function's size and how many references there are to it; the data's has each global's type (a string's is its characters' array). `Ctrl+B` hides the map.
+The map on the left lists what the binary holds: its sections, functions (by source file or namespace), imports, exports, data and types, each folder with how many items it has. With the map focused, `Ctrl+F` (or just typing) filters it by name, closed folders included; `Escape` clears the filter. **Data** holds two folders: **Globals** (the symbol table's and those the analysis found once the whole program is analysed, whatever their type) and **Strings** (each by its text), each in address order; a string the symbol table names is a global. **Open as Tab** in a folder's right-click menu opens it as a table: type to filter, click a column's title to sort by it. The functions' table has each function's size and how many references there are to it; the data's has each global's type (a string's is its characters' array). `Ctrl+B` hides the map.
 
 ## Navigate
 

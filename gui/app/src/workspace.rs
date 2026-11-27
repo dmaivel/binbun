@@ -391,6 +391,9 @@ pub struct Sidebar {
     pub open: HashSet<String>,
     /// The filter typed while it has the focus.
     pub query: String,
+    /// Whether its filter field is open (`Ctrl+F` in it): shown while it
+    /// has the focus, empty or not, until Escape closes it.
+    pub filtering: bool,
     /// The rows shown.
     pub rows: Vec<MapRow>,
     /// The selected row.
@@ -2336,6 +2339,12 @@ impl Workspace {
 
     /// Runs `command`.
     pub fn run(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
+        // `Ctrl+F` in the map opens its filter, whatever the panes can find.
+        if command == Command::Find && self.map_focused(window) {
+            self.open_map_filter();
+            cx.notify();
+            return;
+        }
         // A disabled command does nothing, whichever way it came (its
         // keys, the palette, a menu).
         if !commands::state(command, &self.facts()).enabled {
