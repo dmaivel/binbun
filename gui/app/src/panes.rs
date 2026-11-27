@@ -1227,7 +1227,8 @@ impl Workspace {
     /// the threads' button beside it, and what failed (else, quietly, what
     /// was done to the project);
     /// on the right a quiet spinner while the analysis runs, the cursor's
-    /// function and address, the C view, the format and architecture.
+    /// function and address, the format and architecture (which C view a
+    /// pane shows, its view selector says).
     #[expect(clippy::too_many_lines, reason = "the bar's items, in order")]
     fn status(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
@@ -1345,24 +1346,12 @@ impl Workspace {
                 )
                 .child(text)
         });
-        let focused = self.layout.focused();
-        let view = self.c_view_of(focused).map(|view| {
-            item("status-view")
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.toggle_view(focused);
-                    cx.notify();
-                }))
-                .child(match view {
-                    View::Reading => "Reading",
-                    View::Exact => "Exact",
-                })
-        });
         let format = self
             .session
             .as_ref()
             .and_then(|s| s.database())
             .map(|db| map::format_label(db.image()))
-            .map(|label| item("status-format").child(label));
+            .map(|label| div().flex_none().px(self.z(6.0)).child(label));
         div()
             .flex()
             .flex_none()
@@ -1386,7 +1375,6 @@ impl Workspace {
                     .gap(self.z(2.0))
                     .children(spinner)
                     .children(cursor)
-                    .children(view)
                     .children(format),
             )
             .into_any_element()
