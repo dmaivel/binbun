@@ -1,0 +1,35 @@
+binbun's terminal emulator: libghostty-vt
+=========================================
+
+The GUI's terminals run through libghostty-vt, Ghostty's terminal
+emulation library, linked into the app statically (from the ghostty-vt
+crate, whose own licence is in app.md with the other crates'). It links in
+the third-party projects below, as its deps/libghostty-vt-third-party.json
+lists them. Where a project offers a choice of licences, the one it is used
+under here is named. Each licence text is in third_party/libghostty/; the
+app's downloads carry this file and those texts in licenses/.
+
+
+libghostty-vt
+  Source:  https://release.files.ghostty.org/libghostty-vt/1.0.1/libghostty-vt-1.0.1.tar.gz, tag vt-1.0.1, commit 108cacb17ed8990840cd14abfce43d8ed8503ca1
+  Licence: MIT, Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors (libghostty-vt.txt)
+
+Highway 1.2.0
+  Source:  https://github.com/google/highway, commit 66486a10623fa0d72fe91260f96c892e41aceb06
+  Licence: BSD-3-Clause (of Apache-2.0 OR BSD-3-Clause), Copyright (c) The Highway Project Authors (highway.txt)
+
+simdutf 9.0.0
+  Source:  https://github.com/simdutf/simdutf, as vendored in libghostty-vt's pkg/simdutf/vendor
+  Licence: MIT (of Apache-2.0 OR MIT), Copyright 2021 The simdutf authors (simdutf.txt)
+
+translate_c 2.0.0
+  Source:  https://github.com/ziglang/translate-c, commit 02ff0c523fb92a38939b04d0145c4a9602a74d56
+  Licence: MIT, Copyright (c) Zig contributors (translate_c.txt)
+
+uucode 0.2.0
+  Source:  https://github.com/jacobsandlund/uucode, commit 1fb73433bba5d93366c57f23ff2e9d7939746500
+  Licence: MIT AND Unicode-3.0, Copyright (c) 2026 Jacob Sandlund; the Unicode data (uucode.txt)
+
+Wuffs 0.4.0-alpha.10
+  Source:  https://github.com/google/wuffs, commit 7411f488fe2e2c205c3d3b3d28638b7356522930
+  Licence: MIT (of Apache-2.0 OR MIT), Copyright 2023 The Wuffs Authors (wuffs.txt)

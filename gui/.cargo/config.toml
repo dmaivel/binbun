@@ -1,0 +1,4 @@
+# The Zig libghostty-vt's source builds with (the terminal: gui/Cargo.toml's
+# ghostty-vt), as scripts/zig.sh fetches it; a ZIG of the environment wins.
+[env]
+ZIG = { value = "target/zig/current/zig", relative = true, force = false }

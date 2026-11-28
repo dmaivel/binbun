@@ -3,7 +3,8 @@
 //! ([`binbun_gui_view::console`]) connected to this window's database.
 //! One for the window: it keeps running while its tab is closed, moved or
 //! in another window tab; Ctrl+backtick hides it where it is shown, else
-//! brings it under the code of the window tab shown, from wherever it was.
+//! brings it under the code of the window tab shown, from wherever it was
+//! (a terminal instead, if one was used since: `terminal_view`).
 //! Its transcript above (the cells run, coloured; output as it comes;
 //! values; tracebacks; the undo step each cell made), only its visible
 //! lines drawn; the input below: Python coloured, Enter runs the cell
@@ -163,52 +164,67 @@ fn completable(code: &str, at: usize) -> bool {
 }
 
 impl Workspace {
-    /// Ctrl+backtick: hides the console where the window tab shown shows
-    /// it (its tab closed: it keeps running; the focus back on a pane);
-    /// else shows it, its input focused (started if it is not): its tab
-    /// brought forward where this window tab has it, else opened under the
-    /// code ([`Workspace::open_below`]), taken from the window tab that had
-    /// it.
+    /// Ctrl+backtick: [`Workspace::show_shell`] toggling the console or
+    /// the terminal used last.
     pub fn toggle_console(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.console_place() {
-            Some((pane, index, true)) => {
+        let kind = self.shell_kind();
+        self.show_shell(kind, true, window, cx);
+    }
+
+    /// `kind`, the console or a terminal, shown and its input focused
+    /// (started if it is not): its tab brought forward where this window
+    /// tab has it, else opened under the code ([`Workspace::open_below`]),
+    /// taken from the window tab that had it. Hidden instead where the
+    /// window tab shown shows it, if `toggle` (its tab closed: it keeps
+    /// running; the focus back on a pane).
+    pub fn show_shell(
+        &mut self,
+        kind: TabKind,
+        toggle: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match self.place_of(&kind) {
+            Some((pane, index, true)) if toggle => {
+                self.hide_terminal(&kind, true);
                 self.layout.close_tab(pane, index);
                 self.after_layout(window, cx);
             }
-            Some((pane, index, false)) => {
+            Some((pane, index, _)) => {
                 self.layout.activate(pane, index);
                 self.focus_pane(pane, window, cx);
             }
             None => {
-                self.take_parked(&TabKind::Console);
+                self.take_parked(&kind);
+                self.hide_terminal(&kind, false);
                 let from = self.layout.focused();
-                let id = self.open_below(from, TabKind::Console, false, cx);
+                let id = self.open_below(from, kind, false, cx);
                 self.focus_pane(id, window, cx);
             }
         }
         cx.notify();
     }
 
-    /// The console's tab in the window tab shown: its pane, its index
+    /// The tab of `kind` in the window tab shown: its pane, its index
     /// there, and whether it is the tab the pane shows.
-    fn console_place(&self) -> Option<(PaneId, usize, bool)> {
+    pub fn place_of(&self, kind: &TabKind) -> Option<(PaneId, usize, bool)> {
         self.layout.panes().find_map(|pane| {
-            let index = pane
-                .tabs
-                .iter()
-                .position(|t| t.content == TabKind::Console)?;
+            let index = pane.tabs.iter().position(|t| &t.content == kind)?;
             Some((pane.id, index, pane.active == index))
         })
     }
 
-    /// Whether the window tab shown shows the console.
+    /// Whether the window tab shown shows the console or the terminal
+    /// Ctrl+backtick toggles.
     pub fn console_shown(&self) -> bool {
-        self.console_place().is_some_and(|(_, _, shown)| shown)
+        self.place_of(&self.shell_kind())
+            .is_some_and(|(_, _, shown)| shown)
     }
 
     /// The console's input takes the focus (the console started if it is
     /// not).
     pub fn focus_console(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.terminals.last = None;
         self.ensure_console(window, cx);
         if let Some(input) = &self.console.input {
             input.update(cx, |s, cx| s.focus(window, cx));

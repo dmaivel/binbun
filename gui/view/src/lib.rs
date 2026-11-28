@@ -133,6 +133,7 @@ pub mod symbol_cache;
 pub mod symbols;
 pub mod tabs;
 pub mod talk;
+pub mod terminal;
 pub mod theme_css;
 pub mod unified;
 pub mod updates;

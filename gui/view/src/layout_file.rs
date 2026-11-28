@@ -65,6 +65,8 @@ pub enum SavedTab {
     Folder(String),
     /// The Python console.
     Console,
+    /// A terminal (a fresh shell when restored).
+    Terminal,
 }
 
 /// A window tab as saved: its panes, their hex side areas, its tabs'
@@ -488,6 +490,9 @@ fn tab_value(tab: &Tab<SavedTab>) -> Value {
         SavedTab::Console => {
             table.insert("kind", Value::from("console"));
         }
+        SavedTab::Terminal => {
+            table.insert("kind", Value::from("terminal"));
+        }
     }
     if tab.preview {
         table.insert("preview", Value::from(true));
@@ -518,6 +523,7 @@ fn read_tab(table: &InlineTable) -> Option<Tab<SavedTab>> {
         },
         "folder" => SavedTab::Folder(table.get("key")?.as_str()?.to_owned()),
         "console" => SavedTab::Console,
+        "terminal" => SavedTab::Terminal,
         _ => return None,
     };
     let preview = table
@@ -769,6 +775,7 @@ mod tests {
             false,
         );
         layout.open(lists, SavedTab::Console, false);
+        layout.open(lists, SavedTab::Terminal, false);
         layout.activate(lists, 1);
         layout.drag_divider(&[], 1, 30.0, 100.0, 0.0);
         layout.drag_divider(&[1], 1, 75.0, 100.0, 0.0);
@@ -921,7 +928,8 @@ mod tests {
             | SavedTab::Strings
             | SavedTab::Xrefs { .. }
             | SavedTab::Folder(_)
-            | SavedTab::Console) => Some(other.clone()),
+            | SavedTab::Console
+            | SavedTab::Terminal) => Some(other.clone()),
         });
         let ids: Vec<u32> = restored.panes().map(|p| p.id.0).collect();
         assert_eq!(ids, vec![0, 2]);
@@ -946,6 +954,7 @@ mod tests {
                     false
                 ),
                 (SavedTab::Console, false),
+                (SavedTab::Terminal, false),
             ]
         );
         assert_eq!(restored.pane(PaneId(2)).unwrap().active, 1);

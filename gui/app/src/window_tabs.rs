@@ -6,7 +6,8 @@
 //! ([`Workspace::open_window_tab`]).
 //!
 //! The settings and a struct being edited are tabs of the strip too, of a
-//! pane of their own (and the console, left alone in one): not places,
+//! pane of their own (and the console or a terminal, left alone in one):
+//! not places,
 //! nothing navigates in them (a navigation from one goes to a tab of a
 //! place first), and one is always a place.
 //!
@@ -57,7 +58,7 @@ impl Default for WindowTabs {
 }
 
 /// What a window tab of `layout` shows instead of a place (the settings,
-/// a struct, the console): a lone pane holding only it.
+/// a struct, the console, a terminal): a lone pane holding only it.
 fn tool_of(layout: &Layout<TabKind>) -> Option<&TabKind> {
     let mut panes = layout.panes();
     let pane = panes.next()?;
@@ -67,7 +68,7 @@ fn tool_of(layout: &Layout<TabKind>) -> Option<&TabKind> {
     let tab = pane.tabs.first()?;
     matches!(
         tab.content,
-        TabKind::Settings | TabKind::Struct(_) | TabKind::Console
+        TabKind::Settings | TabKind::Struct(_) | TabKind::Console | TabKind::Terminal(_)
     )
     .then_some(&tab.content)
 }
@@ -148,6 +149,22 @@ impl Workspace {
     /// The shown window tab's index.
     pub fn window_tabs_active(&self) -> usize {
         self.window_tabs.active
+    }
+
+    /// Whether a window tab, shown or not, has a tab of `kind`.
+    pub fn has_tab(&self, kind: &TabKind) -> bool {
+        let has = |layout: &Layout<TabKind>| {
+            layout
+                .panes()
+                .any(|p| p.tabs.iter().any(|t| &t.content == kind))
+        };
+        has(&self.layout)
+            || self
+                .window_tabs
+                .slots
+                .iter()
+                .flatten()
+                .any(|p| has(&p.layout))
     }
 
     /// Window tab `to` becomes the shown one (its state the workspace's;
@@ -421,6 +438,7 @@ impl Workspace {
             return match tool {
                 TabKind::Struct(target) => self.struct_tab_label(target),
                 TabKind::Console => "Console".to_owned(),
+                TabKind::Terminal(id) => self.terminal_title(*id),
                 TabKind::Settings
                 | TabKind::Listing
                 | TabKind::C { .. }

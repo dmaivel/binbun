@@ -88,6 +88,7 @@ icon_assets!(
         ShieldAlert,
         SquareFunction,
         SquareTerminal,
+        Terminal,
         Users,
         X,
     ]

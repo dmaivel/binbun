@@ -45,6 +45,7 @@ impl Workspace {
             TabKind::Xrefs { of, len } => Some(SavedTab::Xrefs { of: *of, len: *len }),
             TabKind::Folder(key) => Some(SavedTab::Folder(key.clone())),
             TabKind::Console => Some(SavedTab::Console),
+            TabKind::Terminal(_) => Some(SavedTab::Terminal),
             TabKind::Settings | TabKind::Struct(_) | TabKind::Found(_) => None,
         });
         let hex_sides = layout
@@ -218,6 +219,7 @@ impl Workspace {
             SavedTab::Xrefs { of, len } => Some(TabKind::Xrefs { of: *of, len: *len }),
             SavedTab::Folder(key) => Some(TabKind::Folder(key.clone())),
             SavedTab::Console => Some(TabKind::Console),
+            SavedTab::Terminal => Some(TabKind::Terminal(self.terminals.fresh())),
         });
         if !layout.panes().any(|p| !p.tabs.is_empty()) {
             return false;

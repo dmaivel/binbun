@@ -112,10 +112,13 @@ sudo pacman -S base-devel fontconfig libxcb libxkbcommon libxkbcommon-x11
 
 ```sh
 git clone https://github.com/dmaivel/binbun && cd binbun
+scripts/zig.sh                       # Linux and Windows: the Zig the app's terminal builds with
 (cd gui && cargo build --release)    # the app and every command: gui/target/release/binbun
 cargo build --release -p binbun-cli  # the commands without the app: target/release/binbun
 maturin build --release              # the Python package: target/wheels
 ```
+
+The app's build downloads the pinned source of libghostty-vt, its terminal emulator (on macOS, its prebuilt library), and checks it against its SHA-256; set `GHOSTTY_SOURCE_DIR` to build from a copy you have. Its notices are in [gui/LIBGHOSTTY](gui/LIBGHOSTTY).
 
 How to test a change, the oracles and the benchmarks are in [docs/](docs/). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md); to report a security problem privately, [SECURITY.md](SECURITY.md).
 

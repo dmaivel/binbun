@@ -140,6 +140,7 @@ impl Workspace {
             }
             TabKind::Settings
             | TabKind::Console
+            | TabKind::Terminal(_)
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)
@@ -312,6 +313,7 @@ impl Workspace {
             || self.about
             || self.symbol_cache.question.is_some()
             || self.projects.question.is_some()
+            || self.terminals.question.is_some()
             || self.close_ir_dropdowns();
         self.prompt = None;
         self.picker = None;
@@ -327,6 +329,10 @@ impl Workspace {
         self.about = false;
         self.symbol_cache.question = None;
         self.projects.question = None;
+        // Not answered: the terminal's program keeps running, its tab back.
+        if let Some(id) = self.terminals.question.take() {
+            self.show_shell(TabKind::Terminal(id), false, window, cx);
+        }
         self.close_peek();
         if open {
             let id = self.layout.focused();
@@ -996,6 +1002,9 @@ impl Workspace {
             return Some(frame(self, 420.0, false, content));
         }
         if let Some(content) = self.render_clear_question(cx) {
+            return Some(frame(self, 420.0, false, content));
+        }
+        if let Some(content) = self.render_terminal_question(cx) {
             return Some(frame(self, 420.0, false, content));
         }
         if let Some(content) = self.render_files_and_folders(cx) {

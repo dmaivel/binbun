@@ -101,14 +101,18 @@ copy_notices() {
     chmod 644 "$dir"/*.md "$dir"/LICENSE-* "$dir"/licenses/*
 }
 
-# The licences of what the GUI embeds, copied into $1/licenses: its fonts'
-# and its bundled themes' (gui/THEMES and each upstream's text).
+# The licences of what the GUI embeds, copied into $1/licenses: its fonts',
+# its bundled themes' (gui/THEMES and each upstream's text) and its
+# terminal emulator's (gui/LIBGHOSTTY and the texts of what it links).
 copy_gui_notices() {
-    mkdir -p "$1/licenses/themes"
+    mkdir -p "$1/licenses/themes" "$1/licenses/libghostty"
     cp "$root"/gui/app/assets/fonts/OFL-*.txt "$1/licenses/"
     cp "$root/gui/THEMES" "$1/licenses/THEMES.txt"
     cp "$root"/third_party/themes/*.txt "$1/licenses/themes/"
-    chmod 644 "$1"/licenses/OFL-*.txt "$1/licenses/THEMES.txt" "$1"/licenses/themes/*.txt
+    cp "$root/gui/LIBGHOSTTY" "$1/licenses/LIBGHOSTTY.txt"
+    cp "$root"/third_party/libghostty/*.txt "$1/licenses/libghostty/"
+    chmod 644 "$1"/licenses/OFL-*.txt "$1/licenses/THEMES.txt" "$1"/licenses/themes/*.txt \
+        "$1/licenses/LIBGHOSTTY.txt" "$1"/licenses/libghostty/*.txt
 }
 
 # Files' modification times set to SOURCE_DATE_EPOCH, under directory $1.

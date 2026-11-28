@@ -73,6 +73,7 @@ use crate::sidebar::WIDTH as SIDEBAR_WIDTH;
 use crate::start_page::StartFacts;
 use crate::struct_editor::{InlineStruct, StructEditor};
 use crate::symbol_cache::SymbolCacheUi;
+use crate::terminal_view::TerminalsUi;
 use crate::theme::{self, Theme, Themes};
 use crate::threads_view::{Dock, ThreadsUi};
 use crate::type_field::CTypeField;
@@ -113,6 +114,10 @@ pub enum TabKind {
     /// The Python console: one for the window, running whether its tab
     /// is shown, moved or closed (`console_view`).
     Console,
+    /// A terminal, by its number in the window: its program runs while
+    /// its tab is shown, moved or hidden, and ends when its tab closes
+    /// (`terminal_view`).
+    Terminal(u32),
 }
 
 /// What the C view highlights: a node's occurrences (a variable), or
@@ -654,6 +659,8 @@ pub struct Workspace {
     pub threads: ThreadsUi,
     /// The Python console, wherever its tab is.
     pub console: ConsoleUi,
+    /// The terminals, wherever their tabs are.
+    pub terminals: TerminalsUi,
     /// Polls the session whenever it signals new results.
     pub(crate) wake: Option<Task<()>>,
     /// The binary served to scripts: its number on the server, the
@@ -837,6 +844,7 @@ impl Workspace {
             collab: CollabUi::default(),
             threads: ThreadsUi::default(),
             console: ConsoleUi::default(),
+            terminals: TerminalsUi::default(),
             settings,
             wake: None,
             served: None,
@@ -1504,6 +1512,7 @@ impl Workspace {
     /// cross-references show.
     pub fn ensure_documents(&mut self) {
         self.show_tabs();
+        self.forget_terminals();
         if self.session.as_ref().is_none_or(|s| s.database().is_none()) {
             return;
         }
@@ -1520,6 +1529,7 @@ impl Workspace {
                     | TabKind::Listing
                     | TabKind::Settings
                     | TabKind::Console
+                    | TabKind::Terminal(_)
                     | TabKind::Strings
                     | TabKind::Xrefs { .. }
                     | TabKind::Struct(_)
@@ -1575,6 +1585,7 @@ impl Workspace {
             | TabKind::Listing
             | TabKind::Settings
             | TabKind::Console
+            | TabKind::Terminal(_)
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)
@@ -1624,6 +1635,8 @@ impl Workspace {
             window.focus(&self.start_focus, cx);
         } else if self.layout.active(id) == Some(&TabKind::Console) {
             self.focus_console(window, cx);
+        } else if let Some(&TabKind::Terminal(terminal)) = self.layout.active(id) {
+            self.focus_terminal(terminal, window, cx);
         } else if let Some(state) = self.panes.get(&id) {
             window.focus(&state.focus, cx);
         }
@@ -1668,6 +1681,7 @@ impl Workspace {
             }
             TabKind::Settings
             | TabKind::Console
+            | TabKind::Terminal(_)
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)
@@ -1774,6 +1788,7 @@ impl Workspace {
             }
             TabKind::Settings
             | TabKind::Console
+            | TabKind::Terminal(_)
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)
@@ -2621,6 +2636,7 @@ impl Workspace {
             }
             Command::ToggleRightSidebar => self.right_sidebar = !self.right_sidebar,
             Command::ToggleConsole => self.toggle_console(window, cx),
+            Command::NewTerminal => self.new_terminal(window, cx),
             Command::ToggleFeatureMap => self.toggle_feature_map(window, cx),
             Command::MoveFeatureMap => self.move_feature_map(window, cx),
             Command::OpenAsTab => {
@@ -2788,7 +2804,13 @@ impl Workspace {
             Some(
                 TabKind::Strings | TabKind::Xrefs { .. } | TabKind::Found(_) | TabKind::Folder(_),
             ) => self.ui_line() + ROW_PAD,
-            Some(TabKind::Listing | TabKind::Settings | TabKind::Struct(_) | TabKind::Console)
+            Some(
+                TabKind::Listing
+                | TabKind::Settings
+                | TabKind::Struct(_)
+                | TabKind::Console
+                | TabKind::Terminal(_),
+            )
             | None => self.settings.listing_line_height,
         }
     }
@@ -2915,7 +2937,11 @@ impl Workspace {
             TabKind::Strings | TabKind::Xrefs { .. } | TabKind::Folder(_) => {
                 self.panes.get(&id).map_or(0, |s| s.list.rows.len() as u64)
             }
-            TabKind::Settings | TabKind::Struct(_) | TabKind::Found(_) | TabKind::Console => 0,
+            TabKind::Settings
+            | TabKind::Struct(_)
+            | TabKind::Found(_)
+            | TabKind::Console
+            | TabKind::Terminal(_) => 0,
         };
         let Some(state) = self.panes.get_mut(&id) else {
             return;
@@ -2957,7 +2983,11 @@ impl Workspace {
                 self.ensure_documents();
                 return;
             }
-            TabKind::Settings | TabKind::Struct(_) | TabKind::Found(_) | TabKind::Console => return,
+            TabKind::Settings
+            | TabKind::Struct(_)
+            | TabKind::Found(_)
+            | TabKind::Console
+            | TabKind::Terminal(_) => return,
         }
         self.moved(id);
     }
@@ -3017,6 +3047,7 @@ impl Workspace {
             }
             TabKind::Settings
             | TabKind::Console
+            | TabKind::Terminal(_)
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)

@@ -78,6 +78,7 @@ mod symbol_cache;
 mod symbols_bar;
 mod tab_drag;
 mod tabs;
+mod terminal_view;
 mod theme;
 mod threads_view;
 mod titlebar;

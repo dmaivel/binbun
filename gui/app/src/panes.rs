@@ -416,6 +416,7 @@ impl Workspace {
             Some(TabKind::Found(n)) => self.render_results(id, *n, window, cx),
             Some(TabKind::Folder(key)) => self.render_folder(id, key, cx),
             Some(TabKind::Console) => self.render_console(window, cx),
+            Some(TabKind::Terminal(terminal)) => self.render_terminal(id, *terminal, window, cx),
             None => {
                 let focus = self.panes.get(&id).map(|s| s.focus.clone());
                 div()
@@ -443,7 +444,12 @@ impl Workspace {
                 kind.is_some()
                     && !matches!(
                         kind,
-                        Some(TabKind::Settings | TabKind::Struct(_) | TabKind::Console)
+                        Some(
+                            TabKind::Settings
+                                | TabKind::Struct(_)
+                                | TabKind::Console
+                                | TabKind::Terminal(_)
+                        )
                     ),
                 |d| d.child(self.toolbar(id, !bar, cx)),
             )
@@ -612,6 +618,7 @@ impl Workspace {
                 .pop()
                 .unwrap_or_else(|| "Folder".to_owned()),
             TabKind::Console => "Console".to_owned(),
+            TabKind::Terminal(id) => self.terminal_title(*id),
         }
     }
 
@@ -627,6 +634,7 @@ impl Workspace {
             TabKind::Struct(_) => IconName::Braces,
             TabKind::Found(_) => IconName::Search,
             TabKind::Console => IconName::SquareTerminal,
+            TabKind::Terminal(_) => IconName::Terminal,
             // The icon of the folder's items.
             TabKind::Folder(key) => {
                 let items = match Group::of_key(key) {
@@ -906,7 +914,10 @@ impl Workspace {
                     crumbs.push((name, color));
                 }
             }
-            Some(TabKind::Settings | TabKind::Struct(_) | TabKind::Console) | None => {}
+            Some(
+                TabKind::Settings | TabKind::Struct(_) | TabKind::Console | TabKind::Terminal(_),
+            )
+            | None => {}
         }
         crumbs
     }
@@ -1301,14 +1312,26 @@ impl Workspace {
                 self.left_sidebar,
                 cx,
             ))
-            .child(self.icon_button(
-                "console-toggle",
-                IconName::SquareTerminal,
-                Command::ToggleConsole,
-                self.session.is_some(),
-                self.console_shown(),
-                cx,
-            ))
+            .child(
+                self.icon_button(
+                    "console-toggle",
+                    IconName::SquareTerminal,
+                    Command::ToggleConsole,
+                    self.session.is_some(),
+                    self.console_shown(),
+                    cx,
+                )
+                // The console and each terminal, a new one.
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, e: &MouseDownEvent, window, cx| {
+                        if this.session.is_some() {
+                            this.shell_menu(e.position, window, cx);
+                        }
+                        cx.stop_propagation();
+                    }),
+                ),
+            )
             .children(self.render_collab_status(self.threads_status(cx), cx))
             .children(error)
             .children(notice);

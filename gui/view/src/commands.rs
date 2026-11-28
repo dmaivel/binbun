@@ -129,9 +129,12 @@ pub enum Command {
     ToggleLeftSidebar,
     /// Shows or hides the right sidebar.
     ToggleRightSidebar,
-    /// Hides the Python console where it is shown, else brings it under
-    /// the code of the window tab shown.
+    /// Hides the Python console or the terminal used last where it is
+    /// shown, else brings it under the code of the window tab shown.
     ToggleConsole,
+    /// Opens a terminal under the code: the user's shell, in the binary's
+    /// folder.
+    NewTerminal,
     /// Shows or hides the feature map (the strip standing for the whole
     /// image).
     ToggleFeatureMap,
@@ -1149,6 +1152,17 @@ pub const COMMANDS: &[Info] = &[
         // Ctrl on macOS too, as VS Code's terminal (Cmd+Backtick cycles the
         // app's windows there).
         &["ctrl-`"],
+        Window,
+    ),
+    info(
+        C::NewTerminal,
+        "window.new_terminal",
+        "New Terminal",
+        // Beside the panes the Window menu opens (View is full).
+        Some(M::Window),
+        // Ctrl+Shift+Backtick (the key a shifted backtick types, as the
+        // other shifted keys); Ctrl on macOS too, as the console's.
+        &["ctrl-~"],
         Window,
     ),
     info(
@@ -2461,7 +2475,9 @@ fn state_of(command: Command, facts: &Facts) -> State {
         | C::Bottom
         | C::SaveProject
         | C::Close
-        | C::Conflicts => on(facts.open),
+        | C::Conflicts
+        // The start page has no panes to open it in.
+        | C::NewTerminal => on(facts.open),
         // The project is known once the image is parsed (its key read).
         // Bytes are searched once the image is parsed too.
         C::ExportProject | C::SearchBytes => on(facts.open && facts.stage >= 1),
@@ -3032,7 +3048,8 @@ mod tests {
     }
 
     /// The default keys are Cmd on macOS and Ctrl elsewhere (`secondary-`),
-    /// but for the two Ctrl keeps there; elsewhere every label is the one
+    /// but for those Ctrl keeps there (the console's and the terminal's,
+    /// as VS Code's, and the bookmarks'); elsewhere every label is the one
     /// the same keys with `ctrl-` had.
     #[test]
     fn default_keys_are_cmd_on_macos_and_ctrl_elsewhere() {
@@ -3044,7 +3061,11 @@ mod tests {
             .collect();
         assert_eq!(
             literal_ctrl,
-            BTreeSet::from([Command::ToggleConsole, Command::Bookmarks])
+            BTreeSet::from([
+                Command::ToggleConsole,
+                Command::NewTerminal,
+                Command::Bookmarks
+            ])
         );
         assert!(
             map.iter()
@@ -3082,6 +3103,7 @@ mod tests {
         assert_eq!(mac(Command::SelectTheme), "⌘K ⌘T");
         assert_eq!(mac(Command::Back), "⎋");
         assert_eq!(mac(Command::ToggleConsole), "⌃`");
+        assert_eq!(mac(Command::NewTerminal), "⌃~");
         assert_eq!(mac(Command::Bookmarks), "⌃M");
         assert_eq!(mac(Command::NextFunction), "⌘↓");
     }

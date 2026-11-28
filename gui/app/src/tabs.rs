@@ -44,8 +44,8 @@ pub fn is_code(kind: Option<&TabKind>) -> bool {
 }
 
 /// Whether `kind` opens in a pane below the code, not over it: a list
-/// whose rows go places, or the console. Such a pane has a tab bar, and
-/// its tabs close and cycle there.
+/// whose rows go places, the console, a terminal. Such a pane has a tab
+/// bar, and its tabs close and cycle there.
 pub fn is_below_code(kind: &TabKind) -> bool {
     matches!(
         kind,
@@ -54,6 +54,7 @@ pub fn is_below_code(kind: &TabKind) -> bool {
             | TabKind::Found(_)
             | TabKind::Folder(_)
             | TabKind::Console
+            | TabKind::Terminal(_)
     )
 }
 
@@ -255,6 +256,7 @@ impl Workspace {
                 TabKind::Listing
                 | TabKind::Settings
                 | TabKind::Console
+                | TabKind::Terminal(_)
                 | TabKind::Strings
                 | TabKind::Xrefs { .. }
                 | TabKind::Struct(_)

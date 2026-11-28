@@ -135,6 +135,7 @@ impl Workspace {
             Some(
                 TabKind::Settings
                 | TabKind::Console
+                | TabKind::Terminal(_)
                 | TabKind::Strings
                 | TabKind::Xrefs { .. }
                 | TabKind::Struct(_)
@@ -237,6 +238,7 @@ impl Workspace {
             }
             TabKind::Settings
             | TabKind::Console
+            | TabKind::Terminal(_)
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)

@@ -173,6 +173,7 @@ impl Workspace {
             | TabKind::C { .. }
             | TabKind::Settings
             | TabKind::Console
+            | TabKind::Terminal(_)
             | TabKind::Struct(_)
             | TabKind::Found(_) => return,
         };
@@ -232,6 +233,7 @@ impl Workspace {
             | TabKind::C { .. }
             | TabKind::Settings
             | TabKind::Console
+            | TabKind::Terminal(_)
             | TabKind::Struct(_)
             | TabKind::Found(_) => None,
         }
@@ -465,6 +467,7 @@ impl Workspace {
                 | TabKind::C { .. }
                 | TabKind::Settings
                 | TabKind::Console
+                | TabKind::Terminal(_)
                 | TabKind::Strings
                 | TabKind::Struct(_)
                 | TabKind::Found(_)

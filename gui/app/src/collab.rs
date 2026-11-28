@@ -1664,6 +1664,7 @@ impl Workspace {
             TabKind::Xrefs { .. } => Place::Xrefs,
             TabKind::Settings
             | TabKind::Console
+            | TabKind::Terminal(_)
             | TabKind::Strings
             | TabKind::Struct(_)
             | TabKind::Found(_)

@@ -60,6 +60,9 @@ trap 'rm -rf "$stage"' EXIT
 # The command, from the root workspace.
 (cd "$root" && cargo build --release --locked -p binbun-cli --bin binbun --target "$target")
 # The app, from the GUI's workspace.
+# Its terminal's libghostty-vt builds with the pinned Zig (scripts/zig.sh).
+ZIG=${ZIG:-$("$root/scripts/zig.sh")}
+export ZIG
 (cd "$root/gui" && CARGO_TARGET_DIR=$(native_path "$gui_target_dir") cargo build --release --locked -p binbun-gui --bin binbun --target "$target")
 
 name=binbun-$version-$target

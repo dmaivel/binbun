@@ -470,6 +470,7 @@ impl Workspace {
             | TabKind::C { .. }
             | TabKind::Settings
             | TabKind::Console
+            | TabKind::Terminal(_)
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)

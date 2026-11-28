@@ -201,6 +201,11 @@ jobs:
         with:
           workspaces: gui -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The terminal's libghostty-vt builds from source with it (macOS links
+      # its prebuilt XCFramework).
+      - name: Zig (scripts/zig.sh)
+        if: runner.os != 'macOS'
+        run: echo "ZIG=$(../scripts/zig.sh)" >> "$GITHUB_ENV"
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Clippy, without collaboration

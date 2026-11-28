@@ -84,6 +84,9 @@ echo "$out/$name.tar.gz"
 [ -n "$cli_only" ] && exit 0
 
 # The app, from the GUI's workspace.
+# Its terminal's libghostty-vt builds with the pinned Zig (scripts/zig.sh).
+ZIG=${ZIG:-$("$root/scripts/zig.sh")}
+export ZIG
 (cd "$root/gui" && CARGO_TARGET_DIR=$gui_target_dir cargo build --release --locked -p binbun-gui --bin binbun --target "$target")
 app=$gui_target_dir/$target/release/binbun
 check_glibc "$app"

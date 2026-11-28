@@ -2,8 +2,8 @@
 
 The crates this download is built from, binbun's own among them, by licence: where a crate offers a choice of licences, the one it is used under here.
 
-- MIT License (853)
-- Apache License 2.0 (49)
+- MIT License (862)
+- Apache License 2.0 (52)
 - ISC License (26)
 - Unicode License v3 (23)
 - BSD 3-Clause "New" or "Revised" License (14)
@@ -305,6 +305,8 @@ Used by:
 
 - [binbun-x86 0.1.0](https://github.com/dmaivel/binbun)
 - [binbun-x86-lift 0.1.0](https://github.com/dmaivel/binbun)
+- [ghostty-vt-sys 0.9.0+ghostty-vt.1.0.1](https://github.com/prabirshrestha/gpui-cn)
+- [ghostty-vt 0.9.0+ghostty-vt.1.0.1](https://github.com/prabirshrestha/gpui-cn)
 
 ```
 
@@ -2097,6 +2099,7 @@ Used by:
 - [interprocess 2.4.8](https://github.com/kotauskas/interprocess)
 - [rmcp 3.10.0](https://github.com/modelcontextprotocol/rust-sdk/)
 - [ryu 1.0.23](https://github.com/dtolnay/ryu)
+- [serial2 0.2.39](https://github.com/de-vri-es/serial2-rs)
 - [spirv 0.4.0+sdk-1.4.341.0](https://github.com/gfx-rs/rspirv)
 - [swarm-discovery 0.6.6](https://github.com/rkuhn/swarm-discovery)
 - [sync_wrapper 1.0.2](https://github.com/Actyx/sync_wrapper)
@@ -5310,6 +5313,8 @@ Used by:
 - [rustc-demangle 0.1.28](https://github.com/rust-lang/rustc-demangle)
 - [scoped-tls 1.0.1](https://github.com/alexcrichton/scoped-tls)
 - [socket2 0.6.5](https://github.com/rust-lang/socket2)
+- [tikv-jemalloc-sys 0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8](https://github.com/tikv/jemallocator)
+- [tikv-jemallocator 0.7.0](https://github.com/tikv/jemallocator)
 - [wasm-bindgen-futures 0.4.80](https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/futures)
 - [wasm-bindgen-macro-support 0.2.130](https://github.com/wasm-bindgen/wasm-bindgen/tree/main/crates/macro-support)
 - [wasm-bindgen-macro 0.2.130](https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro)
@@ -5904,6 +5909,35 @@ Used by:
 
 ```
 Copyright (c) 2015 François Bernier
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
+
+- [winreg 0.10.1](https://github.com/gentoo90/winreg-rs)
+
+```
+Copyright (c) 2015 Igor Shaula
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -6889,6 +6923,41 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 
+- [shell-words 1.1.1](https://github.com/tmiasko/shell-words)
+
+```
+Copyright (c) 2016 Tomasz Miąsko
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
+
 - [kqueue-sys 1.1.2](https://gitlab.com/rust-kqueue/rust-kqueue-sys)
 - [kqueue 1.2.1](https://gitlab.com/rust-kqueue/rust-kqueue)
 
@@ -7493,6 +7562,40 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
+```
+
+## MIT License
+
+Used by:
+
+- [shared_library 0.1.9](https://github.com/tomaka/shared_library/)
+
+```
+Copyright (c) 2017 Pierre Krieger
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 ```
 
 ## MIT License
@@ -12013,6 +12116,7 @@ SOFTWARE.
 Used by:
 
 - [filedescriptor 0.8.3](https://github.com/wezterm/wezterm)
+- [portable-pty 0.9.0](https://github.com/wezterm/wezterm)
 
 ```
 MIT License
@@ -13975,6 +14079,7 @@ Used by:
 - [fastrand 2.5.0](https://github.com/smol-rs/fastrand)
 - [futures-lite 2.6.1](https://github.com/smol-rs/futures-lite)
 - [hermit-abi 0.5.3](https://github.com/hermit-os/hermit-rs)
+- [int-enum 1.3.0](https://github.com/Juici/int-enum-rs)
 - [inventory 0.3.25](https://github.com/dtolnay/inventory)
 - [itoa 1.0.19](https://github.com/dtolnay/itoa)
 - [khronos-egl 6.0.0](https://github.com/timothee-haudebourg/khronos-egl)
@@ -14524,6 +14629,37 @@ Used by:
 The MIT License (MIT)
 
 Copyright (c) 2015 Andrew Gallant
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
+
+- [nix 0.28.0](https://github.com/nix-rust/nix)
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2015 Carl Lerche + nix-rust Authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -15755,6 +15891,35 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
+
+- [proc-macro2-diagnostics 0.11.0](https://github.com/SergioBenitez/proc-macro2-diagnostics)
+
+```
+The MIT License (MIT)
+Copyright (c) 2016-2020 Sergio Benitez
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ```
 

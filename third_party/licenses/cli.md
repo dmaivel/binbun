@@ -2,7 +2,7 @@
 
 The crates this download is built from, binbun's own among them, by licence: where a crate offers a choice of licences, the one it is used under here.
 
-- MIT License (431)
+- MIT License (433)
 - ISC License (23)
 - Unicode License v3 (19)
 - Apache License 2.0 (14)
@@ -3019,6 +3019,8 @@ Used by:
 - [openssl-probe 0.2.2](https://github.com/rustls/openssl-probe)
 - [scoped-tls 1.0.1](https://github.com/alexcrichton/scoped-tls)
 - [socket2 0.6.5](https://github.com/rust-lang/socket2)
+- [tikv-jemalloc-sys 0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8](https://github.com/tikv/jemallocator)
+- [tikv-jemallocator 0.7.0](https://github.com/tikv/jemallocator)
 - [wasm-bindgen-futures 0.4.80](https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/futures)
 - [wasm-bindgen-macro-support 0.2.130](https://github.com/wasm-bindgen/wasm-bindgen/tree/main/crates/macro-support)
 - [wasm-bindgen-macro 0.2.130](https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro)
