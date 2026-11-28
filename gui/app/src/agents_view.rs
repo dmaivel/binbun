@@ -1,7 +1,8 @@
 //! The coding agents the robot in the status bar starts
 //! ([`agents::launchables`]): a click starts the default (the one started
-//! last; asked the first time), each in a terminal of a new pane right of
-//! the focused one. Its right-click menu lists the agents running here, a
+//! last; asked the first time), each in a terminal where terminals open
+//! (beside the console, else under the code). Its right-click menu lists
+//! the agents running here, a
 //! new one of each, Change Agent…, Hide Agents Not Found and Customize…
 //! (Settings › Agents, where the commands are changed and the user's own
 //! agents added).

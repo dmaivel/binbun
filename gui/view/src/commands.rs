@@ -136,7 +136,7 @@ pub enum Command {
     /// folder.
     NewTerminal,
     /// Starts the coding agent the robot in the status bar starts (the
-    /// one started last; asked the first time) in a pane to the right.
+    /// one started last; asked the first time) where a terminal opens.
     NewAgent,
     /// Shows or hides the feature map (the strip standing for the whole
     /// image).

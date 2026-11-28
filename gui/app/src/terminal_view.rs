@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 use binbun_gui_view::agents::{self, Announced, Harness, Setup, Start, setup_rows};
 use binbun_gui_view::banners::{Action, Banner, Button as BannerButton, Kind, Priority, Tone};
 use binbun_gui_view::commands::{self, Command};
-use binbun_gui_view::layout::{Axis, PaneId};
+use binbun_gui_view::layout::PaneId;
 use binbun_gui_view::scroll::Wheel;
 use binbun_gui_view::terminal::{
     Button, Colors, Exit, Frame, Input, Launch, Mods, Pointer, Run, Shape, Size, State, Terminal,
@@ -379,10 +379,11 @@ impl Workspace {
         }
     }
 
-    /// The agent `name` started by `command` in a new terminal, in a pane
-    /// right of the focused one: the user's login, interactive shell runs
-    /// it (their `PATH`, as typed in a terminal), in the binary's folder,
-    /// tied to this window; its tab closes when it ends without an error.
+    /// The agent `name` started by `command` in a new terminal, where a
+    /// terminal opens (beside the console and terminals, else under the
+    /// code): the user's login, interactive shell runs it (their `PATH`,
+    /// as typed in a terminal), in the binary's folder, tied to this
+    /// window; its tab closes when it ends without an error.
     pub fn open_agent_terminal(
         &mut self,
         name: &str,
@@ -400,10 +401,8 @@ impl Workspace {
             launch,
         });
         let from = self.layout.focused();
-        if let Some(pane) = self.layout.split(from, Axis::Row, TabKind::Terminal(id)) {
-            self.ensure_pane(pane, cx);
-            self.focus_pane(pane, window, cx);
-        }
+        let pane = self.open_below(from, TabKind::Terminal(id), false, cx);
+        self.focus_pane(pane, window, cx);
         cx.notify();
     }
 
