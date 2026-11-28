@@ -1270,8 +1270,8 @@ pub fn interface(
 
 /// [`interface`], and the function's scheme ([`Summary`]): lowered up to
 /// solving its types, with the [`Context`]'s schemes of its callees;
-/// `None` where solving refused. It is [`lower_ahead`], then
-/// [`summarise_ahead`], under the one context.
+/// `None` where solving refused. It is [`lower_ahead`], [`solve_ahead`]
+/// then [`round_ahead`], under the one context.
 ///
 /// # Errors
 ///
@@ -1282,13 +1282,14 @@ pub fn summarise(
     context: &Context<'_>,
 ) -> Result<(Found, Option<Summary>), LowerError> {
     let ahead = lower_ahead(function, facts, context)?;
-    Ok(summarise_ahead(function, facts, context, ahead))
+    let solved = solve_ahead(function, facts, context, ahead);
+    Ok(round_ahead(function, facts, context, solved))
 }
 
 /// What [`summarise`] finds of a function before solving its types
 /// ([`lower_ahead`]): its [`Found`] but for what the solve gives
 /// (arguments, structs, signature), and the lowering, to solve
-/// ([`summarise_ahead`]) under the schemes known then, on another thread.
+/// ([`solve_ahead`]) under the schemes known then, on another thread.
 pub struct Ahead {
     /// What it found.
     pub found: Found,
@@ -1352,23 +1353,76 @@ pub fn lower_ahead(
     })
 }
 
-/// The rest of [`summarise`] for `function` (with its analyses `facts`)
-/// lowered `ahead`: its types solved under `context`'s schemes, which
-/// has the interfaces [`lower_ahead`] read.
-pub fn summarise_ahead(
+/// What [`solve_ahead`] solved of a function lowered ahead: its scheme,
+/// and the lowering with its types solved, to round ([`round_ahead`])
+/// under the program's structs known then, on another thread.
+pub struct SolvedAhead {
+    /// What lowering ahead found ([`Ahead::found`]).
+    pub found: Found,
+    /// Its scheme ([`summarise`]'s).
+    pub summary: Option<Summary>,
+    /// The functions whose schemes the solve may have read
+    /// ([`Schemes::before`]), sorted: under a context whose schemes give
+    /// each of them the same, it solves the same.
+    pub callees: Vec<u64>,
+    /// The lowering.
+    lowered: facts::Lowered,
+}
+
+impl fmt::Debug for SolvedAhead {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SolvedAhead")
+            .field("found", &self.found)
+            .field("summary", &self.summary)
+            .field("callees", &self.callees)
+            .finish_non_exhaustive()
+    }
+}
+
+/// [`summarise`] for `function` (with its analyses `facts`) lowered
+/// `ahead` up to rounding its types: its types solved, and its scheme,
+/// under `context`, which has the interfaces [`lower_ahead`] read. Of the
+/// context's schemes it reads those of [`SolvedAhead::callees`] alone
+/// while the program's signatures and globals are not settled (during
+/// the sweep: [`Schemes::settle_signatures`], [`Schemes::settle_globals`]).
+pub fn solve_ahead(
     function: &Function,
     facts: &Facts,
     context: &Context<'_>,
     ahead: Ahead,
-) -> (Found, Option<Summary>) {
+) -> SolvedAhead {
     let Ahead { found, lowered } = ahead;
     let mut lowering = facts::Lowering::from_parts(function, facts, context, lowered);
-    let typed::Summarised {
+    let (summary, callees) = lowering.solve_scheme();
+    SolvedAhead {
+        found,
         summary,
+        callees,
+        lowered: lowering.into_parts(),
+    }
+}
+
+/// The rest of [`summarise`] for `function` (with its analyses `facts`)
+/// `solved` ahead: its types rounded under `context`'s structs, which has
+/// the interfaces [`lower_ahead`] read.
+pub fn round_ahead(
+    function: &Function,
+    facts: &Facts,
+    context: &Context<'_>,
+    solved: SolvedAhead,
+) -> (Found, Option<Summary>) {
+    let SolvedAhead {
+        found,
+        summary,
+        lowered,
+        ..
+    } = solved;
+    let lowering = facts::Lowering::from_parts(function, facts, context, lowered);
+    let typed::SolvedTypes {
         arguments,
         structs,
         mut signature,
-    } = lowering.solve_summarised();
+    } = lowering.round_solved();
     // An allocator wrapper's is `void *`: its allocation is any object's.
     if lowering.allocator.is_some() {
         signature.returns = Some(FieldType::Pointer(None));

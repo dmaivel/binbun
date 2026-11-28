@@ -229,19 +229,21 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 
 use binbun_decompile::data::Data;
-use binbun_decompile::lower::{Ahead, Convention, Found, Interface, Passed, Read};
+use binbun_decompile::lower::{
+    Ahead, Context, Convention, Found, Interface, Passed, Read, SolvedAhead, solve_ahead,
+};
 use binbun_decompile::mapping::Source;
 use binbun_decompile::prototype::{AllocSize, Prototypes};
-use binbun_decompile::typing::{Argument, Class, FunctionTypes, Schemes};
+use binbun_decompile::typing::{Argument, Class, FunctionTypes, Schemes, Summary};
 use binbun_loader::{Image, SymbolSource};
 use binbun_semantics::ir::RegisterId;
 
-use super::stream::{Moved, interface, lower_ahead, summarise_ahead};
-use super::{Interfaces, Prepared, decompile_l1};
+use super::stream::{Moved, interface, lower_ahead, round_ahead};
+use super::{Interfaces, Prepared, decompile_l1, with_context_reading};
 use crate::analysis::names;
 use crate::cfg::{Destination, Exit, FunctionId, Program};
 use crate::classes::classes;
@@ -734,11 +736,12 @@ impl Lowerer<'_> {
     /// the functions `preferred` returning in the vector result register:
     /// what is known after it, the functions whose body's interface stays
     /// (callers we do not see, or whose calls lowering does not see), and
-    /// what each function's body gave. Each function is lifted and
-    /// lowered ahead of the sweep on the threads ([`Self::lowered_ahead`]),
-    /// and its types solved in the sweep, on this thread, under the
-    /// schemes known then; lowered again here where its callees'
-    /// interfaces it read are not those the sweep knows ([`read_alike`]).
+    /// what each function's body gave. Each function is lifted, lowered
+    /// and its types solved ahead of the sweep on the threads
+    /// ([`Self::solved_ahead`]), and its types rounded in the sweep, on
+    /// this thread, under the structs known then; lowered and solved again
+    /// here where its callees' interfaces or schemes they read are not
+    /// those the sweep knows ([`Self::summarised`]).
     fn sweep(
         &self,
         order: &[FunctionId],
@@ -760,41 +763,13 @@ impl Lowerer<'_> {
         let mut whole = visible(image, program, references);
         let mut found: BTreeMap<u64, Found> = BTreeMap::new();
         self.progress.start(order.len());
-        self.lowered_ahead(order, &base, |id, read, lifted| {
+        self.solved_ahead(order, &base, |id, arrived| {
             self.progress.step();
             let Some(entry) = program.functions.get(id).map(|f| f.entry) else {
                 return;
             };
             Arc::make_mut(&mut known.callers.schemes).visit(entry);
-            let function = match lifted {
-                Ok((prepared, ahead)) => {
-                    let ahead = match ahead {
-                        Ok(ahead) if read_alike(&ahead.found, read, &known.interfaces) => Ok(ahead),
-                        Ok(_) | Err(_) => lower_ahead(
-                            image,
-                            &prepared,
-                            self.prototypes,
-                            self.data,
-                            &known.interfaces,
-                            &known,
-                        ),
-                    };
-                    ahead
-                        .and_then(|ahead| {
-                            summarise_ahead(
-                                image,
-                                &prepared,
-                                self.prototypes,
-                                self.data,
-                                &known,
-                                ahead,
-                            )
-                        })
-                        .ok()
-                }
-                Err(_) => None,
-            };
-            let Some((mut function, summary)) = function else {
+            let Some((mut function, summary)) = self.summarised(entry, arrived, &known) else {
                 whole.extend(targets(program, id));
                 return;
             };
@@ -817,106 +792,193 @@ impl Lowerer<'_> {
         (known, whole, found)
     }
 
-    /// Each of `order` lifted and lowered ahead ([`lower_ahead`]) on the
-    /// threads, at most [`LOWER_AHEAD`] a thread beyond the last visited: lifted
-    /// at once, lowered once its callees before it in `order` are, with
-    /// their interfaces so found (the rest of `base`); then handed to
-    /// `visit` in `order`, on this thread, with those interfaces (`read`):
-    /// its L1 and what lowering ahead found, or why there is no L1.
-    fn lowered_ahead(
+    /// Each of `order` lifted, lowered ([`lower_ahead`]) and its types
+    /// solved ([`Self::solve`]) ahead on the threads, at most
+    /// [`SOLVE_AHEAD`] a thread beyond the last visited: lifted at once,
+    /// lowered once its callees before it in `order` are, with their
+    /// interfaces so found, and solved once they are, with their schemes
+    /// so found (the rest of `base`); then handed to `visit` in `order`,
+    /// on this thread, as it [`Arrived`].
+    fn solved_ahead(
         &self,
         order: &[FunctionId],
         base: &Interfaces,
-        mut visit: impl FnMut(FunctionId, &Reading, Result<(Prepared, LoweredAhead), String>),
+        mut visit: impl FnMut(FunctionId, Arrived),
     ) {
-        let mut schedule = Schedule::new(self.program, order);
+        let board = Board::new(Schedule::new(self.program, order));
         let mut arrived: BTreeMap<usize, Arrived> = BTreeMap::new();
-        let queue = Queue::default();
-        let (done, results) = mpsc::channel::<Done>();
-        let window = self.threads.max(1).saturating_mul(LOWER_AHEAD);
+        let (arrivals, results) = mpsc::channel::<(usize, Arrived)>();
+        let window = self.threads.max(1).saturating_mul(SOLVE_AHEAD);
         thread::scope(|scope| {
-            let _closing = Closing(&queue);
+            let _closing = Closing(&board);
             for _ in 0..self.threads.max(1) {
-                let (queue, done) = (&queue, done.clone());
-                scope.spawn(move || self.work(base, queue, &done));
+                let (board, arrivals) = (&board, arrivals.clone());
+                scope.spawn(move || self.work(base, board, &arrivals));
             }
-            drop(done);
+            drop(arrivals);
             let mut admitted = 0;
             for (at, &id) in order.iter().enumerate() {
-                while admitted < order.len() && admitted < at.saturating_add(window) {
-                    schedule.admit(admitted);
-                    if let Some(&id) = order.get(admitted) {
-                        queue.push(Work::Lift(admitted, id));
-                    }
+                while let Some(&next) = order.get(admitted)
+                    && admitted < at.saturating_add(window)
+                {
+                    board.admit(admitted, next);
                     admitted += 1;
                 }
-                let (read, lifted) = loop {
-                    if let Some(arrived) = arrived.remove(&at) {
-                        break arrived;
+                let arrival = loop {
+                    if let Some(arrival) = arrived.remove(&at) {
+                        break arrival;
                     }
-                    // Every worker stopped before lowering it: one
+                    // Every thread stopped before solving it: one
                     // panicked, which the scope's end reports.
-                    let Ok(done) = results.recv() else {
+                    let Ok((place, arrival)) = results.recv() else {
                         return;
                     };
-                    let (place, arrival) = match done {
-                        Done::Lifted(place, Ok(moved)) => {
-                            if let Some(work) = schedule.lifted(place, moved) {
-                                queue.push(work);
-                            }
-                            continue;
-                        }
-                        Done::Lifted(place, Err(error)) => (place, (Reading::new(), Err(error))),
-                        Done::Lowered(place, read, moved, ahead) => {
-                            (place, (read, Ok((*moved, *ahead))))
-                        }
-                    };
-                    let interface = match &arrival.1 {
-                        Ok((_, Ok(ahead))) => ahead.found.interface.clone(),
-                        Ok((_, Err(_))) | Err(_) => None,
-                    };
-                    for work in schedule.lowered(place, interface) {
-                        queue.push(work);
-                    }
                     arrived.insert(place, arrival);
                 };
-                visit(
-                    id,
-                    &read,
-                    lifted.map(|(moved, ahead)| (moved.prepared(), ahead)),
-                );
+                visit(id, arrival);
             }
         });
     }
 
-    /// Does each [`Work`] from `queue` (the earliest first) until it
-    /// closes, each to `done`: lifts a function ([`decompile_l1`]), or
-    /// lowers one ahead ([`lower_ahead`], with the rest of `base`).
-    fn work(&self, base: &Interfaces, queue: &Queue, done: &Sender<Done>) {
-        while let Some(work) = queue.pop() {
-            let did = match work {
-                Work::Lift(at, id) => Done::Lifted(
-                    at,
-                    decompile_l1(self.image, self.program, id, self.summaries, self.disabled)
-                        .map(|prepared| Box::new(Moved::new(prepared))),
-                ),
-                Work::Lower(at, moved, read) => {
-                    let prepared = moved.prepared();
-                    let ahead = lower_ahead(
-                        self.image,
-                        &prepared,
-                        self.prototypes,
-                        self.data,
-                        &read,
-                        base,
-                    );
-                    Done::Lowered(at, read, Box::new(Moved::new(prepared)), Box::new(ahead))
-                }
-            };
-            if done.send(did).is_err() {
+    /// Does each [`Work`] from `board` (the earliest first, [`Self::run`])
+    /// until it closes, reporting each to `board`, and the functions it
+    /// sees through to `arrivals`; a panic here closes `board`.
+    fn work(&self, base: &Interfaces, board: &Board, arrivals: &Sender<(usize, Arrived)>) {
+        let _closing = Closing(board);
+        while let Some(work) = board.pop() {
+            if let Some(arrival) = board.report(self.run(work, base))
+                && arrivals.send(arrival).is_err()
+            {
                 break;
             }
         }
+    }
+
+    /// Does `work`: lifts a function ([`decompile_l1`]), lowers one ahead
+    /// ([`lower_ahead`]) or solves its types ([`Self::solve`]), with what
+    /// the work gives of its callees and the rest of `base`.
+    fn run(&self, work: Work, base: &Interfaces) -> Done {
+        match work {
+            Work::Lift(at, id) => Done::Lifted(
+                at,
+                decompile_l1(self.image, self.program, id, self.summaries, self.disabled)
+                    .map(|prepared| Box::new(Moved::new(prepared))),
+            ),
+            Work::Lower(at, moved, read) => {
+                let prepared = moved.prepared();
+                let ahead = lower_ahead(
+                    self.image,
+                    &prepared,
+                    self.prototypes,
+                    self.data,
+                    &read,
+                    base,
+                );
+                Done::Lowered(
+                    at,
+                    read,
+                    Box::new(Moved::new(prepared)),
+                    ahead.map(Box::new),
+                )
+            }
+            Work::Solve(at, moved, ahead, read, schemes) => {
+                let prepared = moved.prepared();
+                let solved = self.solve(&prepared, &read, base, &schemes, *ahead);
+                Done::Solved(
+                    at,
+                    read,
+                    schemes,
+                    Box::new(Moved::new(prepared)),
+                    solved.map(Box::new),
+                )
+            }
+        }
+    }
+
+    /// [`lower_ahead`]'s function `prepared`, lowered `ahead`, its types
+    /// solved ([`solve_ahead`]) under the interfaces `read` and the
+    /// schemes `schemes` (the rest of `known`).
+    ///
+    /// # Errors
+    ///
+    /// The image's code is not lifted.
+    fn solve(
+        &self,
+        prepared: &Prepared,
+        read: &Reading,
+        known: &Interfaces,
+        schemes: &Schemes,
+        ahead: Ahead,
+    ) -> Result<SolvedAhead, String> {
+        with_context_reading(
+            self.image,
+            prepared.l1.entry,
+            read,
+            known,
+            self.prototypes,
+            self.data,
+            |context| {
+                let context = Context {
+                    schemes,
+                    ..*context
+                };
+                Ok(solve_ahead(&prepared.l1, &prepared.facts, &context, ahead))
+            },
+        )
+    }
+
+    /// What the sweep finds of the function at `entry` as it `arrived`
+    /// from the threads: its types solved there, rounded under `known`
+    /// ([`round_ahead`]); lowered and solved again on this thread where
+    /// they failed there, or an interface or scheme of its callees they
+    /// read is not `known`'s ([`read_alike`], [`schemes_alike`]). `None`
+    /// where it has no L1 or lowering fails.
+    fn summarised(
+        &self,
+        entry: u64,
+        arrived: Arrived,
+        known: &Interfaces,
+    ) -> Option<(Found, Option<Summary>)> {
+        let Arrived { read, schemes, l1 } = arrived;
+        let (moved, solved) = l1.ok()?;
+        let prepared = moved.prepared();
+        let solved = match solved {
+            Ok(solved)
+                if read_alike(&solved.found, &read, &known.interfaces)
+                    && schemes_alike(entry, &solved, &schemes, &known.callers.schemes) =>
+            {
+                Ok(*solved)
+            }
+            Ok(_) | Err(_) => lower_ahead(
+                self.image,
+                &prepared,
+                self.prototypes,
+                self.data,
+                &known.interfaces,
+                known,
+            )
+            .and_then(|ahead| {
+                self.solve(
+                    &prepared,
+                    &known.interfaces,
+                    known,
+                    &known.callers.schemes,
+                    ahead,
+                )
+            }),
+        };
+        solved
+            .and_then(|solved| {
+                round_ahead(
+                    self.image,
+                    &prepared,
+                    self.prototypes,
+                    self.data,
+                    known,
+                    solved,
+                )
+            })
+            .ok()
     }
 
     /// What function `id`, its L1 `prepared`, finds for each of `views`
@@ -994,109 +1056,229 @@ impl Lowerer<'_> {
 }
 
 /// The interfaces of its callees a function's lowering ahead read, by
-/// entry ([`Lowerer::lowered_ahead`]).
+/// entry ([`Lowerer::solved_ahead`]).
 type Reading = BTreeMap<u64, Interface>;
 
-/// How many functions per thread the sweep lifts and lowers ahead of the
-/// one it types ([`Lowerer::lowered_ahead`]). Those it lifts wait for
-/// their callees to be lowered, so a call chain's lowerings run one after
+/// How many functions per thread the sweep lifts, lowers and solves ahead
+/// of the one it rounds ([`Lowerer::solved_ahead`]). Each waits for its
+/// callees to be lowered, then solved, so a call chain's run one after
 /// another; the further ahead, the less the sweep waits for them, and the
-/// more lifted functions it holds: on perf, 4 a thread waited 3.0 s of an
-/// 11 s sweep, 16 2.1 s of 9.7 s (190 MB more at the peak), 64 1.0 s of
-/// 9 s (1.2 GB more).
-const LOWER_AHEAD: usize = 16;
+/// more functions it holds: on perf, 16 a thread waited 2.5 s of a 6.4 s
+/// sweep, 64 2.0 s of 6.3 s (1.6 GB more at the peak).
+const SOLVE_AHEAD: usize = 16;
 
-/// What a thread does for [`Lowerer::lowered_ahead`]: lift the function
-/// at a place in the order, or lower ahead the one there, lifted (its L1
-/// as it moves), with the interfaces of its callees it reads.
+/// What a thread does for [`Lowerer::solved_ahead`] ([`Lowerer::run`]):
+/// lift the function at a place in the order; lower it ahead, lifted (its
+/// L1 as it moves), with the interfaces of its callees it reads; or solve
+/// its types, lowered, with those and the schemes of its callees.
 enum Work {
     Lift(usize, FunctionId),
     Lower(usize, Box<Moved>, Reading),
+    Solve(usize, Box<Moved>, Box<Ahead>, Reading, Box<Schemes>),
 }
 
 impl Work {
     /// The place of its function in the order.
     const fn place(&self) -> usize {
         match *self {
-            Self::Lift(at, _) | Self::Lower(at, ..) => at,
+            Self::Lift(at, _) | Self::Lower(at, ..) | Self::Solve(at, ..) => at,
         }
-    }
-}
-
-/// The [`Work`] waiting for the threads, by its function's place in the
-/// order, and whether more may come: a thread takes the earliest, which
-/// the sweep needs first.
-#[derive(Default)]
-struct Queue {
-    state: Mutex<(BTreeMap<usize, Work>, bool)>,
-    ready: Condvar,
-}
-
-impl Queue {
-    /// Adds `work`.
-    fn push(&self, work: Work) {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.0.insert(work.place(), work);
-        self.ready.notify_one();
-    }
-
-    /// The earliest work, once there is some; none once it is closed and
-    /// empty.
-    fn pop(&self) -> Option<Work> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        loop {
-            if let Some((_, work)) = state.0.pop_first() {
-                return Some(work);
-            }
-            if state.1 {
-                return None;
-            }
-            state = self
-                .ready
-                .wait(state)
-                .unwrap_or_else(PoisonError::into_inner);
-        }
-    }
-}
-
-/// Closes its [`Queue`] when dropped (the sweep done, or stopped by a
-/// thread's panic): the threads stop once it is empty.
-struct Closing<'a>(&'a Queue);
-
-impl Drop for Closing<'_> {
-    fn drop(&mut self) {
-        let mut state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.1 = true;
-        self.0.ready.notify_all();
     }
 }
 
 /// What a thread did ([`Work`]): the function at a place lifted (its L1
-/// as it moves) or why it is not, or lowered ahead (with what it read).
+/// as it moves), lowered ahead (with the interfaces it read) or its
+/// types solved (with those, and the schemes it read), or why it is not.
 enum Done {
     Lifted(usize, Result<Box<Moved>, String>),
-    Lowered(usize, Reading, Box<Moved>, Box<LoweredAhead>),
+    Lowered(usize, Reading, Box<Moved>, Result<Box<Ahead>, String>),
+    Solved(usize, Reading, Box<Schemes>, Box<Moved>, SolvedTypes),
 }
 
-/// What [`Lowerer::lowered_ahead`] knows of the functions it lowers ahead,
-/// by their places in `order`: each one's callees before it, the
-/// interfaces of those lowered (`None`: one has none), and those lifted
-/// or waiting for their callees to be lowered.
+/// What solving a function's types ahead solved ([`Lowerer::solve`]),
+/// or why lowering or solving it failed.
+type SolvedTypes = Result<Box<SolvedAhead>, String>;
+
+/// A function as it arrives from the threads to the sweep
+/// ([`Lowerer::solved_ahead`]): the interfaces of its callees its
+/// lowering read, the schemes of its callees its solve read, and its L1
+/// (as it moves) with its types solved, or why lowering or solving it
+/// failed; or why there is no L1.
+struct Arrived {
+    read: Reading,
+    schemes: Box<Schemes>,
+    l1: Result<(Box<Moved>, SolvedTypes), String>,
+}
+
+/// What the sweep's threads share ([`Lowerer::solved_ahead`]): its
+/// state, and the signal that work is queued or the board closed.
+struct Board {
+    shared: Mutex<Shared>,
+    ready: Condvar,
+}
+
+/// A [`Board`]'s state: the [`Schedule`], the [`Work`] waiting for the
+/// threads by its function's place in the order (a thread takes the
+/// earliest, which the sweep needs first), and whether the sweep is over.
+struct Shared {
+    schedule: Schedule,
+    queue: BTreeMap<usize, Work>,
+    closed: bool,
+}
+
+impl Board {
+    /// The board of `schedule`, no work queued.
+    const fn new(schedule: Schedule) -> Self {
+        Self {
+            shared: Mutex::new(Shared {
+                schedule,
+                queue: BTreeMap::new(),
+                closed: false,
+            }),
+            ready: Condvar::new(),
+        }
+    }
+
+    /// Its state, whatever thread panicked holding it.
+    fn lock(&self) -> MutexGuard<'_, Shared> {
+        self.shared.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The function at `at` (`id`) to lift, and to lower and solve once
+    /// its callees are.
+    fn admit(&self, at: usize, id: FunctionId) {
+        let mut shared = self.lock();
+        shared.schedule.admit(at);
+        shared.queue.insert(at, Work::Lift(at, id));
+        self.ready.notify_one();
+    }
+
+    /// The earliest work, once there is some; none once the board is
+    /// closed.
+    fn pop(&self) -> Option<Work> {
+        let mut shared = self.lock();
+        loop {
+            if shared.closed {
+                return None;
+            }
+            if let Some((_, work)) = shared.queue.pop_first() {
+                return Some(work);
+            }
+            shared = self
+                .ready
+                .wait(shared)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+
+    /// `done` reported ([`Schedule::done`]): the work it lets the threads
+    /// do queued; the function it is of, where it is through.
+    fn report(&self, done: Done) -> Option<(usize, Arrived)> {
+        let mut shared = self.lock();
+        let (works, arrival) = shared.schedule.done(done);
+        for work in works {
+            shared.queue.insert(work.place(), work);
+            self.ready.notify_one();
+        }
+        arrival
+    }
+}
+
+/// Closes its [`Board`] when dropped (the sweep over, or stopped by a
+/// panic on this thread or another): the threads stop.
+struct Closing<'a>(&'a Board);
+
+impl Drop for Closing<'_> {
+    fn drop(&mut self) {
+        self.0.lock().closed = true;
+        self.0.ready.notify_all();
+    }
+}
+
+/// The functions waiting, by place, for their callees before them to
+/// reach a stage ([`Schedule`]): how many of each one's callees are yet
+/// to, the waiting functions each is a callee of, and what each holds
+/// for when they have, once it does.
+struct Gate<T> {
+    unmet: BTreeMap<usize, usize>,
+    waiting: BTreeMap<usize, Vec<usize>>,
+    held: BTreeMap<usize, T>,
+}
+
+impl<T> Gate<T> {
+    /// None waiting.
+    const fn new() -> Self {
+        Self {
+            unmet: BTreeMap::new(),
+            waiting: BTreeMap::new(),
+            held: BTreeMap::new(),
+        }
+    }
+
+    /// The function at `at` waits for `callees`, yet to reach the stage.
+    fn wait(&mut self, at: usize, callees: Vec<usize>) {
+        if callees.is_empty() {
+            return;
+        }
+        self.unmet.insert(at, callees.len());
+        for callee in callees {
+            self.waiting.entry(callee).or_default().push(at);
+        }
+    }
+
+    /// `item` of the function at `at` back if it waits for none of its
+    /// callees, else none: held until they have reached the stage.
+    fn pass(&mut self, at: usize, item: T) -> Option<T> {
+        if self.unmet.contains_key(&at) {
+            self.held.insert(at, item);
+            return None;
+        }
+        Some(item)
+    }
+
+    /// The function at `callee` reached the stage: the items of the
+    /// functions that waited for it last and hold one.
+    fn reached(&mut self, callee: usize) -> Vec<(usize, T)> {
+        let mut passed = Vec::new();
+        for waiter in self.waiting.remove(&callee).unwrap_or_default() {
+            let Some(count) = self.unmet.get_mut(&waiter) else {
+                continue;
+            };
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                self.unmet.remove(&waiter);
+                if let Some(item) = self.held.remove(&waiter) {
+                    passed.push((waiter, item));
+                }
+            }
+        }
+        passed
+    }
+}
+
+/// A function lowered ahead waiting for its callees' schemes to solve its
+/// types: its L1 (as it moves), what lowering found, and the interfaces
+/// of its callees it read.
+type Unsolved = (Box<Moved>, Box<Ahead>, Reading);
+
+/// What [`Lowerer::solved_ahead`] knows of the functions it works on, by
+/// their places in `order`: each one's callees before it, the interfaces
+/// of those lowered and the schemes of those solved (`None`: one has
+/// none), and those waiting for their callees to be either.
 struct Schedule {
     entries: Vec<Option<u64>>,
     callees: Vec<Vec<usize>>,
     interfaces: BTreeMap<usize, Option<Interface>>,
-    /// How many of each waiting function's callees are yet to be lowered.
-    unmet: BTreeMap<usize, usize>,
-    /// The waiting functions each is a callee of.
-    waiting: BTreeMap<usize, Vec<usize>>,
-    /// The waiting functions lifted (their L1 as it moves).
-    lifted: BTreeMap<usize, Box<Moved>>,
+    summaries: BTreeMap<usize, Option<Summary>>,
+    /// The functions waiting to be lowered, lifted.
+    lowering: Gate<Box<Moved>>,
+    /// The functions waiting to be solved, lowered.
+    solving: Gate<Unsolved>,
 }
 
 impl Schedule {
-    /// The functions of `program` in `order`, none lowered: each one's
-    /// callees before it (what it calls or jumps to).
+    /// The functions of `program` in `order`, none lowered nor solved:
+    /// each one's callees before it (what it calls or jumps to).
     fn new(program: &Program, order: &[FunctionId]) -> Self {
         let place: BTreeMap<FunctionId, usize> =
             order.iter().enumerate().map(|(at, &id)| (id, at)).collect();
@@ -1120,9 +1302,9 @@ impl Schedule {
                 .collect(),
             callees,
             interfaces: BTreeMap::new(),
-            unmet: BTreeMap::new(),
-            waiting: BTreeMap::new(),
-            lifted: BTreeMap::new(),
+            summaries: BTreeMap::new(),
+            lowering: Gate::new(),
+            solving: Gate::new(),
         }
     }
 
@@ -1139,65 +1321,137 @@ impl Schedule {
             .collect()
     }
 
-    /// The function at `at` to lift and lower: it waits for its callees
-    /// yet to be lowered.
+    /// The schemes of the function at `at`'s callees, solved, for solving
+    /// it: each of theirs before its ([`Schemes::before`]).
+    fn schemes(&self, at: usize) -> Schemes {
+        let entry = |place: usize| self.entries.get(place).copied().flatten();
+        let mut schemes = Schemes::new();
+        for &callee in self.callees.get(at).into_iter().flatten() {
+            if let Some(Some(summary)) = self.summaries.get(&callee)
+                && let Some(entry) = entry(callee)
+            {
+                schemes.visit(entry);
+                schemes.insert(entry, summary.clone());
+            }
+        }
+        if let Some(entry) = entry(at) {
+            schemes.visit(entry);
+        }
+        schemes
+    }
+
+    /// The function at `at` to lift, lower and solve: it waits for its
+    /// callees yet to be lowered, and to be solved.
     fn admit(&mut self, at: usize) {
-        let unfound: Vec<usize> = self
-            .callees
-            .get(at)
-            .into_iter()
-            .flatten()
+        let callees = self.callees.get(at).map_or(&[][..], Vec::as_slice);
+        let unlowered = callees
+            .iter()
             .copied()
             .filter(|callee| !self.interfaces.contains_key(callee))
             .collect();
-        if unfound.is_empty() {
-            return;
-        }
-        self.unmet.insert(at, unfound.len());
-        for callee in unfound {
-            self.waiting.entry(callee).or_default().push(at);
-        }
+        let unsolved = callees
+            .iter()
+            .copied()
+            .filter(|callee| !self.summaries.contains_key(callee))
+            .collect();
+        self.lowering.wait(at, unlowered);
+        self.solving.wait(at, unsolved);
     }
 
-    /// The function at `at` lifted (`moved`): its lowering, if its callees
-    /// are lowered, else none (it waits for them).
-    fn lifted(&mut self, at: usize, moved: Box<Moved>) -> Option<Work> {
-        if self.unmet.contains_key(&at) {
-            self.lifted.insert(at, moved);
-            return None;
-        }
-        Some(Work::Lower(at, moved, self.reading(at)))
-    }
-
-    /// The function at `at` lowered, with `interface` (or not lifted): the
-    /// lowerings of the lifted functions waiting for it last.
-    fn lowered(&mut self, at: usize, interface: Option<Interface>) -> Vec<Work> {
-        self.interfaces.insert(at, interface);
-        let mut works = Vec::new();
-        for waiter in self.waiting.remove(&at).unwrap_or_default() {
-            let Some(count) = self.unmet.get_mut(&waiter) else {
-                continue;
-            };
-            *count = count.saturating_sub(1);
-            if *count == 0 {
-                self.unmet.remove(&waiter);
-                if let Some(moved) = self.lifted.remove(&waiter) {
-                    works.push(Work::Lower(waiter, moved, self.reading(waiter)));
+    /// What `done` lets the threads do, and the function it is of where
+    /// that is through, to arrive in the sweep: its types solved, or it
+    /// failed (it has no interface nor scheme then, for its callers).
+    fn done(&mut self, done: Done) -> (Vec<Work>, Option<(usize, Arrived)>) {
+        let failed = |read, l1| Arrived {
+            read,
+            schemes: Box::new(Schemes::new()),
+            l1,
+        };
+        match done {
+            Done::Lifted(at, Ok(moved)) => {
+                let lower = self.lowering.pass(at, moved);
+                let work = lower.map(|moved| Work::Lower(at, moved, self.reading(at)));
+                (work.into_iter().collect(), None)
+            }
+            Done::Lifted(at, Err(error)) => (
+                self.failed(at),
+                Some((at, failed(Reading::new(), Err(error)))),
+            ),
+            Done::Lowered(at, read, moved, Err(error)) => (
+                self.failed(at),
+                Some((at, failed(read, Ok((moved, Err(error)))))),
+            ),
+            Done::Lowered(at, read, moved, Ok(ahead)) => {
+                let mut works = self.lowered(at, ahead.found.interface.clone());
+                if let Some((moved, ahead, read)) = self.solving.pass(at, (moved, ahead, read)) {
+                    works.push(Work::Solve(
+                        at,
+                        moved,
+                        ahead,
+                        read,
+                        Box::new(self.schemes(at)),
+                    ));
                 }
+                (works, None)
+            }
+            Done::Solved(at, read, schemes, moved, solved) => {
+                let summary = solved
+                    .as_ref()
+                    .ok()
+                    .and_then(|solved| solved.summary.clone());
+                let arrived = Arrived {
+                    read,
+                    schemes,
+                    l1: Ok((moved, solved)),
+                };
+                (self.solved(at, summary), Some((at, arrived)))
             }
         }
+    }
+
+    /// The function at `at` not lifted or lowered: it has no interface nor
+    /// scheme. The work of the functions waiting for it last.
+    fn failed(&mut self, at: usize) -> Vec<Work> {
+        let mut works = self.lowered(at, None);
+        works.extend(self.solved(at, None));
         works
+    }
+
+    /// The function at `at` lowered, with `interface`: the lowerings of the
+    /// lifted functions waiting for it last.
+    fn lowered(&mut self, at: usize, interface: Option<Interface>) -> Vec<Work> {
+        self.interfaces.insert(at, interface);
+        self.lowering
+            .reached(at)
+            .into_iter()
+            .map(|(waiter, moved)| Work::Lower(waiter, moved, self.reading(waiter)))
+            .collect()
+    }
+
+    /// The function at `at` solved, with `summary`: the solves of the
+    /// lowered functions waiting for it last.
+    fn solved(&mut self, at: usize, summary: Option<Summary>) -> Vec<Work> {
+        self.summaries.insert(at, summary);
+        self.solving
+            .reached(at)
+            .into_iter()
+            .map(|(waiter, (moved, ahead, read))| {
+                Work::Solve(waiter, moved, ahead, read, Box::new(self.schemes(waiter)))
+            })
+            .collect()
     }
 }
 
-/// What lowering a function ahead found ([`lower_ahead`]), or why it did
-/// not lower.
-type LoweredAhead = Result<Ahead, String>;
-
-/// A function lowered ahead as it arrives from the threads: the
-/// interfaces it read, and its L1 (as it moves) with what lowering found,
-/// or why there is no L1.
-type Arrived = (Reading, Result<(Moved, LoweredAhead), String>);
+/// Whether solving a function's types ahead, which solved `solved` for
+/// the function at `entry` with its callees' schemes `read`, read of
+/// each callee it may look up the scheme `known` has (none where it has
+/// none): then solving it with `known` solves the same.
+fn schemes_alike(entry: u64, solved: &SolvedAhead, read: &Schemes, known: &Schemes) -> bool {
+    solved
+        .callees
+        .iter()
+        .all(|&callee| read.before(entry, callee) == known.before(entry, callee))
+}
 
 /// Whether lowering a function ahead, which found `found` with its
 /// callees' interfaces `read`, read of each callee it looked up the

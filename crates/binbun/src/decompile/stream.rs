@@ -425,7 +425,7 @@ pub(super) fn interface(
 /// only because a stack address may step back from where it points, its
 /// interface under the reading view's assumptions too
 /// ([`Found::assumed`](lowering::Found::assumed)). To finish with
-/// [`summarise_ahead`].
+/// [`lowering::solve_ahead`] and [`round_ahead`].
 ///
 /// # Errors
 ///
@@ -465,20 +465,21 @@ pub(super) fn lower_ahead(
     )
 }
 
-/// The rest of [`lower_ahead`]'s function `prepared` (lowered `ahead`):
-/// its scheme, under the interfaces and schemes `known`, with the same
-/// interfaces of the callees as `ahead` read.
+/// The rest of [`lower_ahead`]'s function `prepared`, its types `solved`
+/// ([`lowering::solve_ahead`]): rounded under the interfaces and structs
+/// `known` ([`lowering::round_ahead`]), which has the same interfaces of
+/// its callees as lowering it read.
 ///
 /// # Errors
 ///
 /// The image's code is not lifted.
-pub(super) fn summarise_ahead(
+pub(super) fn round_ahead(
     image: &Image<'_>,
     prepared: &Prepared,
     prototypes: &dyn Prototypes,
     data: &dyn Data,
     known: &Interfaces,
-    ahead: lowering::Ahead,
+    solved: lowering::SolvedAhead,
 ) -> Result<(Found, Option<Summary>), String> {
     with_context(
         image,
@@ -487,11 +488,11 @@ pub(super) fn summarise_ahead(
         prototypes,
         data,
         |context| {
-            Ok(lowering::summarise_ahead(
+            Ok(lowering::round_ahead(
                 &prepared.l1,
                 &prepared.facts,
                 context,
-                ahead,
+                solved,
             ))
         },
     )

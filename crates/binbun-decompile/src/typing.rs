@@ -737,7 +737,7 @@ impl Schemes {
 
     /// The scheme of the function at `called` for a call in the function
     /// at `at`: only if the called function came first.
-    pub(crate) fn before(&self, at: u64, called: u64) -> Option<&Summary> {
+    pub fn before(&self, at: u64, called: u64) -> Option<&Summary> {
         if self.order.get(&called)? < self.order.get(&at)? {
             self.summaries.get(&called)
         } else {

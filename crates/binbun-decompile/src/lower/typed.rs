@@ -21,11 +21,9 @@ use crate::typing::{
     Solved, Sort, Summary, View,
 };
 
-/// What [`Lowering::solve_summarised`] finds of what it solved.
-pub(super) struct Summarised {
-    /// Its scheme (nothing unless solved, or past
-    /// [`typing::SCHEME_SIZE`]).
-    pub(super) summary: Option<Summary>,
+/// What [`Lowering::round_solved`] rounds of what
+/// [`Lowering::solve_scheme`] solved.
+pub(super) struct SolvedTypes {
     /// What the calls pass their callees ([`typing::Arguments`]).
     pub(super) arguments: Arguments,
     /// What it adds to the program's synthesised structs
@@ -46,37 +44,48 @@ impl Lowering<'_, '_> {
         }
     }
 
-    /// [`Self::solve_types`], and what it solved summarised
-    /// ([`Summarised`]; empty unless solved): of one view of this
-    /// lowering, which solving does not change.
-    pub(super) fn solve_summarised(&mut self) -> Summarised {
-        let mut view = self.typing_view();
+    /// [`Self::solve_types`], and the scheme of what it solved
+    /// ([`typing::summary`]: nothing unless solved, or past
+    /// [`typing::SCHEME_SIZE`]), of one view of this lowering; with the
+    /// callees whose schemes the solve may read ([`typing::Schemes::before`]):
+    /// its calls', sorted. Of the context's schemes it reads those alone,
+    /// and the program's signatures and globals (none until the sweep is
+    /// over: [`typing::Schemes::settle_signatures`],
+    /// [`typing::Schemes::settle_globals`]).
+    pub(super) fn solve_scheme(&mut self) -> (Option<Summary>, Vec<u64>) {
+        let view = self.typing_view();
         let solved = typing::solve(&view);
-        let summarised = match &solved {
-            Ok(solved) => {
-                let summary = typing::summary(&view, solved);
-                let mut types = self.types.clone();
-                view.codes = self.codes(&view, &mut types);
-                Summarised {
-                    summary,
-                    arguments: typing::arguments(&view, solved, &mut types.clone()),
-                    structs: self.contribution(&view, solved, &mut types.clone()),
-                    signature: typing::signature(&view, solved, &mut types),
-                }
-            }
-            Err(_) => Summarised {
-                summary: None,
-                arguments: Arguments::new(),
-                structs: typing::Contribution::default(),
-                signature: typing::FunctionTypes::default(),
-            },
-        };
+        let summary = solved
+            .as_ref()
+            .ok()
+            .and_then(|solved| typing::summary(&view, solved));
+        let callees: BTreeSet<u64> = view.calls.iter().filter_map(|call| call.callee).collect();
         drop(view);
         match solved {
             Ok(solved) => self.solved = Some(solved),
             Err(outcome) => self.typing = outcome,
         }
-        summarised
+        (summary, callees.into_iter().collect())
+    }
+
+    /// What [`Self::solve_scheme`] solved rounded ([`SolvedTypes`]; empty
+    /// unless solved), of one rounding view of this lowering
+    /// ([`Self::rounding_view`]).
+    pub(super) fn round_solved(&self) -> SolvedTypes {
+        let Some(solved) = self.solved.as_ref() else {
+            return SolvedTypes {
+                arguments: Arguments::new(),
+                structs: typing::Contribution::default(),
+                signature: typing::FunctionTypes::default(),
+            };
+        };
+        let mut types = self.types.clone();
+        let view = self.rounding_view(&mut types);
+        SolvedTypes {
+            arguments: typing::arguments(&view, solved, &mut types.clone()),
+            structs: self.contribution(&view, solved, &mut types.clone()),
+            signature: typing::signature(&view, solved, &mut types),
+        }
     }
 
     /// Why what [`Self::solve_types`] solved types `values` as it does
