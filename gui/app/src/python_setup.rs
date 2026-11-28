@@ -49,6 +49,28 @@ enum Setup {
 }
 
 impl Workspace {
+    /// Whether the Python the settings name was found unable to run binbun
+    /// (and no setup of binbun's own is under way).
+    pub fn python_broken(&self) -> bool {
+        self.python.setup.is_none() && matches!(self.checked_python(), Some(Check::Broken(_)))
+    }
+
+    /// What checking the Python the settings name now found, if it was
+    /// (another named since is not known yet).
+    fn checked_python(&self) -> Option<&Check> {
+        self.python
+            .checked
+            .as_ref()
+            .filter(|(interpreter, _)| *interpreter == self.settings.python_interpreter)
+            .map(|(_, check)| check)
+    }
+
+    /// Whether binbun's own Python was set up in this window (the settings
+    /// name it now; a running agent's server takes it at its next start).
+    pub fn python_set_up(&self) -> bool {
+        matches!(self.python.setup, Some(Setup::Done(_)))
+    }
+
     /// Checks the Python the settings name, unless it was (something needs
     /// it now).
     pub fn check_python(&mut self, cx: &mut Context<Self>) {
@@ -121,14 +143,17 @@ impl Workspace {
             Some(Setup::Done(python)) => {
                 return Some(banner(
                     Tone::Info,
-                    format!("binbun's Python is set up: {python}"),
+                    format!(
+                        "binbun's Python is set up: {python}. Agents running take it at their \
+                         next call."
+                    ),
                     Vec::new(),
                     true,
                 ));
             }
             None => {}
         }
-        let Some((_, Check::Broken(why))) = &self.python.checked else {
+        let Some(Check::Broken(why)) = self.checked_python() else {
             return None;
         };
         Some(banner(

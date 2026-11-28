@@ -14,11 +14,14 @@
 //! back, or goes to the program. A saved layout's terminal comes back as a
 //! fresh shell.
 //!
-//! A coding agent that says what it is (OSC 7501, `app=claude-code`) and
-//! has not connected to this window [`OFFER_AFTER`] later gets a banner
-//! offering binbun's setup: its harness's own `mcp add` command run (or
-//! Connect an Agent where a config file takes it), or never again for it
-//! (`binbun_paths::Place::QuietAgents`).
+//! A coding agent that says what it is (OSC 7501, `app=claude-code`) is
+//! watched for its binbun server, which announces itself at its handshake
+//! (`agents::announced`): none [`SERVER_AFTER`] after the agent started,
+//! its harness does not run binbun, and a banner offers binbun's setup:
+//! its harness's own `mcp add` command run (or Connect an Agent where a
+//! config file takes it), or never again for it
+//! (`binbun_paths::Place::QuietAgents`). One that announced a failure is
+//! said with its reason.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -27,7 +30,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use binbun_gui_view::agents::{self, Harness, Setup, setup_rows};
+use binbun_gui_view::agents::{self, Announced, Harness, Setup, Start, setup_rows};
 use binbun_gui_view::banners::{Action, Banner, Button as BannerButton, Kind, Priority, Tone};
 use binbun_gui_view::commands::{self, Command};
 use binbun_gui_view::layout::PaneId;
@@ -35,6 +38,7 @@ use binbun_gui_view::scroll::Wheel;
 use binbun_gui_view::terminal::{
     Button, Colors, Exit, Frame, Input, Launch, Mods, Pointer, Run, Shape, Size, State, Terminal,
 };
+use binbun_paths::Place;
 use gpui_kit::assets::IconName;
 use gpui_kit::prelude::*;
 use gpui_kit::{
@@ -51,9 +55,17 @@ use crate::scrolling::wheel;
 use crate::theme::{hsla, solid};
 use crate::workspace::{ICON_BUTTON, TabKind, Workspace};
 
-/// How long a coding agent seen in a terminal has to connect before
-/// binbun's setup is offered to it.
-const OFFER_AFTER: Duration = Duration::from_secs(3);
+/// How long after a coding agent starts in a terminal its harness has to
+/// start binbun's server (it announces itself at its handshake, a
+/// harness's first milliseconds) before the agent is taken not to run it.
+const SERVER_AFTER: Duration = Duration::from_secs(2);
+/// How long the servers' announcements are read after an agent starts
+/// (an interpreter failing says so once it has tried), and how often.
+const WATCH: Duration = Duration::from_secs(15);
+const WATCH_EVERY: Duration = Duration::from_millis(200);
+/// How much earlier than its agent was seen a server may have started (a
+/// harness starts its servers before it says what it is) and be its.
+const SERVER_BEFORE: u64 = 10_000;
 
 /// The window's terminals, by number.
 #[derive(Default)]
@@ -77,6 +89,10 @@ pub struct TerminalsUi {
     offers: BTreeMap<&'static str, Offer>,
     /// The harnesses not to offer it to (Don't Ask Again), read once.
     quiet: Option<BTreeSet<String>>,
+    /// The binbun servers announced, as last read while watching.
+    announced: Vec<Announced>,
+    /// Reads them while an agent has started lately.
+    watching: Option<Task<()>>,
 }
 
 /// binbun's setup offered to a harness seen in a terminal: where it is,
@@ -139,6 +155,8 @@ struct Seen {
     /// it started again.
     probes: u64,
     since: Instant,
+    /// The same, in Unix milliseconds (a server's announcement's clock).
+    wall: u64,
 }
 
 /// How a grid is drawn.
@@ -155,6 +173,13 @@ struct Look {
 /// `0xRRGGBB` as a colour.
 fn rgb(c: u32) -> Hsla {
     hsla((c << 8) | 0xff)
+}
+
+/// Now, in Unix milliseconds (the clock a server's announcement keeps).
+fn unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 fn mods(m: Modifiers) -> Mods {
@@ -936,6 +961,7 @@ impl Workspace {
     /// there is none, the window drawn again when it is due.
     fn watch_agents(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let now = Instant::now();
+        let wall = unix_millis();
         let mut started = Vec::new();
         for ui in self.terminals.list.values_mut() {
             let Some(frame) = ui.terminal.as_ref().map(Terminal::frame) else {
@@ -960,6 +986,7 @@ impl Workspace {
                 harness,
                 probes: frame.probes,
                 since: now,
+                wall,
             });
             started.extend(harness.map(|harness| harness.name));
         }
@@ -982,10 +1009,33 @@ impl Workspace {
             });
         }
         cx.spawn_in(window, async move |this, cx| {
-            cx.background_executor().timer(OFFER_AFTER).await;
+            cx.background_executor().timer(SERVER_AFTER).await;
             let _ = this.update(cx, |_, cx| cx.notify());
         })
         .detach();
+        self.terminals.watching = Some(cx.spawn_in(window, async move |this, cx| {
+            while now.elapsed() < WATCH {
+                let read = cx
+                    .background_executor()
+                    .spawn(async {
+                        Place::Servers
+                            .path()
+                            .map(|dir| agents::announced(&dir))
+                            .unwrap_or_default()
+                    })
+                    .await;
+                let changed = this.update(cx, |this, cx| {
+                    if this.terminals.announced != read {
+                        this.terminals.announced = read;
+                        cx.notify();
+                    }
+                });
+                if changed.is_err() {
+                    break;
+                }
+                cx.background_executor().timer(WATCH_EVERY).await;
+            }
+        }));
     }
 
     /// The banners offering binbun's setup to the coding agents in
@@ -999,27 +1049,47 @@ impl Workspace {
             .collect()
     }
 
+    /// The latest start of the harness `name`'s agent in a terminal still
+    /// running it: the terminal, when, and the binbun server it started
+    /// (announced from shortly before on), if one.
+    fn agent_start(&self, name: &str) -> Option<(u32, Instant, Option<&Announced>)> {
+        let (id, seen) = self
+            .terminals
+            .list
+            .iter()
+            .filter_map(|(&id, ui)| {
+                Some((
+                    id,
+                    ui.agent.as_ref().filter(|seen| seen.harness.name == name)?,
+                ))
+            })
+            .max_by_key(|(_, seen)| seen.since)?;
+        let server = self
+            .terminals
+            .announced
+            .iter()
+            .filter(|server| {
+                server.started + SERVER_BEFORE >= seen.wall
+                    && agents::harness(&server.agent).is_some_and(|h| h.name == name)
+            })
+            .max_by_key(|server| server.started);
+        Some((id, seen.since, server))
+    }
+
     /// Offer `offer`'s banner for the harness `name`, if it has one now:
-    /// none once an agent of it is connected. Offered, once it has run in a
-    /// terminal [`OFFER_AFTER`] without connecting; set up, a restart said,
-    /// or, restarted and still not connected, that its server failed.
+    /// none once an agent of it is connected, or while the server its
+    /// agent started starts. Its server failed, why; none [`SERVER_AFTER`]
+    /// after it started: offered, or (set up) a restart said, or (set up
+    /// and restarted) that it still does not run binbun.
     fn agent_banner(&self, name: &'static str, offer: &Offer) -> Option<Banner> {
         let harness = agents::harness(name)?;
         if offer.progress != Progress::Running && self.harness_connected(harness) {
             return None;
         }
-        // Its latest start in a terminal still running it.
-        let (terminal, since) = self
-            .terminals
-            .list
-            .iter()
-            .filter_map(|(&id, ui)| {
-                let seen = ui.agent.as_ref().filter(|seen| seen.harness.name == name)?;
-                Some((id, seen.since))
-            })
-            .max_by_key(|&(_, since)| since)
-            .unzip();
-        let due = since.is_some_and(|since| since.elapsed() >= OFFER_AFTER);
+        let start = self.agent_start(name);
+        let (terminal, since) = (start.map(|s| s.0), start.map(|s| s.1));
+        let server = start.and_then(|s| s.2).map(|server| &server.start);
+        let due = since.is_some_and(|since| since.elapsed() >= SERVER_AFTER);
         let banner = |tone, text: String, buttons, closable| Banner {
             kind: Kind::Agent,
             priority: Priority::Question,
@@ -1039,8 +1109,27 @@ impl Workspace {
                 Action::Command(Command::ConnectAgent),
             )]
         };
-        match &offer.progress {
-            Progress::Offered => {
+        match (&offer.progress, server) {
+            (Progress::Running, _) => Some(banner(
+                Tone::Busy,
+                format!("Adding binbun to {name}…"),
+                Vec::new(),
+                false,
+            )),
+            // Its Python set up since: it takes it at its next call.
+            (_, Some(Start::Failed(_))) if self.python_set_up() => None,
+            (_, Some(Start::Failed(error))) => Some(banner(
+                Tone::Error,
+                format!("{name}'s binbun server could not start: {error}"),
+                if self.python_broken() {
+                    vec![button("Set Up Python", Action::SetUpPython)]
+                } else {
+                    connect()
+                },
+                true,
+            )),
+            (_, Some(Start::Starting | Start::Ready)) => None,
+            (Progress::Offered, None) => {
                 let quiet = self
                     .terminals
                     .quiet
@@ -1063,30 +1152,24 @@ impl Workspace {
                     true,
                 ))
             }
-            Progress::Running => Some(banner(
-                Tone::Busy,
-                format!("Adding binbun to {name}…"),
-                Vec::new(),
-                false,
-            )),
-            Progress::Done if due && since.is_some_and(|since| since > offer.since) => {
+            (Progress::Done, None) if due && since.is_some_and(|since| since > offer.since) => {
                 Some(banner(
                     Tone::Error,
                     format!(
-                        "{name} restarted but didn't connect: binbun's MCP server could not \
-                         start there (its Python, most often: the app's Python setting)."
+                        "{name} restarted without starting binbun's server: its setup isn't \
+                         where this {name} reads it."
                     ),
                     connect(),
                     true,
                 ))
             }
-            Progress::Done => Some(banner(
+            (Progress::Done, None) => Some(banner(
                 Tone::Info,
                 format!("binbun is added to {name}: restart it to connect."),
                 Vec::new(),
                 true,
             )),
-            Progress::Failed(error) => Some(banner(
+            (Progress::Failed(error), None) => Some(banner(
                 Tone::Error,
                 format!("Adding binbun to {name} failed: {error}"),
                 connect(),

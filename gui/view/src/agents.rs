@@ -482,6 +482,64 @@ pub fn quiet_path() -> Option<PathBuf> {
     binbun_paths::Place::QuietAgents.path()
 }
 
+/// A `binbun mcp` an agent's harness started, as it announces itself to
+/// the windows (`agent-<pid>.json` in [`binbun_paths::Place::Servers`],
+/// written by `binbun-cli`'s `mcp::announce`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Announced {
+    /// The agent it serves (`Claude Code`).
+    pub agent: String,
+    /// When it started, in Unix milliseconds.
+    pub started: u64,
+    /// How its interpreter's start went.
+    pub start: Start,
+}
+
+/// How an announced server's interpreter's start went.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Start {
+    /// Not yet known.
+    Starting,
+    /// Its interpreter runs (the agent joins the window).
+    Ready,
+    /// It failed, saying this.
+    Failed(String),
+}
+
+/// The servers announced in `dir`, in no order (a file that does not
+/// read as one skipped).
+pub fn announced(dir: &Path) -> Vec<Announced> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().is_some_and(|e| e == "json")
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("agent-"))
+        })
+        .filter_map(|path| {
+            let value: serde_json::Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+            let text = |key| value.get(key).and_then(serde_json::Value::as_str);
+            let start = match text("state")? {
+                "starting" => Start::Starting,
+                "ready" => Start::Ready,
+                "failed" => Start::Failed(text("error").unwrap_or("no reason given").to_owned()),
+                _ => return None,
+            };
+            Some(Announced {
+                agent: text("agent")?.to_owned(),
+                started: value.get("started")?.as_u64()?,
+                start,
+            })
+        })
+        .collect()
+}
+
 /// The harnesses named in the file at `path`, one a line (none if it is
 /// not there).
 pub fn read_quiet(path: &Path) -> BTreeSet<String> {

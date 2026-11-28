@@ -72,7 +72,9 @@ The entry for a config file goes under its `mcpServers`:
 
 These forms find `binbun` on the host's search path. **File → Connect an Agent…** shows each harness's command or entry for the binbun you are running, ready to copy: by the path the search path gives when the first `binbun` there is this one (a link there still works after an update), else by its absolute path. On Windows the setup runs the command, `bin\binbun.exe` beside the app.
 
-An agent started in one of binbun's [terminals](@/docs/gui.md#terminals) that says what it is (Claude Code, Pi and Crush do, through the terminal status protocol OSC 7501) and has not connected three seconds later gets a banner. **Set Up** runs that harness's command from Connect an Agent through your shell (a harness configured by a file opens the dialog instead); restart the agent to connect. **Don't Ask Again** stops the offer for that harness, kept in the `quiet-agents` file of binbun's state folder.
+An agent started in one of binbun's [terminals](@/docs/gui.md#terminals) says what it is (Claude Code, Pi and Crush do, through the terminal status protocol OSC 7501), and `binbun mcp` tells the windows when a harness starts it and how its Python's start went (an `agent-<pid>.json` beside the windows' discovery files). An agent whose harness hasn't started binbun's server two seconds after it began gets a banner. **Set Up** runs that harness's command from Connect an Agent through your shell (a harness configured by a file opens the dialog instead); restart the agent to connect. **Don't Ask Again** stops the offer for that harness, kept in the `quiet-agents` file of binbun's state folder. A server that started but failed is shown with its reason, most often a Python without `binbun`: **Set Up Python** fixes that, and the agent's next call starts on it without a restart.
+
+The server's instructions name the binary open in the window it follows, so an agent asked about "the binary" uses binbun rather than the file on disk.
 
 ### The two tools
 
