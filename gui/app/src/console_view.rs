@@ -164,17 +164,29 @@ fn completable(code: &str, at: usize) -> bool {
 }
 
 impl Workspace {
-    /// Ctrl+backtick and the console button: the bottom dock hidden if it
-    /// shows the console or the terminal used last
-    /// ([`Workspace::shell_kind`]), else shown with it (opened there if no
-    /// pane has it); one dragged out of the dock into the code shown or
-    /// hidden there ([`Workspace::show_shell`]).
+    /// Ctrl+backtick: the bottom dock, hidden,
+    /// shown again as it was (the console or the terminal used last,
+    /// [`Workspace::shell_kind`], brought forward if it is there); shown,
+    /// hidden if it shows that shell, else shown with it (opened there if
+    /// no pane has it). One dragged out of the dock into the code is shown
+    /// or hidden there ([`Workspace::show_shell`]).
     pub fn toggle_console(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let kind = self.shell_kind();
-        if let Some((pane, ..)) = self.place_of(&kind)
+        let place = self.place_of(&kind);
+        if let Some((pane, ..)) = place
             && !self.layout.is_dock(pane)
         {
             self.show_shell(kind, true, window, cx);
+            return;
+        }
+        if let Some(dock) = self.layout.dock().filter(|_| !self.layout.dock_shown()) {
+            self.layout.show_dock();
+            if let Some((_, index, _)) = place {
+                self.layout.activate(dock, index);
+            }
+            self.ensure_pane(dock, cx);
+            self.focus_pane(dock, window, cx);
+            cx.notify();
             return;
         }
         let shows = self.layout.dock_shown()

@@ -1,7 +1,8 @@
 //! The coding agents the robot in the status bar starts
-//! ([`agents::launchables`]): a click starts the default (the one started
-//! last; asked the first time), each in a terminal of the bottom dock.
-//! Its right-click menu lists the agents running here, a new one of each,
+//! ([`agents::launchables`]), each in a terminal of the bottom dock: a
+//! click shows the agent used last (or hides the dock showing it), and with
+//! none running starts the default (the one started last; asked the first
+//! time). Its right-click menu lists the agents running here, a new one of each,
 //! Change Agent…, Hide Agents Not Found and Customize…
 //! (Settings › Agents, where the commands are changed and the user's own
 //! agents added).
@@ -50,6 +51,32 @@ pub fn agent_icon(name: &str) -> SharedString {
 }
 
 impl Workspace {
+    /// The robot's click: the agent focused last (else the first running)
+    /// shown and focused, the bottom dock shown if it is there; the dock
+    /// hidden if it shows that agent already. With none running, the
+    /// robot's agent started ([`Self::new_agent`]).
+    pub fn toggle_agents(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let running = self.launched_agents();
+        let agent = self
+            .terminals
+            .last_agent
+            .filter(|last| running.iter().any(|(id, _)| id == last))
+            .or_else(|| running.first().map(|&(id, _)| id));
+        let Some(agent) = agent else {
+            self.new_agent(window, cx);
+            return;
+        };
+        let kind = TabKind::Terminal(agent);
+        match self.place_of(&kind) {
+            Some((pane, _, true)) if self.layout.is_dock(pane) => {
+                self.layout.hide_dock();
+                self.after_layout(window, cx);
+                cx.notify();
+            }
+            Some(_) | None => self.show_shell(kind, false, window, cx),
+        }
+    }
+
     /// Every agent the robot can start, with whether its program is found;
     /// those not found are left out when Hide Agents Not Found is on,
     /// unless `all`.

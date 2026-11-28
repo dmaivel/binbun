@@ -102,6 +102,7 @@ command_actions!(
     ToggleBottomDock,
     NewTerminal,
     NewAgent,
+    ToggleAgents,
     ToggleFeatureMap,
     MoveFeatureMap,
     OpenAsTab,

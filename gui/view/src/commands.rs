@@ -142,6 +142,10 @@ pub enum Command {
     /// Starts the coding agent the robot in the status bar starts (the
     /// one started last; asked the first time) where a terminal opens.
     NewAgent,
+    /// The robot's click: the agent used last shown in the bottom dock,
+    /// or the dock hidden if it shows it; with none running, the robot's
+    /// agent started ([`Self::NewAgent`]).
+    ToggleAgents,
     /// Shows or hides the feature map (the strip standing for the whole
     /// image).
     ToggleFeatureMap,
@@ -1188,6 +1192,7 @@ pub const COMMANDS: &[Info] = &[
         &[],
         Window,
     ),
+    info(C::ToggleAgents, "view.agents", "Agents", None, &[], Window),
     info(
         C::ToggleFeatureMap,
         "view.feature_map",
@@ -2503,7 +2508,8 @@ fn state_of(command: Command, facts: &Facts) -> State {
         | C::Conflicts
         // The start page has no panes to open it in.
         | C::NewTerminal
-        | C::NewAgent => on(facts.open),
+        | C::NewAgent
+        | C::ToggleAgents => on(facts.open),
         // The project is known once the image is parsed (its key read).
         // Bytes are searched once the image is parsed too.
         C::ExportProject | C::SearchBytes => on(facts.open && facts.stage >= 1),

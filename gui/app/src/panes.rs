@@ -504,6 +504,24 @@ impl Workspace {
         on: bool,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        self.icon_button_look(id, name, command, enabled, on)
+            .when(enabled, |d| {
+                d.on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.run(command, window, cx);
+                }))
+            })
+    }
+
+    /// [`Self::icon_button`] without its click: for a button whose click
+    /// does something else (opens a menu), its tooltip `command`'s.
+    pub fn icon_button_look(
+        &self,
+        id: impl Into<ElementId>,
+        name: IconName,
+        command: Command,
+        enabled: bool,
+        on: bool,
+    ) -> Stateful<Div> {
         let theme = self.theme;
         let color = if !enabled {
             theme.text_placeholder
@@ -527,11 +545,6 @@ impl Workspace {
             .on_mouse_down(MouseButton::Left, |_, window, cx| {
                 window.prevent_default();
                 cx.stop_propagation();
-            })
-            .when(enabled, |d| {
-                d.on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    this.run(command, window, cx);
-                }))
             })
             .child(icon(name, self.z(ICON), hsla(color)))
     }
@@ -1329,15 +1342,20 @@ impl Workspace {
                 cx,
             ))
             .child(
-                self.icon_button(
+                // Its menu, by either button: the console and each
+                // terminal, a new one, the bottom dock shown or hidden.
+                self.icon_button_look(
                     "console-toggle",
                     IconName::SquareTerminal,
                     Command::ToggleConsole,
                     self.session.is_some(),
                     self.console_shown(),
-                    cx,
                 )
-                // The console and each terminal, a new one.
+                .when(self.session.is_some(), |d| {
+                    d.on_click(cx.listener(|this, e: &ClickEvent, window, cx| {
+                        this.shell_menu(e.position(), window, cx);
+                    }))
+                })
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(|this, e: &MouseDownEvent, window, cx| {
@@ -1349,12 +1367,12 @@ impl Workspace {
                 ),
             )
             .child(
-                // The robot: a click starts the agent started last; its
-                // menu each agent, and changes which.
+                // The robot: a click shows the agent used last (or starts
+                // one); its menu each agent, a new one, and changes which.
                 self.icon_button(
                     "agent-launch",
                     IconName::Bot,
-                    Command::NewAgent,
+                    Command::ToggleAgents,
                     self.session.is_some(),
                     self.agent_shown(),
                     cx,

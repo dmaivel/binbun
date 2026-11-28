@@ -2688,6 +2688,7 @@ impl Workspace {
             Command::ToggleBottomDock => self.toggle_bottom_dock(window, cx),
             Command::NewTerminal => self.new_terminal(window, cx),
             Command::NewAgent => self.new_agent(window, cx),
+            Command::ToggleAgents => self.toggle_agents(window, cx),
             Command::ToggleFeatureMap => self.toggle_feature_map(window, cx),
             Command::MoveFeatureMap => self.move_feature_map(window, cx),
             Command::OpenAsTab => {

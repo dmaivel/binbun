@@ -104,6 +104,9 @@ pub struct TerminalsUi {
     /// The agent picker starts the agent chosen (the robot's first start),
     /// rather than only making it the robot's.
     pub pick_launches: bool,
+    /// The robot's agent focused last (its terminal), which the robot's
+    /// click shows.
+    pub last_agent: Option<u32>,
 }
 
 /// binbun's setup offered to a harness seen in a terminal: where it is,
@@ -287,8 +290,8 @@ impl Workspace {
 
     /// Terminal `id` takes the focus (its keys taken from then on).
     pub fn focus_terminal(&mut self, id: u32, window: &mut Window, cx: &mut Context<Self>) {
-        // The console button's terminal (and Ctrl+Backtick's): not one of
-        // the robot's agents, which have the robot.
+        // Ctrl+Backtick's terminal: not one of the robot's agents, which
+        // have the robot.
         if self
             .terminals
             .list
@@ -296,6 +299,8 @@ impl Workspace {
             .is_none_or(|ui| ui.launched.is_none())
         {
             self.terminals.last = Some(id);
+        } else {
+            self.terminals.last_agent = Some(id);
         }
         self.ensure_terminal_keys(window, cx);
         let focus = self.terminal_ui(id, cx).focus.clone();
@@ -1022,8 +1027,9 @@ impl Workspace {
         self.toggle_own_menu(format!("terminal-{id}"), at, items, window, cx);
     }
 
-    /// The status bar's console button's menu: the console, each terminal,
-    /// a new one.
+    /// The status bar's console button's menu (a click or a right-click):
+    /// the console, each terminal, a new one, and the bottom dock shown or
+    /// hidden as it is.
     pub fn shell_menu(&mut self, at: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
         let shown = |kind: &TabKind| self.place_of(kind).is_some_and(|(_, _, shown)| shown);
         let mut items = vec![OwnItem {
@@ -1052,6 +1058,16 @@ impl Workspace {
             key: commands::key_label(&self.keymap, Command::NewTerminal),
             ..OwnItem::new("New Terminal", Workspace::new_terminal)
         });
+        // The bottom dock as it is (a click on the button no longer
+        // toggles it; Ctrl+Backtick does).
+        if self.layout.dock().is_some() {
+            let label = if self.layout.dock_shown() {
+                "Hide Bottom Dock"
+            } else {
+                "Show Bottom Dock"
+            };
+            items.push(OwnItem::new(label, Workspace::toggle_bottom_dock));
+        }
         self.toggle_own_menu("console-toggle", at, items, window, cx);
     }
 
