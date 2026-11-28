@@ -42,9 +42,12 @@ jobs:
         run: cargo --version
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Oracle tests
+        # Absolute: cargo runs the tests in the crate's folder. Ubuntu keeps
+        # libc under its multiarch folder.
         run: |
           scripts/xed-oracle.sh "$RUNNER_TEMP/xed/xed"
-          BINBUN_XED_ORACLE=target/xed-oracle BINBUN_ORACLE_CASES=3000000 \
+          BINBUN_XED_ORACLE=$PWD/target/xed-oracle BINBUN_ORACLE_CASES=3000000 \
+          BINBUN_ORACLE_CORPUS=/usr/lib/x86_64-linux-gnu/libc.so.6 \
             cargo test --release --locked -p binbun-x86 --test oracle -- --ignored
 
   oracle-aarch64:
@@ -112,9 +115,10 @@ jobs:
         run: cargo --version
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: CPU oracle test
+        # Absolute: cargo runs the test in the crate's folder.
         run: |
           scripts/cpu-oracle-aarch64.sh
-          BINBUN_CPU_ORACLE_AARCH64=target/cpu-oracle-aarch64 \
+          BINBUN_CPU_ORACLE_AARCH64=$PWD/target/cpu-oracle-aarch64 \
             cargo test --release --locked -p binbun-aarch64-lift --test hardware -- --ignored --nocapture
       # The whole suite reads x86 Arch's bash and libc; on arm64 the
       # crates that don't.
