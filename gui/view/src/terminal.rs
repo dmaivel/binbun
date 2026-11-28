@@ -227,7 +227,8 @@ pub enum Input {
     Colors(Colors),
 }
 
-/// A run of cells in one style.
+/// A run of cells in one style: each a column wide, or a lone wide
+/// character's two (so its characters can be drawn a column apart).
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -1101,6 +1102,8 @@ fn row_runs(
     };
     let mut column: u16 = 0;
     let mut text = String::new();
+    // The last run is a wide character's: nothing joins it.
+    let mut wide_last = false;
     while let Some(cell) = iteration.next() {
         let at = column;
         column = column.saturating_add(1);
@@ -1141,10 +1144,13 @@ fn row_runs(
             strikethrough: style.strikethrough,
             selected: selected.is_some_and(|s| (s.start_x..=s.end_x).contains(&at)),
         };
-        // The same style right after the last run: it grows.
+        // The same style right after the last run: it grows, but for a wide
+        // character, which is a run of its own.
         match runs.last_mut() {
             Some(last)
-                if last.column + last.columns == at
+                if width == 1
+                    && !wide_last
+                    && last.column + last.columns == at
                     && Run {
                         text: String::new(),
                         column: at,
@@ -1160,6 +1166,7 @@ fn row_runs(
                 ..run
             }),
         }
+        wide_last = width == 2;
     }
     runs
 }
@@ -1334,6 +1341,21 @@ mod tests {
     fn the_programs_end_is_in_the_frame() {
         let t = start(&["sh", "-c", "exit 3"]);
         until(&t, |f| f.exited == Some(Exit::Code(3)));
+    }
+
+    /// A wide character is a run of its own, two columns wide, between
+    /// those of its style around it: the GUI draws a glyph a column.
+    #[test]
+    fn a_wide_character_is_a_run_of_its_own() {
+        let t = start(&["sh", "-c", "printf 'a\\344\\270\\226b'; sleep 10"]);
+        let frame = until(&t, |f| f.text().first().is_some_and(|l| l.contains('b')));
+        let runs: Vec<(&str, u16, u16)> = frame.rows[0]
+            .iter()
+            .take(3)
+            .map(|r| (r.text.trim_end(), r.column, r.columns))
+            .collect();
+        assert_eq!(runs[..2], [("a", 0, 1), ("\u{4e16}", 1, 2)]);
+        assert_eq!((runs[2].0, runs[2].1), ("b", 3));
     }
 
     /// A double click selects a word, a drag from a cell what it spans;

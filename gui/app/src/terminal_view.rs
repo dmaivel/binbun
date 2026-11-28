@@ -888,7 +888,9 @@ fn paint_grid(
     paint_scroll(frame, look, bounds, window);
 }
 
-/// `text` in `run`'s style and `color` at `origin`.
+/// `text` in `run`'s style and `color` at `origin`, a glyph a column (a
+/// character the font lacks takes another's advance, which would push what
+/// follows it off its columns; a wide character is a run of its own).
 fn paint_text(
     text: &str,
     run: &Run,
@@ -926,9 +928,12 @@ fn paint_text(
             color: Some(color),
         }),
     };
-    let line = window
-        .text_system()
-        .shape_line(text.to_owned().into(), look.size, &[style], None);
+    let line = window.text_system().shape_line(
+        text.to_owned().into(),
+        look.size,
+        &[style],
+        Some(px(look.cell.0)),
+    );
     let _ = line.paint(origin, px(look.cell.1), TextAlign::Left, None, window, cx);
 }
 
