@@ -33,15 +33,10 @@ use gpui_kit::{
 
 use crate::actions;
 use crate::context_menu::OwnItem;
-use crate::facts_view::ORIGIN_WIDTH;
 use crate::icons::icon;
-use crate::pathfinder_view::PATHFINDER_WIDTH;
-use crate::sidebar::{
-    MAX_WIDTH as SIDEBAR_MAX, MIN_WIDTH as SIDEBAR_MIN, WIDTH as SIDEBAR, kind_icon, tabular,
-};
+use crate::sidebar::{MAX_WIDTH as SIDEBAR_MAX, MIN_WIDTH as SIDEBAR_MIN, kind_icon, tabular};
 use crate::tab_drag::{DraggedTab, TabPreview};
 use crate::theme::hsla;
-use crate::threads_view::{DOCK_WIDTH, Dock};
 use crate::workspace::{
     EdgeDrag, ICON, ICON_BUTTON, STATUS_PAD, TAB_PAD, TOOLBAR_PAD, TabKind, Workspace,
 };
@@ -244,6 +239,7 @@ impl Workspace {
                 let x = f32::from(window.viewport_size().width - e.position.x) / scale;
                 self.layout_ui.dock_width = Some(x.clamp(SIDEBAR_MIN, SIDEBAR_MAX));
             }
+            EdgeDrag::DockSplit => self.drag_dock_split(e.position.y),
             EdgeDrag::Split { path, index } => {
                 let bounds = self.layout_ui.split_bounds.get(path).map(|b| b.get());
                 if let (Some(bounds), Some((axis, _))) = (bounds, self.layout.split_at(path)) {
@@ -1558,51 +1554,7 @@ impl Render for Workspace {
                 .child(edge)
                 .children(self.island_edge())
         });
-        let right = self.right_sidebar.then(|| {
-            let default = if self.facts.origin.is_some() {
-                ORIGIN_WIDTH
-            } else if self.pathfinder_shown() {
-                PATHFINDER_WIDTH
-            } else if self.talk_shown(Dock::Threads) || self.talk_shown(Dock::History) {
-                DOCK_WIDTH
-            } else {
-                SIDEBAR
-            };
-            let island = self
-                .panel_island()
-                .relative()
-                .w(self.z(self.layout_ui.dock_width.unwrap_or(default)))
-                .flex_none();
-            let island = island.children(self.render_origin(cx));
-            let island = if self.pathfinder_shown() {
-                island.children(self.render_pathfinder(cx))
-            } else {
-                island.children(self.render_talk_dock(window, cx))
-            };
-            // Its edge drags its width, as the map's.
-            let edge = div()
-                .id("dock-edge")
-                .absolute()
-                .top_0()
-                .bottom_0()
-                .left_0()
-                .w(px(4.0))
-                .cursor_col_resize()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _, cx| {
-                        this.layout_ui.drag = Some(EdgeDrag::Dock);
-                        cx.stop_propagation();
-                        cx.notify();
-                    }),
-                );
-            let island = if self.settings.islands {
-                island
-            } else {
-                island.border_l_1().border_color(hsla(theme.border))
-            };
-            island.child(edge).children(self.island_edge())
-        });
+        let right = self.render_right_dock(window, cx);
         // With no binary open the editor area is the start page, or the
         // settings when they are open.
         let editor = if self.shows_start() {
@@ -1625,7 +1577,6 @@ impl Render for Workspace {
                 .child(div().flex_1().min_h_0().flex().child(panes))
                 .into_any_element()
         };
-        let session_panel = self.render_session_panel(window, cx);
         // The feature map: right of the panes, or above them.
         let (map_right, map_top) = match self.render_feature_map(cx) {
             Some((true, strip)) => (Some(strip), None),
@@ -1658,7 +1609,6 @@ impl Render for Workspace {
             .children(left.filter(|_| self.session.is_some()))
             .child(editor)
             .children(right)
-            .children(session_panel)
             .child(self.drop_target());
         let modal = self.render_modal(cx);
         let popover = self
@@ -1687,7 +1637,7 @@ impl Render for Workspace {
                     EdgeDrag::Split { path, .. } => {
                         matches!(self.layout.split_at(path), Some((Axis::Column, _)))
                     }
-                    EdgeDrag::HexSide(_) => true,
+                    EdgeDrag::HexSide(_) | EdgeDrag::DockSplit => true,
                     EdgeDrag::Map | EdgeDrag::Dock => false,
                 };
                 let d = if rows {

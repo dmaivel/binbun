@@ -35,6 +35,7 @@ use crate::callers_view::CallersTab;
 use crate::icons::icon;
 use crate::panes::measured;
 use crate::pathfinder_view::PathfinderUi;
+use crate::right_dock::Panel;
 use crate::scrolling::wheel;
 use crate::theme::{hsla, solid, with_alpha};
 use crate::workspace::{ICON, TabKind, Workspace};
@@ -261,7 +262,7 @@ impl Workspace {
             .filter(|_| self.shows_calls(id));
         Facts {
             calls: self.shows_calls(id),
-            pathfinder: self.calls.pathfinder.open,
+            pathfinder: self.panel_shown(Panel::Pathfinder),
             paths: whole.is_some(),
             whole_subgraph: whole == Some(true),
             callers,
@@ -301,11 +302,11 @@ impl Workspace {
                 return true;
             }
             Command::Pathfinder => {
-                self.toggle_pathfinder(window, cx);
+                self.toggle_panel(Panel::Pathfinder);
                 return true;
             }
             Command::PathFrom | Command::PathTo => {
-                self.path_end(command == Command::PathFrom, window, cx);
+                self.path_end(command == Command::PathFrom);
                 return true;
             }
             Command::WholeSubgraph => {

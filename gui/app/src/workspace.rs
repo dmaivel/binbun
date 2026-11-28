@@ -55,7 +55,7 @@ use crate::agents_view::AgentChoice;
 use crate::arrows::Hit as ArrowHit;
 use crate::banners::BannerUi;
 use crate::calls_view::CallsUi;
-use crate::collab::CollabUi;
+use crate::collab::{CollabUi, Tab};
 use crate::comment_field::CommentEdit;
 use crate::console_view::ConsoleUi;
 use crate::context_menu::ContextMenu;
@@ -67,6 +67,7 @@ use crate::hex_view::HexUi;
 use crate::ir_view::IrUi;
 use crate::project_files::ProjectsUi;
 use crate::python_setup::PythonUi;
+use crate::right_dock::{Panel, RightDock};
 use crate::scrolling::{Area, AreaScroll};
 use crate::search_view::SearchUi;
 use crate::selection::{BOTTOM, TOP, indentation};
@@ -77,7 +78,7 @@ use crate::struct_editor::{InlineStruct, StructEditor};
 use crate::symbol_cache::SymbolCacheUi;
 use crate::terminal_view::TerminalsUi;
 use crate::theme::{self, Theme, Themes};
-use crate::threads_view::{Dock, ThreadsUi};
+use crate::threads_view::ThreadsUi;
 use crate::type_field::CTypeField;
 use crate::unified_view::UnifiedUi;
 use crate::window_tabs::WindowTabs;
@@ -470,6 +471,8 @@ pub enum EdgeDrag {
     Map,
     /// The right dock's left edge.
     Dock,
+    /// The divider between the right dock's stacked halves.
+    DockSplit,
     /// The divider before child `index` of the split at `path` (child
     /// indices from the root).
     Split {
@@ -545,7 +548,10 @@ pub struct Workspace {
     /// above: its layout, panes, places, trails and place).
     pub window_tabs: WindowTabs,
     pub left_sidebar: bool,
+    /// Whether the right dock shows (its panels kept while hidden).
     pub right_sidebar: bool,
+    /// The right dock's panels.
+    pub right_dock: RightDock,
     pub sidebar: Option<Sidebar>,
     /// The map's width (logical; dragged by its edge).
     pub sidebar_width: f32,
@@ -809,6 +815,7 @@ impl Workspace {
             shared: None,
             left_sidebar: true,
             right_sidebar: false,
+            right_dock: RightDock::default(),
             sidebar: None,
             sidebar_width: SIDEBAR_WIDTH,
             layout_ui: LayoutUi::default(),
@@ -2384,7 +2391,7 @@ impl Workspace {
             panes: self.layout.len() > 1,
             maximized: self.maximized.is_some(),
             left_sidebar: self.left_sidebar,
-            right_sidebar: self.right_sidebar,
+            right_sidebar: self.right_sidebar && !self.right_dock.is_empty(),
             console: self.console_shown(),
             bottom_dock: self.layout.dock_shown(),
             feature_map: self.settings.feature_map != FeatureMap::Off,
@@ -2408,9 +2415,9 @@ impl Workspace {
             listing: self.shows_listing(),
             refusals: self.refusals(),
             live: self.collab.live(),
-            session_panel: self.collab.panel.is_some(),
-            threads_panel: self.talk_shown(Dock::Threads),
-            history_panel: self.talk_shown(Dock::History),
+            session_panel: self.panel_shown(Panel::Session(Tab::Chat)),
+            threads_panel: self.panel_shown(Panel::Threads),
+            history_panel: self.panel_shown(Panel::History),
             threadable: self.threadable(),
             view_only: self.edits_off().is_some(),
             share: self.share_open(),
@@ -2683,7 +2690,7 @@ impl Workspace {
                     self.focus_pane(id, window, cx);
                 }
             }
-            Command::ToggleRightSidebar => self.right_sidebar = !self.right_sidebar,
+            Command::ToggleRightSidebar => self.toggle_right_dock(),
             Command::ToggleConsole => self.toggle_console(window, cx),
             Command::ToggleBottomDock => self.toggle_bottom_dock(window, cx),
             Command::NewTerminal => self.new_terminal(window, cx),

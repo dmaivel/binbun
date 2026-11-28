@@ -60,6 +60,7 @@ use jiff::tz::TimeZone;
 use crate::collab::avatar_color;
 use crate::context_menu::OwnItem;
 use crate::icons::icon;
+use crate::right_dock::Panel;
 use crate::start_page::unix_now;
 use crate::theme::hsla;
 use crate::workspace::{ICON, ICON_BUTTON, TOOLBAR_PAD, TabKind, Workspace};
@@ -69,15 +70,6 @@ pub const DOCK_WIDTH: f32 = 380.0;
 
 /// The most history rows drawn (newest first).
 const HISTORY_ROWS: usize = 400;
-
-/// What the right dock shows of conversation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Dock {
-    /// The threads and suggestions.
-    Threads,
-    /// The history.
-    History,
-}
 
 /// A thread being started: where, its quote, its title.
 #[derive(Clone, Debug)]
@@ -157,8 +149,6 @@ impl Completion {
 /// The conversation's state of the window.
 #[derive(Default)]
 pub struct ThreadsUi {
-    /// What the right dock shows of it, if anything.
-    pub dock: Option<Dock>,
     /// Every thread, as of the last event.
     pub all: Vec<Thread>,
     /// The suggestions waiting, as of the last event.
@@ -194,7 +184,6 @@ pub struct ThreadsUi {
 impl std::fmt::Debug for ThreadsUi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ThreadsUi")
-            .field("dock", &self.dock)
             .field("open", &self.open)
             .field("card", &self.card)
             .finish_non_exhaustive()
@@ -214,35 +203,6 @@ fn line_address(session: &Session, entry: u64, view: View, line: usize) -> Optio
 }
 
 impl Workspace {
-    // ---- the dock ----
-
-    /// Whether the right dock shows `dock` (the Origin panel and the
-    /// Pathfinder come first).
-    pub fn talk_shown(&self, dock: Dock) -> bool {
-        self.right_sidebar
-            && self.threads.dock == Some(dock)
-            && self.facts.origin.is_none()
-            && !self.pathfinder_shown()
-    }
-
-    /// Opens `dock` in the right dock, or closes it if shown.
-    fn toggle_talk(&mut self, dock: Dock) {
-        if self.talk_shown(dock) {
-            self.threads.dock = None;
-            self.right_sidebar = false;
-            return;
-        }
-        self.show_talk(dock);
-    }
-
-    /// Shows `dock` in the right dock (the Pathfinder closed).
-    fn show_talk(&mut self, dock: Dock) {
-        self.calls.pathfinder.open = false;
-        self.threads.dock = Some(dock);
-        self.right_sidebar = true;
-        self.refresh_talk();
-    }
-
     /// The conversation commands; whether `command` was one.
     #[expect(
         clippy::wildcard_enum_match_arm,
@@ -255,8 +215,8 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> bool {
         match command {
-            Command::Threads => self.toggle_talk(Dock::Threads),
-            Command::History => self.toggle_talk(Dock::History),
+            Command::Threads => self.toggle_panel(Panel::Threads),
+            Command::History => self.toggle_panel(Panel::History),
             Command::StartThread => self.start_thread(window, cx),
             _ => return false,
         }
@@ -266,7 +226,7 @@ impl Workspace {
 
     /// The thread shown in the panel, if any.
     fn thread_shown(&self) -> Option<OpId> {
-        self.talk_shown(Dock::Threads)
+        self.panel_shown(Panel::Threads)
             .then_some(self.threads.open)
             .flatten()
     }
@@ -295,7 +255,7 @@ impl Workspace {
         self.threads.all = session.threads();
         self.threads.pending = session.pending_suggestions();
         let me = session.identity();
-        if self.talk_shown(Dock::History) {
+        if self.right_dock.is_open(Panel::History) {
             self.threads.history = session.history();
         }
         let open = self.thread_shown();
@@ -304,9 +264,9 @@ impl Workspace {
             .take(&self.threads.all, talked, me, open);
     }
 
-    /// The history grew: kept if shown.
+    /// The history grew: kept if its panel is open.
     pub fn talk_history(&mut self) {
-        if self.talk_shown(Dock::History)
+        if self.right_dock.is_open(Panel::History)
             && let Some(session) = &self.session
         {
             self.threads.history = session.history();
@@ -485,7 +445,7 @@ impl Workspace {
         let Some(place) = self.thread_place() else {
             return;
         };
-        self.show_talk(Dock::Threads);
+        self.open_panel(Panel::Threads);
         self.threads.open = None;
         self.threads.card = None;
         self.threads.composing = Some(place);
@@ -495,7 +455,7 @@ impl Workspace {
     /// Opens thread `id` in the panel: what is new in it seen, the reply box
     /// focused.
     pub fn open_thread(&mut self, id: OpId, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_talk(Dock::Threads);
+        self.open_panel(Panel::Threads);
         self.threads.open = Some(id);
         self.threads.card = None;
         self.threads.composing = None;
@@ -529,7 +489,11 @@ impl Workspace {
 
     /// The reply box (Enter sends, Shift+Enter breaks the line, `@`
     /// completes a participant), made once with its key interception.
-    fn reply_box(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<TextareaState> {
+    pub(crate) fn reply_box(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<TextareaState> {
         if let Some(input) = &self.threads.reply {
             return input.clone();
         }
@@ -853,30 +817,8 @@ impl Workspace {
         (self.avatar_circle(&face, 22.0).flex_none(), header)
     }
 
-    /// The right dock's conversation panel, if it shows one.
-    pub fn render_talk_dock(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        if self.talk_shown(Dock::History) {
-            return Some(self.render_history(cx));
-        }
-        if !self.talk_shown(Dock::Threads) {
-            return None;
-        }
-        let reply = self.reply_box(window, cx);
-        Some(self.render_threads(&reply, cx))
-    }
-
-    /// The panel's header: its icon and title, `extra` (the scope), close.
-    fn dock_header(
-        &self,
-        glyph: IconName,
-        title: &str,
-        extra: Option<Div>,
-        cx: &mut Context<Self>,
-    ) -> Div {
+    /// A panel's toolbar over its content (its tab has its title).
+    pub(crate) fn dock_toolbar(&self) -> Div {
         let theme = self.theme;
         div()
             .flex()
@@ -887,29 +829,14 @@ impl Workspace {
             .px(self.z(10.0))
             .border_b_1()
             .border_color(hsla(theme.border_variant))
-            .child(icon(glyph, self.z(ICON), hsla(theme.text_muted)))
-            .child(div().flex_1().child(title.to_owned()))
-            .children(extra)
-            .child(
-                div()
-                    .id("talk-close")
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(self.z(ICON_BUTTON))
-                    .rounded(self.z(4.0))
-                    .hover(|s| s.bg(hsla(theme.element_hover)))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.threads.dock = None;
-                        this.right_sidebar = false;
-                        cx.notify();
-                    }))
-                    .child(icon(IconName::X, self.z(ICON), hsla(theme.text_muted))),
-            )
     }
 
-    /// The threads panel.
-    fn render_threads(&self, reply: &Entity<TextareaState>, cx: &mut Context<Self>) -> AnyElement {
+    /// The threads panel: the scope over the list.
+    pub(crate) fn render_threads(
+        &self,
+        reply: &Entity<TextareaState>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let theme = self.theme;
         let scope = div()
             .flex()
@@ -931,12 +858,7 @@ impl Workspace {
         let listing = self.threads.open.is_none()
             && self.threads.card.is_none()
             && self.threads.composing.is_none();
-        let header = self.dock_header(
-            IconName::MessageSquareText,
-            "Threads",
-            listing.then_some(scope),
-            cx,
-        );
+        let header = listing.then(|| self.dock_toolbar().child(scope));
         let body = if let Some(new) = &self.threads.composing {
             self.render_composing(new, cx)
         } else if let Some(id) = self.threads.card {
@@ -974,7 +896,7 @@ impl Workspace {
             .size_full()
             .flex()
             .flex_col()
-            .child(header)
+            .children(header)
             .child(
                 div()
                     .id("threads-body")
@@ -1754,9 +1676,8 @@ impl Workspace {
 
     /// The history panel: every change, newest first, by whom, and who
     /// suggested what was accepted.
-    fn render_history(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_history(&self) -> AnyElement {
         let theme = self.theme;
-        let header = self.dock_header(IconName::FileClock, "History", None, cx);
         let (zone, now) = self.talk_clock();
         let rows = self
             .threads
@@ -1809,7 +1730,6 @@ impl Workspace {
             .size_full()
             .flex()
             .flex_col()
-            .child(header)
             .child(
                 div()
                     .id("history-body")
@@ -1905,7 +1825,7 @@ impl Workspace {
     pub fn threads_status(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         self.session.as_ref()?;
         let theme = self.theme;
-        let on = self.talk_shown(Dock::Threads);
+        let on = self.panel_shown(Panel::Threads);
         let title = commands::lookup(Command::Threads).map_or("", |i| i.title);
         Some(
             div()

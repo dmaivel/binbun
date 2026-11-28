@@ -36,6 +36,7 @@ use gpui_kit::{
 };
 
 use crate::icons::icon;
+use crate::right_dock::Panel;
 use crate::theme::{Theme, hsla, solid};
 use crate::workspace::{ICON, ICON_BUTTON, TOOLBAR_PAD, TabKind, Workspace, f};
 
@@ -1226,7 +1227,7 @@ impl Workspace {
             nodes: HashSet::new(),
             addresses: HashSet::new(),
         });
-        self.right_sidebar = true;
+        self.open_panel(Panel::Origin);
     }
 
     /// The Origin panel's rows.
@@ -1419,22 +1420,6 @@ impl Workspace {
                         self.z(ICON),
                         hsla(theme.text_muted),
                     )),
-            )
-            .child(
-                div()
-                    .id("origin-close")
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(self.z(ICON_BUTTON))
-                    .rounded(self.z(4.0))
-                    .hover(|s| s.bg(hsla(theme.element_hover)))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.facts.origin = None;
-                        this.right_sidebar = false;
-                        cx.notify();
-                    }))
-                    .child(icon(IconName::X, self.z(ICON), hsla(theme.text_muted))),
             );
         let pending = panel.origins.is_none() && panel.error.is_none();
         Some(

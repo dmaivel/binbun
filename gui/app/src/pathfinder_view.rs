@@ -26,6 +26,7 @@ use gpui_kit::{
 };
 
 use crate::icons::icon;
+use crate::right_dock::Panel;
 use crate::theme::hsla;
 use crate::workspace::{ICON, ICON_BUTTON, TOOLBAR_PAD, Workspace};
 
@@ -63,8 +64,6 @@ pub struct FieldEdit {
 /// The Pathfinder panel's state.
 #[derive(Default)]
 pub struct PathfinderUi {
-    /// Whether it is open.
-    pub open: bool,
     /// The question.
     pub question: Pathfinder,
     /// The project's file it was loaded from (and is saved to).
@@ -88,34 +87,18 @@ pub struct PathfinderUi {
 }
 
 impl Workspace {
-    /// Whether the right dock shows the Pathfinder (the Origin panel
-    /// comes first).
-    pub fn pathfinder_shown(&self) -> bool {
-        self.calls.pathfinder.open && self.facts.origin.is_none()
-    }
-
-    /// Opens the Pathfinder, or closes it.
-    pub fn toggle_pathfinder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let ui = &mut self.calls.pathfinder;
-        if ui.open && self.right_sidebar {
-            ui.open = false;
-            ui.field = None;
-            return;
-        }
-        self.open_pathfinder(window, cx);
-    }
-
-    /// Opens the Pathfinder in the right dock, its question read from the
-    /// project if it was not yet.
-    fn open_pathfinder(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
+    /// The Pathfinder opened in the right dock: its question read from the
+    /// project if it was not yet, and asked if it was not.
+    pub(crate) fn pathfinder_opened(&mut self) {
         self.load_pathfinder();
-        self.facts.origin = None;
-        self.calls.pathfinder.open = true;
-        self.right_sidebar = true;
-        self.threads.dock = None;
         if self.calls.pathfinder.found.is_none() {
             self.search_paths();
         }
+    }
+
+    /// The Pathfinder closed: the field typed in left.
+    pub(crate) fn pathfinder_closed(&mut self) {
+        self.calls.pathfinder.field = None;
     }
 
     /// The project's question, read once per project.
@@ -153,7 +136,7 @@ impl Workspace {
     }
 
     /// The function at the cursor made the start (`from`) or the end.
-    pub fn path_end(&mut self, from: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn path_end(&mut self, from: bool) {
         let entry = self
             .current_address()
             .and_then(|a| self.listing.as_ref()?.function_of(a))
@@ -161,7 +144,7 @@ impl Workspace {
         let Some(entry) = entry else {
             return;
         };
-        self.open_pathfinder(window, cx);
+        self.open_panel(Panel::Pathfinder);
         let question = &mut self.calls.pathfinder.question;
         if from {
             question.from = Some(entry);
@@ -403,10 +386,7 @@ impl Workspace {
         clippy::too_many_lines,
         reason = "the question's rows, then the answer"
     )]
-    pub fn render_pathfinder(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if !self.pathfinder_shown() {
-            return None;
-        }
+    pub fn render_pathfinder(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
         let ui = &self.calls.pathfinder;
         let question = &ui.question;
@@ -739,73 +719,42 @@ impl Workspace {
                 )
                 .size_full()
             }));
-        let header = div()
+        div()
+            .id("pathfinder")
+            .size_full()
             .flex()
-            .flex_none()
-            .items_center()
-            .gap(self.z(6.0))
-            .h(self.bar(TOOLBAR_PAD))
-            .px(self.z(10.0))
-            .border_b_1()
-            .border_color(hsla(theme.border_variant))
-            .child(icon(IconName::Route, self.z(ICON), hsla(theme.text_muted)))
-            .child(div().flex_1().child("Pathfinder"))
+            .flex_col()
             .child(
                 div()
-                    .id("pathfinder-close")
+                    .flex_none()
                     .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(self.z(ICON_BUTTON))
-                    .rounded(self.z(4.0))
-                    .hover(|s| s.bg(hsla(theme.element_hover)))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.calls.pathfinder.open = false;
-                        this.calls.pathfinder.field = None;
-                        this.right_sidebar = false;
-                        cx.notify();
-                    }))
-                    .child(icon(IconName::X, self.z(ICON), hsla(theme.text_muted))),
-            );
-        Some(
-            div()
-                .id("pathfinder")
-                .size_full()
-                .flex()
-                .flex_col()
-                .child(header)
-                .child(
-                    div()
-                        .flex_none()
-                        .flex()
-                        .flex_col()
-                        .py(self.z(6.0))
-                        .child(row().child(label("From")).child(field(
-                            Slot::From,
-                            question.from,
-                            cx,
-                        )))
-                        .child(
-                            row()
-                                .child(label("To"))
-                                .child(field(Slot::To, question.to, cx)),
-                        )
-                        .child(row().child(label("Through")).child(chips(
-                            Slot::Through,
-                            &question.through,
-                            cx,
-                        )))
-                        .child(row().child(label("Avoid")).child(chips(
-                            Slot::Avoid,
-                            &question.avoid,
-                            cx,
-                        )))
-                        .child(data_row),
-                )
-                .child(answer_bar)
-                .child(paths)
-                .into_any_element(),
-        )
+                    .flex_col()
+                    .py(self.z(6.0))
+                    .child(
+                        row()
+                            .child(label("From"))
+                            .child(field(Slot::From, question.from, cx)),
+                    )
+                    .child(
+                        row()
+                            .child(label("To"))
+                            .child(field(Slot::To, question.to, cx)),
+                    )
+                    .child(row().child(label("Through")).child(chips(
+                        Slot::Through,
+                        &question.through,
+                        cx,
+                    )))
+                    .child(row().child(label("Avoid")).child(chips(
+                        Slot::Avoid,
+                        &question.avoid,
+                        cx,
+                    )))
+                    .child(data_row),
+            )
+            .child(answer_bar)
+            .child(paths)
+            .into_any_element()
     }
 
     /// Path `k` of the answer: a breadcrumb of its functions (a name goes

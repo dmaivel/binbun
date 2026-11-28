@@ -48,8 +48,7 @@ pub enum Command {
     /// Brings chosen values of the binary's own (private) project into the
     /// share's project open, as one new change of this install's.
     BringValues,
-    /// Shows or hides the session panel (people, chat, conflicts,
-    /// refused changes).
+    /// Shows the chat in the right dock, or closes it there.
     SessionPanel,
     /// Writes a link to the cursor's place into the chat's message box
     /// (`push_stream · 1E720`), the chat opened.
@@ -127,7 +126,7 @@ pub enum Command {
     SplitDown,
     /// Shows or hides the left sidebar.
     ToggleLeftSidebar,
-    /// Shows or hides the right sidebar.
+    /// Shows or hides the right dock (its panels kept).
     ToggleRightSidebar,
     /// Shows the bottom dock with the Python console or the terminal used
     /// last, or hides the dock when it shows that (one dragged into the
@@ -1150,7 +1149,7 @@ pub const COMMANDS: &[Info] = &[
     info(
         C::ToggleRightSidebar,
         "view.right_sidebar",
-        "Right Sidebar",
+        "Right Dock",
         Some(M::View),
         &["secondary-alt-b"],
         Window,
@@ -2265,7 +2264,7 @@ pub struct Facts {
     pub maximized: bool,
     /// The left sidebar is shown.
     pub left_sidebar: bool,
-    /// The right sidebar is shown.
+    /// The right dock is shown.
     pub right_sidebar: bool,
     /// The console is shown.
     pub console: bool,
@@ -2339,7 +2338,7 @@ pub struct Facts {
     pub refusals: Refusals,
     /// The project is shared or joined (a live session).
     pub live: bool,
-    /// The session panel is shown.
+    /// The right dock shows the chat.
     pub session_panel: bool,
     /// The right dock shows the threads.
     pub threads_panel: bool,

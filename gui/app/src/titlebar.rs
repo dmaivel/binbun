@@ -22,7 +22,9 @@ use gpui_kit::{
     MouseButton, SharedString, Window, anchored, deferred, div, px,
 };
 
+use crate::collab::Tab;
 use crate::popup::{self, ItemOf};
+use crate::right_dock::Panel;
 use crate::theme::hsla;
 use crate::workspace::{OpenMenu, TITLE_PAD, Workspace, titled_file};
 
@@ -146,7 +148,7 @@ impl Workspace {
     ) {
         let m = e.modifiers;
         // Ctrl draws the chat's ordinary words that are names as links.
-        if self.collab.panel.is_some() {
+        if self.right_dock.is_open(Panel::Session(Tab::Chat)) {
             cx.notify();
         }
         let only_alt = m.alt && !m.control && !m.shift && !m.platform;

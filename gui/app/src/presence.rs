@@ -24,7 +24,7 @@
 //!   it goes and its round trip; addresses only in its tooltip), a peer's
 //!   last change for a while, and the conflicts and refused changes when
 //!   there are any (a click opens their list).
-//! - **The session panel** is the chat (messages grouped by author, the
+//! - **The session panels** (right dock tabs) are the chat (messages grouped by author, the
 //!   session's comings and goings small and muted, their time only in a
 //!   tooltip, the times in the user's
 //!   zone; the places a message names as links, resolved when it was sent
@@ -71,15 +71,16 @@ use gpui_kit::{
 };
 use jiff::tz::TimeZone;
 
-use super::{CHAT, ChatJump, CollabUi, PANEL, Popover, Tab, avatar_color, unix_ms};
+use super::{CHAT, ChatJump, CollabUi, Popover, Tab, avatar_color, unix_ms};
 use crate::collab_net::Net;
 use crate::context_menu::OwnItem;
 use crate::fonts::{AVATAR_FAMILY, avatar_ink};
 use crate::icons::icon;
 use crate::listing_view::SCROLLBAR;
+use crate::right_dock::Panel;
 use crate::selectable_text::SelectableText;
 use crate::theme::{hsla, solid, with_alpha};
-use crate::workspace::{ICON, ICON_BUTTON, TAB_PAD, TITLE_PAD, Workspace};
+use crate::workspace::{ICON, ICON_BUTTON, TITLE_PAD, Workspace};
 
 /// How long the status bar says a peer's change or a follow.
 const NOTICE: Duration = Duration::from_secs(6);
@@ -745,7 +746,7 @@ impl Workspace {
     /// Ctrl+K S).
     fn chat_button(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
-        let open = self.collab.panel == Some(Tab::Chat);
+        let open = self.panel_shown(Panel::Session(Tab::Chat));
         let mark = self
             .collab
             .unread
@@ -771,13 +772,7 @@ impl Workspace {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 match this.collab.unread.newest() {
                     Some(id) => this.jump_to_chat(id, cx),
-                    None => {
-                        this.collab.panel = if this.collab.panel == Some(Tab::Chat) {
-                            None
-                        } else {
-                            Some(Tab::Chat)
-                        };
-                    }
+                    None => this.toggle_panel(Panel::Session(Tab::Chat)),
                 }
                 cx.notify();
             }))
@@ -793,7 +788,7 @@ impl Workspace {
     /// Shows the chat scrolled to message `id` (a mention of this person),
     /// the message washed in the accent for a moment.
     fn jump_to_chat(&mut self, id: u64, cx: &mut Context<Self>) {
-        self.collab.panel = Some(Tab::Chat);
+        self.open_panel(Panel::Session(Tab::Chat));
         let timer = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(CHAT_WASH).await;
             let _ = this.update(cx, |this, cx| {
@@ -1660,7 +1655,7 @@ impl Workspace {
                 item(id)
                     .text_color(hsla(theme.error))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.collab.panel = Some(tab);
+                        this.open_panel(Panel::Session(tab));
                         cx.notify();
                     }))
                     .child(icon(glyph, self.z(ICON), hsla(theme.error)))
@@ -1695,7 +1690,7 @@ impl Workspace {
         let pending = pending_text(pending).map(|text| {
             item("status-pending")
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.collab.panel = Some(Tab::Local);
+                    this.open_panel(Panel::Session(Tab::Local));
                     cx.notify();
                 }))
                 .child(icon(IconName::Upload, self.z(ICON), hsla(theme.text_muted)))
@@ -1734,16 +1729,16 @@ impl Workspace {
         )
     }
 
-    // ---- the session panel ----
+    // ---- the session panels ----
 
-    /// The session panel, if shown: the chat, or the conflicts or refused
-    /// changes, under a title with a close button.
-    pub fn render_session_panel(
+    /// Session panel `tab`'s content: the chat over its composer, or the
+    /// conflicts, the refused changes, or this window's own edits.
+    pub(crate) fn render_session_body(
         &mut self,
+        tab: Tab,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let tab = self.collab.panel?;
+    ) -> AnyElement {
         self.collab.conflicts = self
             .session
             .as_ref()
@@ -1753,13 +1748,6 @@ impl Workspace {
             self.collab.unread.seen();
             self.ensure_chat_input(window, cx);
         }
-        let theme = self.theme;
-        let (title, glyph) = match tab {
-            Tab::Chat => ("Chat", IconName::MessageSquare),
-            Tab::Conflicts => ("Conflicts", IconName::GitMergeConflict),
-            Tab::Refused => ("Refused changes", IconName::Ban),
-            Tab::Local => ("Your edits", IconName::Upload),
-        };
         let body = match tab {
             Tab::Chat => self.render_chat_panel(window.modifiers().secondary(cx), cx),
             Tab::Conflicts => self.render_conflicts(cx),
@@ -1775,37 +1763,14 @@ impl Workspace {
                 )
                 .into_any_element(),
         };
-        let header = div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_between()
-            .h(self.bar(TAB_PAD))
-            .px(self.z(10.0))
-            .border_b_1()
-            .border_color(hsla(theme.border))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(self.z(6.0))
-                    .child(icon(glyph, self.z(ICON), hsla(theme.text_muted)))
-                    .child(div().font_weight(FontWeight::SEMIBOLD).child(title)),
-            )
-            .child(self.icon_button(
-                "session-close",
-                IconName::X,
-                Command::SessionPanel,
-                true,
-                false,
-                cx,
-            ));
         let input = (tab == Tab::Chat)
             .then(|| self.collab.chat_input.clone())
             .flatten()
             .map(|input| {
                 self.render_composer(&input, cx)
-                    .rounded_b(self.island_corner())
+                    .when(self.right_dock.lowest(Panel::Session(Tab::Chat)), |d| {
+                        d.rounded_b(self.island_corner())
+                    })
             });
         // The message gone to: scrolled to once this frame has placed it.
         if tab == Tab::Chat
@@ -1815,31 +1780,25 @@ impl Workspace {
             jump.anchor.scroll_to(window, cx);
             window.request_animation_frame();
         }
-        Some(
-            self.panel_island()
-                .id("session-panel")
-                .w(self.z(PANEL))
-                .flex_none()
-                .when(!self.settings.islands, |d| {
-                    d.border_l_1().border_color(hsla(theme.border))
-                })
-                .child(header)
-                .child(
-                    div()
-                        .id("session-body")
-                        .flex_1()
-                        .min_h_0()
-                        .overflow_y_scroll()
-                        .when(tab == Tab::Chat, |d| {
-                            d.track_scroll(&self.collab.chat_scroll)
-                        })
-                        .p(self.z(10.0))
-                        .child(body),
-                )
-                .children(input)
-                .children(self.island_edge())
-                .into_any_element(),
-        )
+        div()
+            .id("session-panel")
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .id("session-body")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .when(tab == Tab::Chat, |d| {
+                        d.track_scroll(&self.collab.chat_scroll)
+                    })
+                    .p(self.z(10.0))
+                    .child(body),
+            )
+            .children(input)
+            .into_any_element()
     }
 
     /// The chat: messages grouped by author (avatar, name, time, then each

@@ -1,8 +1,8 @@
 //! A shared session in the window: the Share and Join dialogs, the
 //! approval card, the avatars in
 //! the title bar (a click follows), the others' cursors in the listing and
-//! the C, follow mode, and the session panel (people and their roles,
-//! chat, conflicts, refused changes). The network side is `collab_net`
+//! the C, follow mode, and the session panels, tabs of the right dock
+//! (chat, conflicts, refused changes, your edits). The network side is `collab_net`
 //! (the `collab` feature), or `collab_off`, which says it is not built.
 //!
 //! Follow mode: the leader's cursor, each time it moves, is where the
@@ -97,6 +97,7 @@ use crate::collab_net::{
     Asked, Decision, FLUSH, Mode, Net, NetEvent, Report, Sends, card_of, default_name, listable,
     my_card,
 };
+use crate::right_dock::Panel;
 use crate::start_page::unix_now;
 use crate::theme::hsla;
 use crate::threads_view::Completion;
@@ -106,9 +107,6 @@ use crate::workspace::{ICON_BUTTON, TabKind, Workspace, titled_file, window_titl
 mod presence;
 
 pub use presence::{TickStyle, c_column, caret_bar, caret_wash, selection_wash, token_column};
-
-/// The session panel's width (logical).
-const PANEL: f32 = 320.0;
 
 /// The chat lines kept (as the peer keeps them).
 const CHAT: usize = 100;
@@ -174,9 +172,9 @@ impl Copied {
     }
 }
 
-/// What the session panel shows: the chat, or a list the status bar's
-/// counters open.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A session panel of the right dock: the chat, or a list the status
+/// bar's counters open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Tab {
     /// The session's chat.
     Chat,
@@ -272,8 +270,6 @@ pub struct CollabUi {
     signal: Option<async_channel::Sender<()>>,
     /// The open dialog.
     pub dialog: Option<Dialog>,
-    /// The session panel's tab, if shown.
-    pub panel: Option<Tab>,
     follow: Follow,
     /// The leader's move is being made (not the user's).
     following_move: bool,
@@ -408,7 +404,6 @@ impl std::fmt::Debug for CollabUi {
         f.debug_struct("CollabUi")
             .field("live", &self.net.is_some())
             .field("dialog", &self.dialog)
-            .field("panel", &self.panel)
             .finish_non_exhaustive()
     }
 }
@@ -641,13 +636,10 @@ impl Workspace {
             }
             Command::LeaveSession => self.leave_session(None, cx),
             Command::SessionPanel => {
-                self.collab.panel = match self.collab.panel {
-                    Some(_) => None,
-                    None => Some(Tab::Chat),
-                };
+                self.toggle_panel(Panel::Session(Tab::Chat));
             }
             Command::InsertLocation => self.insert_location(window, cx),
-            Command::Conflicts => self.collab.panel = Some(Tab::Conflicts),
+            Command::Conflicts => self.open_panel(Panel::Session(Tab::Conflicts)),
             Command::BringValues => self.open_bring(window, cx),
             _ => return false,
         }
@@ -967,7 +959,7 @@ impl Workspace {
                 // comes there.
                 if with_binary {
                     self.collab.dialog = None;
-                    self.collab.panel = Some(Tab::Chat);
+                    self.open_panel(Panel::Session(Tab::Chat));
                     self.compute_analysis();
                     let id = self.layout.focused();
                     self.focus_pane(id, window, cx);
@@ -1279,7 +1271,7 @@ impl Workspace {
             self.person_name(line.from)
         };
         line.removed = self.collab.removed_chat.contains(&line.id);
-        let shown = self.collab.panel == Some(Tab::Chat);
+        let shown = self.panel_shown(Panel::Session(Tab::Chat));
         let mentions_me =
             !line.removed && me.is_some_and(|me| me != line.from && line.mentions.contains(&me));
         if me != Some(line.from) {
@@ -2842,7 +2834,7 @@ impl Workspace {
             .function_of(address)
             .map_or(address, |(_, entry)| entry);
         let text = chat::location_text(listing.shown_name(name, overlay), address);
-        self.collab.panel = Some(Tab::Chat);
+        self.open_panel(Panel::Session(Tab::Chat));
         self.ensure_chat_input(window, cx);
         let Some(input) = self.collab.chat_input.clone() else {
             return;
