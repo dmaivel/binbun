@@ -11,10 +11,15 @@
 //! both sides. A change applies at once and is
 //! written to the settings file. No captions: a setting's name says it;
 //! its one sentence is a tooltip. The Symbols group ends with the symbol
-//! cache's path and size, quiet.
+//! cache's path and size, quiet. The Agents group ends with each agent's
+//! command as a field (a built-in's own as its placeholder; the user's
+//! own with × to remove it) and a row adding one: a name and a command.
 
+use std::rc::Rc;
+
+use binbun_gui_view::agents;
 use binbun_gui_view::layout::PaneId;
-use binbun_gui_view::settings::{CollabRelay, Info, Kind, SETTINGS, Setting, matches};
+use binbun_gui_view::settings::{CollabRelay, CustomAgent, Info, Kind, SETTINGS, Setting, matches};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::Sizable as _;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
@@ -23,8 +28,8 @@ use gpui_kit::component::switch::Switch;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    AnyElement, Context, DismissEvent, Entity, Focusable, KeyDownEvent, MouseButton, ScrollEvent,
-    Window, anchored, deferred, div, font, px,
+    AnyElement, Context, DismissEvent, ElementId, Entity, Focusable, KeyDownEvent, MouseButton,
+    ScrollEvent, Window, anchored, deferred, div, font, px,
 };
 
 use crate::fonts::{BUNDLED_CODE, BUNDLED_UI};
@@ -56,6 +61,21 @@ const RELAYS: &[&str] = &["binbun", "n0", "Custom"];
 const RELAY_URL: f32 = 240.0;
 /// The group the symbol cache's line ends (its path and size).
 const SYMBOLS: &str = "Symbols";
+/// The group the agents' rows end (each agent's command, and adding one).
+pub const AGENTS: &str = "Agents";
+/// An agent's command field's width, and the name field adding one.
+const AGENT_COMMAND: f32 = 260.0;
+const AGENT_NAME: f32 = 160.0;
+/// The slot right of an agent's command: × for the user's own; Add.
+const AGENT_END: f32 = 36.0;
+/// The fields adding an agent.
+const ADD_NAME: &str = "agent-add:name";
+const ADD_COMMAND: &str = "agent-add:command";
+
+/// What an agent's field does with the text typed (Enter, or leaving it:
+/// `true` for Enter), and says what it then shows.
+type FieldSet =
+    Rc<dyn Fn(&mut Workspace, &str, bool, &mut Window, &mut Context<Workspace>) -> String>;
 
 /// `n` on the nearest of `step`'s multiples.
 fn on_step(n: f64, step: f64) -> f64 {
@@ -96,22 +116,27 @@ impl Workspace {
 
     /// The groups the search leaves, in order, each with the pixels its
     /// heading starts at in the settings column, and where the last ends
-    /// (logical).
-    fn settings_groups(query: &str) -> (Vec<(&'static str, f32)>, f32) {
+    /// (logical); the Agents group has `agent_rows` rows of its own.
+    fn settings_groups(query: &str, agent_rows: usize) -> (Vec<(&'static str, f32)>, f32) {
+        let own = |group: &str| match group {
+            SYMBOLS => ROW,
+            AGENTS => ROW * f32::from(u16::try_from(agent_rows).unwrap_or(u16::MAX)),
+            _ => 0.0,
+        };
         let mut groups: Vec<(&'static str, f32)> = Vec::new();
         let mut y = TOP;
         for info in SETTINGS.iter().filter(|i| matches(i, query)) {
             if groups.last().is_none_or(|(g, _)| *g != info.group) {
-                if groups.last().is_some_and(|(g, _)| *g == SYMBOLS) {
-                    y += ROW;
+                if let Some((g, _)) = groups.last() {
+                    y += own(g);
                 }
                 groups.push((info.group, y));
                 y += HEADING;
             }
             y += ROW;
         }
-        if groups.last().is_some_and(|(g, _)| *g == SYMBOLS) {
-            y += ROW;
+        if let Some((g, _)) = groups.last() {
+            y += own(g);
         }
         (groups, y)
     }
@@ -127,11 +152,13 @@ impl Workspace {
         let search = self.settings_search(window, cx);
         let query = search.read(cx).value().to_string();
         let focus = self.panes.get(&id).map(|s| s.focus.clone());
-        let (groups, end) = Self::settings_groups(&query);
+        let agent_rows = agents::launchables(&self.settings).len() + 1;
+        let (groups, end) = Self::settings_groups(&query, agent_rows);
         let scale = self.settings.ui_scale;
         let (at, viewport) = self.areas.get(&Area::Settings(id)).map_or((0.0, 0.0), |a| {
             (a.scroll.pixels() / scale, a.viewport.get() / scale)
         });
+        self.jump_to_group(id, &groups, viewport > 0.0, window);
         // Room under the last group for its heading to scroll to the top,
         // as a click on any group's name scrolls its heading there.
         let last = groups.last().map_or(end, |&(_, top)| top);
@@ -155,6 +182,9 @@ impl Workspace {
                 if group == SYMBOLS {
                     column = column.child(self.symbol_cache_row(ROW, window, cx));
                 }
+                if group == AGENTS {
+                    column = column.children(self.agent_setting_rows(window, cx));
+                }
                 group = info.group;
                 column = column.child(
                     div()
@@ -171,6 +201,9 @@ impl Workspace {
         }
         if group == SYMBOLS {
             column = column.child(self.symbol_cache_row(ROW, window, cx));
+        }
+        if group == AGENTS {
+            column = column.children(self.agent_setting_rows(window, cx));
         }
         let content = self
             .scroll_area(Area::Settings(id), ("settings-rows", id.0), column, cx)
@@ -214,6 +247,33 @@ impl Workspace {
                     .child(content),
             )
             .into_any_element()
+    }
+
+    /// Customize… ([`Workspace::settings_jump`]): its group's heading at
+    /// the top of pane `id`'s settings, once laid out: the frame after one
+    /// drawn with the viewport known (`viewport_known`), whose room under
+    /// the last group lets the heading reach the top.
+    fn jump_to_group(
+        &mut self,
+        id: PaneId,
+        groups: &[(&'static str, f32)],
+        viewport_known: bool,
+        window: &mut Window,
+    ) {
+        let Some((jump, primed)) = self.settings_jump else {
+            return;
+        };
+        let Some(&(_, top)) = groups.iter().find(|(g, _)| *g == jump) else {
+            self.settings_jump = None;
+            return;
+        };
+        if primed {
+            self.scroll_area_to(Area::Settings(id), top * self.settings.ui_scale);
+            self.settings_jump = None;
+        } else if viewport_known {
+            self.settings_jump = Some((jump, true));
+        }
+        window.request_animation_frame();
     }
 
     /// The group list: a click scrolls its group's heading to the top.
@@ -285,6 +345,7 @@ impl Workspace {
             Kind::Theme { .. } => self.theme_choice(key, cx),
             Kind::Program => self.program_field(key, window, cx),
             Kind::Relay => self.relay_choice(key, window, cx),
+            Kind::Agent => self.agent_choice(cx),
         };
         div()
             .id(key)
@@ -409,6 +470,355 @@ impl Workspace {
             .bg(hsla(solid(theme.editor)))
             .child(Input::new(input).appearance(false).small())
             .into_any_element()
+    }
+
+    /// The robot's agent (`agents.default`) as a button: its name, or
+    /// Choose…; a click opens the agent picker.
+    fn agent_choice(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme;
+        let now = &self.settings.agent;
+        let (label, color) = if now.is_empty() {
+            ("Choose…".to_owned(), theme.text_muted)
+        } else {
+            (now.clone(), theme.text)
+        };
+        div()
+            .id("agent")
+            .pl(self.z(8.0))
+            .pr(self.z(4.0))
+            .h(self.z(CONTROL))
+            .w(self.z(200.0))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(self.z(4.0))
+            .border_1()
+            .border_color(hsla(theme.border))
+            .rounded(self.z(4.0))
+            .bg(hsla(solid(theme.editor)))
+            .hover(|s| s.bg(hsla(theme.element_hover)))
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.choose_agent(false, window, cx);
+            }))
+            .child(
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .text_color(hsla(color))
+                    .child(label),
+            )
+            .child(icon(
+                IconName::ChevronDown,
+                self.z(ICON - 2.0),
+                hsla(theme.text_muted),
+            ))
+            .into_any_element()
+    }
+
+    /// The Agents group's own rows: each agent's command as a field (a
+    /// built-in's own as its placeholder; changed, it is kept in
+    /// `[agents.commands]`), "not found" beside a name whose program the
+    /// user's shell doesn't find, × beside the user's own; then a row
+    /// adding one.
+    fn agent_setting_rows(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let theme = self.theme;
+        let mut rows = Vec::new();
+        for (k, choice) in self.agent_choices(true, cx).into_iter().enumerate() {
+            let name = choice.name.clone();
+            let (now, placeholder, set): (String, String, FieldSet) = if choice.custom {
+                let named = name.clone();
+                let set: FieldSet = Rc::new(move |this, text, _, window, cx| {
+                    let mut custom = this.settings.custom_agents.clone();
+                    if let Some(agent) = custom.iter_mut().find(|a| a.name == named)
+                        && !text.is_empty()
+                        && agent.command != text
+                    {
+                        text.clone_into(&mut agent.command);
+                        this.set_custom_agents(custom, window, cx);
+                    }
+                    this.settings
+                        .custom_agents
+                        .iter()
+                        .find(|a| a.name == named)
+                        .map(|a| a.command.clone())
+                        .unwrap_or_default()
+                });
+                (choice.command.clone(), String::new(), set)
+            } else {
+                let named = name.clone();
+                let set: FieldSet = Rc::new(move |this, text, _, window, cx| {
+                    let changed = |this: &Workspace| {
+                        this.settings
+                            .agent_commands
+                            .get(&named)
+                            .cloned()
+                            .unwrap_or_default()
+                    };
+                    if text != changed(this) {
+                        this.set_agent_command(&named, text, window, cx);
+                    }
+                    changed(this)
+                });
+                let own = agents::harness(&name)
+                    .and_then(|h| h.command)
+                    .unwrap_or("no command known");
+                let changed = self
+                    .settings
+                    .agent_commands
+                    .get(&name)
+                    .cloned()
+                    .unwrap_or_default();
+                (changed, own.to_owned(), set)
+            };
+            let (input, focused) =
+                self.agent_field(format!("agent:{name}"), now, placeholder, set, window, cx);
+            let field = self.text_field(&input, focused, AGENT_COMMAND);
+            let left = div()
+                .flex()
+                .items_center()
+                .gap(self.z(6.0))
+                .child(name.clone())
+                .when(choice.found == Some(false), |d| {
+                    d.child(div().text_color(hsla(theme.text_muted)).child("not found"))
+                })
+                .into_any_element();
+            let end = choice.custom.then(|| {
+                div()
+                    .id(("agent-remove", k))
+                    .size(self.z(CONTROL))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(self.z(4.0))
+                    .hover(|s| s.bg(hsla(theme.element_hover)))
+                    .tooltip(|window, cx| Tooltip::new("Remove").build(window, cx))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        let custom = this
+                            .settings
+                            .custom_agents
+                            .iter()
+                            .filter(|a| a.name != name)
+                            .cloned()
+                            .collect();
+                        this.set_custom_agents(custom, window, cx);
+                        this.agent_inputs.remove(&format!("agent:{name}"));
+                    }))
+                    .child(icon(
+                        IconName::X,
+                        self.z(ICON - 2.0),
+                        hsla(theme.text_muted),
+                    ))
+                    .into_any_element()
+            });
+            rows.push(self.agent_row(("agent-row", k), left, field, end));
+        }
+        rows.push(self.agent_add_row(window, cx));
+        rows
+    }
+
+    /// The row adding an agent: its name and command as fields, and Add
+    /// (Enter in the command field too; in the name field it moves to the
+    /// command's while that is empty).
+    fn agent_add_row(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme;
+        let on_name: FieldSet = Rc::new(|this, _, enter, window, cx| {
+            if enter {
+                if this.agent_text(ADD_COMMAND, cx).is_empty() {
+                    if let Some((input, ..)) = this.agent_inputs.get(ADD_COMMAND) {
+                        let input = input.clone();
+                        input.update(cx, |s, cx| s.focus(window, cx));
+                    }
+                } else {
+                    this.add_agent(window, cx);
+                }
+            }
+            this.agent_text(ADD_NAME, cx)
+        });
+        let on_command: FieldSet = Rc::new(|this, _, enter, window, cx| {
+            if enter {
+                this.add_agent(window, cx);
+            }
+            this.agent_text(ADD_COMMAND, cx)
+        });
+        // What is typed is what they show: never put back over it.
+        let typed = (
+            self.agent_text(ADD_NAME, cx),
+            self.agent_text(ADD_COMMAND, cx),
+        );
+        let (name, name_focused) = self.agent_field(
+            ADD_NAME.to_owned(),
+            typed.0,
+            "Name".to_owned(),
+            on_name,
+            window,
+            cx,
+        );
+        let (command, command_focused) = self.agent_field(
+            ADD_COMMAND.to_owned(),
+            typed.1,
+            "Command, as typed in a terminal".to_owned(),
+            on_command,
+            window,
+            cx,
+        );
+        let left = self.text_field(&name, name_focused, AGENT_NAME);
+        let field = self.text_field(&command, command_focused, AGENT_COMMAND);
+        let add = div()
+            .id("agent-add")
+            .h(self.z(CONTROL))
+            .px(self.z(6.0))
+            .flex()
+            .items_center()
+            .rounded(self.z(4.0))
+            .text_color(hsla(theme.text))
+            .hover(|s| s.bg(hsla(theme.element_hover)))
+            .on_click(cx.listener(|this, _, window, cx| this.add_agent(window, cx)))
+            .child("Add")
+            .into_any_element();
+        self.agent_row("agent-add-row", left, field, Some(add))
+    }
+
+    /// An agent's row: `left` (its name), and right its command's `field`
+    /// and `end` (×, Add) in a slot of their own.
+    fn agent_row(
+        &self,
+        id: impl Into<ElementId>,
+        left: AnyElement,
+        field: AnyElement,
+        end: Option<AnyElement>,
+    ) -> AnyElement {
+        let theme = self.theme;
+        div()
+            .id(id)
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(self.z(16.0))
+            .h(self.z(ROW))
+            .px(self.z(8.0))
+            .rounded(self.z(4.0))
+            .hover(|s| s.bg(hsla(theme.element_hover)))
+            .child(
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .child(left),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(self.z(4.0))
+                    .child(field)
+                    .child(
+                        div()
+                            .w(self.z(AGENT_END))
+                            .flex()
+                            .justify_center()
+                            .children(end),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// An agent's field `key` (made the first time) and whether it has the
+    /// focus, as [`Self::setting_field`]: Enter or leaving it hands the
+    /// text typed to `set`, which says what it then shows.
+    fn agent_field(
+        &mut self,
+        key: String,
+        now: String,
+        placeholder: String,
+        set: FieldSet,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (Entity<InputState>, bool) {
+        let (input, _, synced) = self.agent_inputs.entry(key.clone()).or_insert_with(|| {
+            let input = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .default_value(now.clone())
+                    .placeholder(placeholder)
+            });
+            let changes = cx.subscribe_in(
+                &input,
+                window,
+                move |this, input, e: &InputEvent, window, cx| {
+                    let enter = matches!(e, InputEvent::PressEnter { .. });
+                    if enter || matches!(e, InputEvent::Blur) {
+                        let text = input.read(cx).value().trim().to_owned();
+                        let shows = set(this, &text, enter, window, cx);
+                        this.show_in_agent_field(&key, shows, window, cx);
+                    }
+                },
+            );
+            (input, changes, now.clone())
+        });
+        let input = input.clone();
+        let focused = input.read(cx).focus_handle(cx).is_focused(window);
+        if !focused && *synced != now {
+            synced.clone_from(&now);
+            input.update(cx, |s, cx| s.set_value(now, window, cx));
+        }
+        (input, focused)
+    }
+
+    /// Agent field `key` shows `text`.
+    fn show_in_agent_field(
+        &mut self,
+        key: &str,
+        text: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some((input, _, synced)) = self.agent_inputs.get_mut(key) {
+            synced.clone_from(&text);
+            input.update(cx, |s, cx| s.set_value(text, window, cx));
+        }
+    }
+
+    /// What agent field `key` holds, trimmed.
+    fn agent_text(&self, key: &str, cx: &Context<Self>) -> String {
+        self.agent_inputs
+            .get(key)
+            .map(|(input, ..)| input.read(cx).value().trim().to_owned())
+            .unwrap_or_default()
+    }
+
+    /// Add: the agent typed in the adding row made one of the user's own,
+    /// its fields emptied; a name taken or a field empty is said instead.
+    fn add_agent(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let name = self.agent_text(ADD_NAME, cx);
+        let command = self.agent_text(ADD_COMMAND, cx);
+        let taken = agents::launchables(&self.settings)
+            .iter()
+            .any(|a| a.name.eq_ignore_ascii_case(&name));
+        let problem = if name.is_empty() {
+            Some("An agent needs a name.".to_owned())
+        } else if taken {
+            Some(format!("There is an agent named {name} already."))
+        } else if command.is_empty() {
+            Some(format!("{name} needs a command to start it."))
+        } else {
+            None
+        };
+        if let Some(problem) = problem {
+            self.error = Some(problem);
+            cx.notify();
+            return;
+        }
+        let mut custom = self.settings.custom_agents.clone();
+        custom.push(CustomAgent { name, command });
+        self.set_custom_agents(custom, window, cx);
+        self.show_in_agent_field(ADD_NAME, String::new(), window, cx);
+        self.show_in_agent_field(ADD_COMMAND, String::new(), window, cx);
     }
 
     /// The relay (`collab.relay`): binbun, n0 or Custom as segments, and

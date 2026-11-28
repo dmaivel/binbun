@@ -157,16 +157,37 @@ fn agent_mark(path: &str) -> Option<&'static [u8]> {
     ))
 }
 
+/// The prefix an agent's mark is served by framed for an icon
+/// ([`agents::Mark::icon_frame`]): `agent-icons/<file>` for
+/// `agents/<file>`.
+const MARK_ICONS: &str = "agent-icons/";
+
+/// The asset path drawing `mark` as an icon (a menu's, a picker's).
+pub fn mark_icon(mark: &agents::Mark) -> SharedString {
+    let file = mark.mono.strip_prefix("agents/").unwrap_or(mark.mono);
+    format!("{MARK_ICONS}{file}").into()
+}
+
 /// The agent's mark at `path` as an avatar draws it: its file in its
 /// mark's square frame ([`agents::Mark::frame`]), so that drawn over the whole
-/// circle its ink is centred on it.
+/// circle its ink is centred on it; under [`MARK_ICONS`], as an icon.
 fn framed_mark(path: &str) -> Option<Vec<u8>> {
+    let (path, icon) = match path.strip_prefix(MARK_ICONS) {
+        Some(file) => (format!("agents/{file}"), true),
+        None => (path.to_owned(), false),
+    };
+    let path = path.as_str();
     let mark = HARNESSES
         .iter()
         .filter_map(|h| h.mark)
         .find(|m| m.mono == path || m.colours.is_some_and(|(file, _)| file == path))?;
     let text = std::str::from_utf8(agent_mark(path)?).ok()?;
-    agents::framed(text, mark.frame()).map(String::into_bytes)
+    let frame = if icon {
+        mark.icon_frame()
+    } else {
+        mark.frame()
+    };
+    agents::framed(text, frame).map(String::into_bytes)
 }
 
 /// Icon `name`, `size` square, drawn in `color`.
@@ -182,7 +203,7 @@ pub fn icon(name: IconName, size: Pixels, color: Hsla) -> Svg {
 mod tests {
     use binbun_gui_view::agents::HARNESSES;
 
-    use super::{agent_mark, framed_mark};
+    use super::{agent_mark, framed_mark, mark_icon};
 
     #[test]
     fn every_mark_the_agents_table_names_is_bundled() {
@@ -197,6 +218,13 @@ mod tests {
                     "{}: {} not bundled",
                     harness.name,
                     file
+                );
+            }
+            if let Some(mark) = &harness.mark {
+                assert!(
+                    framed_mark(&mark_icon(mark)).is_some(),
+                    "{}: no icon",
+                    harness.name
                 );
             }
         }

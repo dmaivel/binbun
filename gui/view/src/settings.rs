@@ -17,7 +17,7 @@ use std::time::SystemTime;
 
 use binbun_print::style::{IntSpelling, Naming, Placement, Spacing, Style};
 use binbun_session::signatures::Options as SignatureOptions;
-use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
+use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, TableLike, Value};
 
 use crate::crash_safe;
 
@@ -553,12 +553,34 @@ pub struct Settings {
     /// The Python the console runs, a path or a name on `PATH`
     /// (`python.interpreter`, default "python3").
     pub python_interpreter: String,
+    /// The coding agent the robot starts, the one started last
+    /// (`agents.default`, default none: chosen at the first start).
+    pub agent: String,
+    /// Whether the agents whose program is not found are left out of the
+    /// robot's menu and picker (`agents.hide_missing`, default true).
+    pub hide_missing_agents: bool,
+    /// The built-in agents' commands as changed, by the agent's name
+    /// (`[agents.commands]`). Not in [`SETTINGS`].
+    pub agent_commands: BTreeMap<String, String>,
+    /// The user's own agents, in order (`[[agents.custom]]`). Not in
+    /// [`SETTINGS`].
+    pub custom_agents: Vec<CustomAgent>,
     /// Key binding overrides from `[keys]`: command id to GPUI keystrokes
     /// such as "ctrl-shift-p" (`ctrl-` is Ctrl everywhere, `cmd-` Cmd,
     /// `secondary-` Cmd on macOS and Ctrl elsewhere); an empty list unbinds
     /// the command. Default empty. Not in [`SETTINGS`] and not reachable
     /// through `get`/`set`.
     pub keys: BTreeMap<String, Vec<String>>,
+}
+
+/// An agent of the user's own: its name, and the command that starts it
+/// (run by their shell, as typed in a terminal).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CustomAgent {
+    /// Its name, as the robot's menu shows it.
+    pub name: String,
+    /// What starts it (`my-agent --tui`).
+    pub command: String,
 }
 
 impl Default for Settings {
@@ -601,6 +623,10 @@ impl Default for Settings {
             updates: UpdateCheck::Ask,
             collab_relay: CollabRelay::Binbun,
             python_interpreter: "python3".to_owned(),
+            agent: String::new(),
+            hide_missing_agents: true,
+            agent_commands: BTreeMap::new(),
+            custom_agents: Vec::new(),
             keys: BTreeMap::new(),
         }
     }
@@ -637,6 +663,9 @@ pub enum Kind {
     Program,
     /// A relay: `binbun`, `n0`, or a URL: [`Setting::Text`].
     Relay,
+    /// A coding agent's name, the robot's ([`crate::agents::launchables`]):
+    /// [`Setting::Text`]; empty, none chosen yet.
+    Agent,
 }
 
 /// One setting as the settings pane and the command palette show it.
@@ -676,6 +705,11 @@ const DOWNLOADS: &[&str] = &["ask", "always", "never"];
 
 /// The table holding key binding overrides.
 const KEYS: &str = "keys";
+/// The agents' table, and in it the built-ins' commands as changed and the
+/// user's own agents (not in [`SETTINGS`]).
+const AGENTS: &str = "agents";
+const AGENT_COMMANDS: &str = "commands";
+const CUSTOM_AGENTS: &str = "custom";
 
 /// The settings stored as `u32`: the file takes only integers for them.
 const WHOLE: &[&str] = &[
@@ -992,6 +1026,20 @@ pub const SETTINGS: &[Info] = &[
         tooltip: "The Python the console runs, a path or a name on PATH: Python 3.11 or newer with binbun installed (pip install binbun).",
         kind: Kind::Program,
     },
+    Info {
+        key: "agents.default",
+        group: "Agents",
+        name: "Agent",
+        tooltip: "The coding agent the robot in the status bar starts: the one started last, or chosen here.",
+        kind: Kind::Agent,
+    },
+    Info {
+        key: "agents.hide_missing",
+        group: "Agents",
+        name: "Hide agents not found",
+        tooltip: "Leaves the agents whose program your shell doesn't find out of the robot's menu and the agent picker.",
+        kind: Kind::Toggle,
+    },
 ];
 
 /// A setting's value. A [`Kind::Choice`] value is the choice's name
@@ -1016,6 +1064,7 @@ enum Slot<'a> {
     Text(&'a mut String),
     Name(&'a mut String),
     Program(&'a mut String),
+    Agent(&'a mut String),
     Theme(&'a mut Theme),
     Backdrop(&'a mut Backdrop),
     Dropped(&'a mut Dropped),
@@ -1076,6 +1125,8 @@ impl Settings {
             "updates.check" => name(self.updates.name()),
             "collab.relay" => name(self.collab_relay.name()),
             "python.interpreter" => Setting::Text(self.python_interpreter.clone()),
+            "agents.default" => Setting::Text(self.agent.clone()),
+            "agents.hide_missing" => Setting::Bool(self.hide_missing_agents),
             _ => return None,
         })
     }
@@ -1114,6 +1165,7 @@ impl Settings {
                 }
                 text.trim().clone_into(field);
             }
+            Slot::Agent(field) => expect_text(value)?.trim().clone_into(field),
             Slot::Theme(field) => *field = choose(info, value, Theme::from_name)?,
             Slot::Backdrop(field) => *field = choose(info, value, Backdrop::from_name)?,
             Slot::Dropped(field) => *field = choose(info, value, Dropped::from_name)?,
@@ -1171,6 +1223,8 @@ impl Settings {
             "updates.check" => Slot::Updates(&mut self.updates),
             "collab.relay" => Slot::Relay(&mut self.collab_relay),
             "python.interpreter" => Slot::Program(&mut self.python_interpreter),
+            "agents.default" => Slot::Agent(&mut self.agent),
+            "agents.hide_missing" => Slot::Bool(&mut self.hide_missing_agents),
             _ => return None,
         })
     }
@@ -1263,7 +1317,8 @@ fn in_range(info: &Info, value: f64) -> Result<f64, String> {
         | Kind::Font { .. }
         | Kind::Theme { .. }
         | Kind::Program
-        | Kind::Relay => Ok(value),
+        | Kind::Relay
+        | Kind::Agent => Ok(value),
     }
 }
 
@@ -1319,7 +1374,8 @@ fn choices(info: &Info) -> String {
         | Kind::Font { .. }
         | Kind::Theme { .. }
         | Kind::Program
-        | Kind::Relay => "a valid value".to_owned(),
+        | Kind::Relay
+        | Kind::Agent => "a valid value".to_owned(),
     }
 }
 
@@ -1428,6 +1484,53 @@ impl File {
         remove_item(&mut self.doc, KEYS, id);
     }
 
+    /// Sets the built-in agent `name`'s command to `command` in
+    /// `[agents.commands]` (made when missing); an empty one removes it,
+    /// so the agent has its own command again.
+    pub fn set_agent_command(&mut self, name: &str, command: &str) {
+        let Some(agents) = group_mut(&mut self.doc, AGENTS) else {
+            return;
+        };
+        if command.is_empty() {
+            if let Some(commands) = agents
+                .get_mut(AGENT_COMMANDS)
+                .and_then(Item::as_table_like_mut)
+            {
+                commands.remove(name);
+            }
+            return;
+        }
+        if !agents.get(AGENT_COMMANDS).is_some_and(Item::is_table_like) {
+            agents.insert(AGENT_COMMANDS, Item::Table(Table::new()));
+        }
+        if let Some(commands) = agents
+            .get_mut(AGENT_COMMANDS)
+            .and_then(Item::as_table_like_mut)
+        {
+            commands.insert(name, Item::Value(Value::from(command)));
+        }
+    }
+
+    /// The user's own agents written as `[[agents.custom]]`, in order,
+    /// replacing those there (none: the array removed).
+    pub fn set_custom_agents(&mut self, custom: &[CustomAgent]) {
+        let Some(agents) = group_mut(&mut self.doc, AGENTS) else {
+            return;
+        };
+        if custom.is_empty() {
+            agents.remove(CUSTOM_AGENTS);
+            return;
+        }
+        let mut array = ArrayOfTables::new();
+        for agent in custom {
+            let mut table = Table::new();
+            table.insert("name", Item::Value(Value::from(agent.name.as_str())));
+            table.insert("command", Item::Value(Value::from(agent.command.as_str())));
+            array.push(table);
+        }
+        agents.insert(CUSTOM_AGENTS, Item::ArrayOfTables(array));
+    }
+
     /// The document as text.
     pub fn text(&self) -> String {
         self.doc.to_string()
@@ -1463,6 +1566,7 @@ impl File {
                 }
                 Kind::Number { min, max, .. } => format!("  # {min} to {max}"),
                 Kind::Relay => "  # \"binbun\" | \"n0\" | a relay's URL".to_owned(),
+                Kind::Agent => "  # an agent's name, as the robot's menu shows it".to_owned(),
                 Kind::Toggle | Kind::Font { .. } | Kind::Theme { .. } | Kind::Program => {
                     String::new()
                 }
@@ -1475,7 +1579,14 @@ impl File {
             );
         }
         text.push_str(
-            "\n# Key bindings: a command id and a keystroke or a list of keystrokes;\n\
+            "\n# A built-in agent's command, changed, by its name; and agents of your\n\
+             # own, each a name and the command that starts it (run by your shell):\n\
+             # [agents.commands]\n\
+             # \"Claude Code\" = \"claude --model opus\"\n\
+             # [[agents.custom]]\n\
+             # name = \"My Agent\"\n\
+             # command = \"my-agent --tui\"\n\
+             \n# Key bindings: a command id and a keystroke or a list of keystrokes;\n\
              # an empty list unbinds the command. ctrl- is Ctrl everywhere, cmd- is\n\
              # Cmd, secondary- is Cmd on macOS and Ctrl elsewhere.\n\
              [keys]\n\
@@ -1509,6 +1620,14 @@ fn read_group(group: &str, item: &Item, settings: &mut Settings, problems: &mut 
     };
     for (name, item) in table.iter() {
         let key = format!("{group}.{name}");
+        if group == AGENTS && name == AGENT_COMMANDS {
+            read_agent_commands(item, &mut settings.agent_commands, problems);
+            continue;
+        }
+        if group == AGENTS && name == CUSTOM_AGENTS {
+            read_custom_agents(item, &mut settings.custom_agents, problems);
+            continue;
+        }
         let result = match info(&key) {
             Some(info) => setting_of(info, item).and_then(|value| settings.set(&key, &value)),
             None => Err("unknown setting, kept as written".to_owned()),
@@ -1537,6 +1656,73 @@ fn read_keys(item: &Item, keys: &mut BTreeMap<String, Vec<String>>, problems: &m
             Err(message) => problems.push(Problem {
                 key: format!("{KEYS}.{id}"),
                 message,
+            }),
+        }
+    }
+}
+
+/// Reads `[agents.commands]` into `commands`: an agent's name and a
+/// string, the others reported and skipped.
+fn read_agent_commands(
+    item: &Item,
+    commands: &mut BTreeMap<String, String>,
+    problems: &mut Vec<Problem>,
+) {
+    let key = format!("{AGENTS}.{AGENT_COMMANDS}");
+    let Some(table) = item.as_table_like() else {
+        problems.push(Problem {
+            key,
+            message: format!("expected a table, found {}", item.type_name()),
+        });
+        return;
+    };
+    for (name, item) in table.iter() {
+        match item.as_str() {
+            Some(command) => {
+                commands.insert(name.to_owned(), command.trim().to_owned());
+            }
+            None => problems.push(Problem {
+                key: format!("{key}.{name}"),
+                message: format!("expected a command, found {}", item.type_name()),
+            }),
+        }
+    }
+}
+
+/// Reads `[[agents.custom]]` into `custom`: each a table with a `name`
+/// and a `command`, the others reported and skipped.
+fn read_custom_agents(item: &Item, custom: &mut Vec<CustomAgent>, problems: &mut Vec<Problem>) {
+    let key = format!("{AGENTS}.{CUSTOM_AGENTS}");
+    let tables: Vec<&dyn TableLike> = match item {
+        Item::ArrayOfTables(array) => array.iter().map(|t| t as &dyn TableLike).collect(),
+        Item::Value(Value::Array(array)) => array
+            .iter()
+            .filter_map(|v| v.as_inline_table().map(|t| t as &dyn TableLike))
+            .collect(),
+        Item::None | Item::Value(_) | Item::Table(_) => {
+            problems.push(Problem {
+                key,
+                message: format!("expected a list of agents, found {}", item.type_name()),
+            });
+            return;
+        }
+    };
+    for table in tables {
+        let text = |field| {
+            table
+                .get(field)
+                .and_then(Item::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+        };
+        match (text("name"), text("command")) {
+            (Some(name), Some(command)) => custom.push(CustomAgent {
+                name: name.to_owned(),
+                command: command.to_owned(),
+            }),
+            _ => problems.push(Problem {
+                key: key.clone(),
+                message: "an agent needs a name and a command".to_owned(),
             }),
         }
     }
@@ -1605,6 +1791,12 @@ fn setting_of(info: &Info, item: &Item) -> Result<Setting, String> {
                 .map(|text| Setting::Text(text.to_owned())),
             "a string",
         ),
+        Kind::Agent => (
+            value
+                .and_then(Value::as_str)
+                .map(|text| Setting::Text(text.to_owned())),
+            "an agent's name",
+        ),
         Kind::Number { .. } if WHOLE.contains(&info.key) => (
             value
                 .and_then(Value::as_integer)
@@ -1643,7 +1835,8 @@ fn toml_value(info: &Info, value: &Setting) -> Value {
                 | Kind::Font { .. }
                 | Kind::Theme { .. }
                 | Kind::Program
-                | Kind::Relay => true,
+                | Kind::Relay
+                | Kind::Agent => true,
             };
             match number.to_string().parse::<i64>() {
                 Ok(integer) if whole_steps => Value::from(integer),
@@ -1870,6 +2063,7 @@ smooth = false
             Kind::Theme { .. } => Setting::Text("Nord".to_owned()),
             Kind::Program => Setting::Text("/usr/bin/python3.14".to_owned()),
             Kind::Relay => Setting::Text("https://relay.example.org".to_owned()),
+            Kind::Agent => Setting::Text("Claude Code".to_owned()),
         }
     }
 
@@ -1955,6 +2149,41 @@ x = 1
         assert!(!settings.symbolic);
         assert_eq!(file.text(), text);
         assert!(File::parse("[font\n").is_err());
+    }
+
+    /// A built-in agent's command changed, and agents of the user's own,
+    /// are written to the file and read back; removed, they are gone.
+    #[test]
+    fn agents_commands_and_custom_round_trip() {
+        let mut file = File::default();
+        file.set_agent_command("Claude Code", "claude --model opus");
+        let mine = vec![
+            CustomAgent {
+                name: "My Agent".to_owned(),
+                command: "my-agent --tui".to_owned(),
+            },
+            CustomAgent {
+                name: "Other".to_owned(),
+                command: "FOO=1 other".to_owned(),
+            },
+        ];
+        file.set_custom_agents(&mine);
+        file.set("agents.default", &Setting::Text("My Agent".to_owned()))
+            .unwrap();
+        let (mut file, read, problems) = File::parse(&file.text()).unwrap();
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(
+            read.agent_commands,
+            BTreeMap::from([("Claude Code".to_owned(), "claude --model opus".to_owned())])
+        );
+        assert_eq!(read.custom_agents, mine);
+        assert_eq!(read.agent, "My Agent");
+        file.set_agent_command("Claude Code", "");
+        file.set_custom_agents(&[]);
+        let (_, read, problems) = File::parse(&file.text()).unwrap();
+        assert!(problems.is_empty(), "{problems:?}");
+        assert!(read.agent_commands.is_empty() && read.custom_agents.is_empty());
+        assert_eq!(read.agent, "My Agent");
     }
 
     #[test]

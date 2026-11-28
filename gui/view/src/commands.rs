@@ -135,6 +135,9 @@ pub enum Command {
     /// Opens a terminal under the code: the user's shell, in the binary's
     /// folder.
     NewTerminal,
+    /// Starts the coding agent the robot in the status bar starts (the
+    /// one started last; asked the first time) in a pane to the right.
+    NewAgent,
     /// Shows or hides the feature map (the strip standing for the whole
     /// image).
     ToggleFeatureMap,
@@ -1163,6 +1166,14 @@ pub const COMMANDS: &[Info] = &[
         // Ctrl+Shift+Backtick (the key a shifted backtick types, as the
         // other shifted keys); Ctrl on macOS too, as the console's.
         &["ctrl-~"],
+        Window,
+    ),
+    info(
+        C::NewAgent,
+        "window.new_agent",
+        "New Agent",
+        Some(M::Window),
+        &[],
         Window,
     ),
     info(
@@ -2477,7 +2488,8 @@ fn state_of(command: Command, facts: &Facts) -> State {
         | C::Close
         | C::Conflicts
         // The start page has no panes to open it in.
-        | C::NewTerminal => on(facts.open),
+        | C::NewTerminal
+        | C::NewAgent => on(facts.open),
         // The project is known once the image is parsed (its key read).
         // Bytes are searched once the image is parsed too.
         C::ExportProject | C::SearchBytes => on(facts.open && facts.stage >= 1),

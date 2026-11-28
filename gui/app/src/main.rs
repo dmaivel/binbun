@@ -32,6 +32,7 @@ macro_rules! trace {
 }
 
 mod actions;
+mod agents_view;
 mod arrows;
 mod banners;
 mod c_view;

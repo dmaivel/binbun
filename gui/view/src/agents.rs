@@ -6,12 +6,14 @@
 //! Connect an Agent…, with the binbun [`setup_binbun`] chooses).
 
 use std::collections::BTreeSet;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use crate::collab::{AVATAR_INK, avatar_rgb, luminance};
+use crate::settings::Settings;
 
 /// A harness's official mark as an avatar shows it: large on the
 /// avatar's circle in place of the initial, as a person's default picture
@@ -42,8 +44,20 @@ impl Mark {
     /// of it. Drawn over the whole circle, the ink is centred on it to
     /// the subpixel, whatever device pixels the circle falls on.
     pub fn frame(&self) -> [f32; 4] {
+        self.frame_at(self.across)
+    }
+
+    /// The `viewBox` it is drawn with as an icon (a menu's, a picker's):
+    /// its ink 90 percent of the square, near the chrome's glyphs' share.
+    pub fn icon_frame(&self) -> [f32; 4] {
+        self.frame_at(90)
+    }
+
+    /// A square centred on the ink, the ink's longer side `across`
+    /// percent of it.
+    fn frame_at(&self, across: u8) -> [f32; 4] {
         let [x, y, w, h] = self.ink;
-        let side = w.max(h) * 100.0 / f32::from(self.across);
+        let side = w.max(h) * 100.0 / f32::from(across);
         [
             x + w / 2.0 - side / 2.0,
             y + h / 2.0 - side / 2.0,
@@ -103,6 +117,8 @@ pub struct Harness {
     pub mark: Option<Mark>,
     /// How it starts `binbun mcp`, if the Connect dialog says it.
     pub setup: Option<Setup>,
+    /// What starts it in a terminal (`claude`), if known: the robot's.
+    pub command: Option<&'static str>,
 }
 
 /// The `mcpServers` entry of Cursor's and omp's config files.
@@ -137,6 +153,7 @@ macro_rules! mono {
 pub const HARNESSES: &[Harness] = &[
     Harness {
         name: "Codex",
+        command: Some("codex"),
         aliases: &["codex-mcp-client"],
         mark: Some(mono!(
             "codex-light.svg",
@@ -147,6 +164,7 @@ pub const HARNESSES: &[Harness] = &[
     },
     Harness {
         name: "Claude Code",
+        command: Some("claude"),
         aliases: &["claude-code"],
         mark: Some(Mark {
             colours: Some(("agents/claude-code.svg", &[0x00d9_7757])),
@@ -158,6 +176,7 @@ pub const HARNESSES: &[Harness] = &[
     },
     Harness {
         name: "Cursor",
+        command: Some("cursor-agent"),
         aliases: &["cursor-vscode"],
         mark: Some(mono!("cursor-light.svg", [0.0, 0.0, 466.73, 532.09], 64)),
         setup: Some(Setup::Json {
@@ -167,18 +186,21 @@ pub const HARNESSES: &[Harness] = &[
     },
     Harness {
         name: "Grok",
+        command: Some("grok"),
         aliases: &[],
         mark: Some(mono!("grok-light.svg", [0.0, 0.43, 24.0, 23.15], 66)),
         setup: Some(Setup::Shell("grok mcp add binbun -- {bin} mcp")),
     },
     Harness {
         name: "Fx",
+        command: Some("fx"),
         aliases: &["fx"],
         mark: Some(mono!("fx-light.svg", [166.241, 0.0, 155.861, 155.78], 64)),
         setup: Some(Setup::Shell("fx mcp add binbun -- {bin} mcp")),
     },
     Harness {
         name: "OpenCode",
+        command: Some("opencode"),
         aliases: &[],
         mark: Some(mono!("opencode-mono.svg", [0.0, 0.0, 32.0, 40.0], 60)),
         setup: Some(Setup::Shell(
@@ -187,6 +209,7 @@ pub const HARNESSES: &[Harness] = &[
     },
     Harness {
         name: "Antigravity",
+        command: Some("agy"),
         aliases: &["antigravity-client"],
         mark: Some(Mark {
             colours: Some((
@@ -207,6 +230,7 @@ pub const HARNESSES: &[Harness] = &[
     },
     Harness {
         name: "Kiro",
+        command: Some("kiro-cli"),
         aliases: &["Q DEV CLI"],
         mark: Some(mono!("kiro-mono.svg", [272.86, 202.54, 653.91, 795.36], 64)),
         setup: Some(Setup::Shell(
@@ -215,6 +239,7 @@ pub const HARNESSES: &[Harness] = &[
     },
     Harness {
         name: "Muse",
+        command: None,
         aliases: &["tbh"],
         mark: Some(mono!("muse.svg", [0.0, 0.0, 287.56, 191.0], 72)),
         setup: Some(Setup::Json {
@@ -224,12 +249,14 @@ pub const HARNESSES: &[Harness] = &[
     },
     Harness {
         name: "Pi",
+        command: Some("pi"),
         aliases: &[],
         mark: Some(mono!("pi-light.svg", [165.29, 165.29, 469.43, 469.43], 56)),
         setup: Some(Setup::Shell("pi mcp add binbun -- {bin} mcp")),
     },
     Harness {
         name: "omp",
+        command: Some("omp"),
         aliases: &["omp-coding-agent"],
         mark: Some(mono!("omp.svg", [0.0, 0.0, 12.0, 10.0], 66)),
         setup: Some(Setup::Json {
@@ -240,6 +267,7 @@ pub const HARNESSES: &[Harness] = &[
     // Known by name, drawn as the Bot.
     Harness {
         name: "Gemini CLI",
+        command: Some("gemini"),
         aliases: &["gemini-cli-mcp-client", "gemini"],
         mark: None,
         setup: Some(Setup::Shell("gemini mcp add -s user binbun {bin} mcp")),
@@ -450,7 +478,7 @@ pub fn run_setup(command: &str) -> Result<(), String> {
         use std::os::windows::process::CommandExt as _;
         /// No console window flashing up for it.
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let mut shell = std::process::Command::new("cmd");
+        let mut shell = Command::new("cmd");
         shell
             .arg("/C")
             .raw_arg(command)
@@ -462,12 +490,12 @@ pub fn run_setup(command: &str) -> Result<(), String> {
         let program = std::env::var_os("SHELL")
             .filter(|shell| !shell.is_empty())
             .unwrap_or_else(|| "sh".into());
-        let mut shell = std::process::Command::new(program);
+        let mut shell = Command::new(program);
         shell.args(["-l", "-i", "-c", command]);
         shell
     };
     let out = shell
-        .stdin(std::process::Stdio::null())
+        .stdin(Stdio::null())
         .output()
         .map_err(|e| e.to_string())?;
     if out.status.success() {
@@ -566,6 +594,104 @@ pub fn write_quiet(path: &Path, names: &BTreeSet<String>) -> Result<(), String> 
         text
     });
     fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// An agent the robot can start: a harness of [`HARNESSES`], its command as
+/// the settings change it, or one of the user's own.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Launchable {
+    /// Its name.
+    pub name: String,
+    /// What starts it, as typed in a terminal; empty if none is known.
+    pub command: String,
+    /// Its harness, if a built-in one.
+    pub harness: Option<&'static Harness>,
+}
+
+/// The agents the robot can start: the harnesses in the Connect dialog's
+/// order, then the user's own (`[agents]` in the settings).
+pub fn launchables(settings: &Settings) -> Vec<Launchable> {
+    let built_in = HARNESSES.iter().map(|harness| Launchable {
+        name: harness.name.to_owned(),
+        command: settings
+            .agent_commands
+            .get(harness.name)
+            .cloned()
+            .or_else(|| harness.command.map(str::to_owned))
+            .unwrap_or_default(),
+        harness: Some(harness),
+    });
+    let own = settings.custom_agents.iter().map(|agent| Launchable {
+        name: agent.name.clone(),
+        command: agent.command.clone(),
+        harness: None,
+    });
+    built_in.chain(own).collect()
+}
+
+/// The program `command` runs: its first word after any `NAME=value`
+/// assignments and an `env` or `exec` (a quoted path with spaces is not
+/// told apart).
+pub fn command_program(command: &str) -> Option<&str> {
+    command.split_whitespace().find(|word| {
+        let assignment = word.split_once('=').is_some_and(|(name, _)| {
+            !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        });
+        !assignment && *word != "env" && *word != "exec"
+    })
+}
+
+/// Whether `program` (a path, `~/` the home; or a name) can be run: the
+/// file, or one of that name in a folder of `path` (on Windows also with
+/// `.exe`, `.cmd` or `.bat`).
+pub fn found(program: &str, path: Option<&OsStr>) -> bool {
+    let expanded = match (program.strip_prefix("~/"), binbun_paths::home()) {
+        (Some(rest), Some(home)) => home.join(rest),
+        _ => PathBuf::from(program),
+    };
+    if expanded.components().count() > 1 {
+        return executable(&expanded);
+    }
+    let names: Vec<String> = if cfg!(windows) {
+        ["", ".exe", ".cmd", ".bat"]
+            .iter()
+            .map(|ext| format!("{program}{ext}"))
+            .collect()
+    } else {
+        vec![program.to_owned()]
+    };
+    path.into_iter()
+        .flat_map(std::env::split_paths)
+        .filter(|dir| dir.is_absolute())
+        .any(|dir| names.iter().any(|name| executable(&dir.join(name))))
+}
+
+/// The `PATH` the user's shell gives a terminal: what a login, interactive
+/// shell's environment says (its rc files add to it), else this
+/// process's (empty without one). Blocks: the GUI asks off its UI thread.
+pub fn login_path() -> OsString {
+    const MARK: &str = "__binbun_env__";
+    if cfg!(windows) {
+        return std::env::var_os("PATH").unwrap_or_default();
+    }
+    let shell = std::env::var_os("SHELL")
+        .filter(|shell| !shell.is_empty())
+        .unwrap_or_else(|| "sh".into());
+    let said = Command::new(shell)
+        .args(["-l", "-i", "-c", &format!("echo {MARK}; env")])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned());
+    said.and_then(|said| {
+        let (_, env) = said.split_once(MARK)?;
+        env.lines()
+            .find_map(|line| line.strip_prefix("PATH="))
+            .map(OsString::from)
+    })
+    .or_else(|| std::env::var_os("PATH"))
+    .unwrap_or_default()
 }
 
 /// Whether `file` is a file this user may run (on Windows, any file).
@@ -743,8 +869,34 @@ mod tests {
         file
     }
 
-    fn path_of(dirs: &[&Path]) -> std::ffi::OsString {
+    fn path_of(dirs: &[&Path]) -> OsString {
         std::env::join_paths(dirs).unwrap()
+    }
+
+    /// A command's program is its first word past assignments and `env`;
+    /// it is found as a file on `PATH`, or at its path.
+    #[test]
+    fn a_commands_program_is_found_on_path() {
+        assert_eq!(command_program("claude"), Some("claude"));
+        assert_eq!(
+            command_program("FOO=1 BAR_2=x claude --model opus"),
+            Some("claude")
+        );
+        assert_eq!(command_program("env FOO=a=b my-agent"), Some("my-agent"));
+        assert_eq!(command_program("  "), None);
+        let dir = scratch("found");
+        let file = command_in(&dir);
+        let name = file
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .trim_end_matches(".exe");
+        assert!(found(name, Some(&path_of(&[&dir]))));
+        assert!(!found(name, Some(&path_of(&[&dir.join("none")]))));
+        assert!(found(file.to_str().unwrap(), None));
+        assert!(!found("no-such-agent-here", Some(&path_of(&[&dir]))));
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

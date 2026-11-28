@@ -51,6 +51,7 @@ use gpui_kit::{
 };
 
 use crate::actions;
+use crate::agents_view::AgentChoice;
 use crate::arrows::Hit as ArrowHit;
 use crate::banners::BannerUi;
 use crate::calls_view::CallsUi;
@@ -326,6 +327,8 @@ pub enum PickerKind {
     Enum,
     /// The enumeration to edit.
     EditEnum,
+    /// The agent the robot starts ([`Workspace::choose_agent`]).
+    Agent,
 }
 
 impl PickerKind {
@@ -334,6 +337,24 @@ impl PickerKind {
     /// field (its rows chosen by the arrows and Enter, or a click).
     pub fn typed(self) -> bool {
         self != Self::Project
+    }
+
+    /// What its field says while empty: the agent picker's (the first
+    /// start's question) where the answer is changed.
+    pub fn placeholder(self) -> &'static str {
+        match self {
+            Self::Agent => {
+                "The agent the robot starts · changed later: right-click it, or Settings › Agents"
+            }
+            Self::GoTo
+            | Self::Palette
+            | Self::Recent
+            | Self::Theme
+            | Self::Slice
+            | Self::Project
+            | Self::Enum
+            | Self::EditEnum => "",
+        }
     }
 }
 
@@ -550,6 +571,8 @@ pub struct Workspace {
     /// with how the number reads by it (Show as Enum) or nothing (Edit
     /// Enum).
     pub enum_choices: Vec<(String, String)>,
+    /// The agent picker's rows (built when it opens).
+    pub agent_choices: Vec<AgentChoice>,
     /// The number Show as Enum shows: its instruction, as written.
     pub enum_number: Option<(u64, Written)>,
     pub prompt: Option<Prompt>,
@@ -596,6 +619,13 @@ pub struct Workspace {
     /// The settings pane's fields (its number boxes, a program's and a
     /// relay's URL), by key, each with the setting it last showed.
     pub setting_inputs: HashMap<&'static str, (Entity<InputState>, Subscription, String)>,
+    /// The settings pane's fields made for each agent (its command) and
+    /// for adding one, by their own keys, each with what it last showed.
+    pub agent_inputs: HashMap<String, (Entity<InputState>, Subscription, String)>,
+    /// The settings group the settings pane scrolls to once it is laid
+    /// out (Customize… in the robot's menu), and whether a frame was
+    /// drawn with its viewport known.
+    pub settings_jump: Option<(&'static str, bool)>,
     /// Custom is chosen for the relay in the settings pane, its URL not
     /// yet set.
     pub relay_custom: bool,
@@ -791,6 +821,7 @@ impl Workspace {
             candidates: Vec::new(),
             last_goto: String::new(),
             enum_choices: Vec::new(),
+            agent_choices: Vec::new(),
             enum_number: None,
             prompt: None,
             field: None,
@@ -814,6 +845,8 @@ impl Workspace {
             smooth_at: None,
             areas: HashMap::new(),
             setting_inputs: HashMap::new(),
+            agent_inputs: HashMap::new(),
+            settings_jump: None,
             relay_custom: false,
             relay_refused: None,
             char_width: None,
@@ -1117,6 +1150,8 @@ impl Workspace {
                 self.start_facts.retain(|(path, _), _| *path != full);
                 self.session = Some(session);
                 self.remember_agents();
+                // Read now, the robot's menu knows which agents are found.
+                let _ = self.login_path(cx);
                 self.publish_people();
                 self.wake = Some(cx.spawn_in(window, async move |this, cx| {
                     while rx.recv().await.is_ok() {
@@ -2139,18 +2174,27 @@ impl Workspace {
         }
         if let Err(error) = self.settings_file.set(key, value) {
             self.settings_error = Some(error);
-        } else if let Some(path) = &self.settings_path {
-            match settings::save(path, &self.settings_file) {
-                Ok(()) => {
-                    self.settings_error = None;
-                    if let Some(watch) = &mut self.settings_watch {
-                        watch.mark();
-                    }
-                }
-                Err(error) => self.settings_error = Some(error),
-            }
+        } else {
+            self.save_settings_file();
         }
         self.apply_settings(next, window, cx);
+    }
+
+    /// The settings file written as [`Self::settings_file`] holds it (its
+    /// watch told the change is the window's own).
+    pub fn save_settings_file(&mut self) {
+        let Some(path) = &self.settings_path else {
+            return;
+        };
+        match settings::save(path, &self.settings_file) {
+            Ok(()) => {
+                self.settings_error = None;
+                if let Some(watch) = &mut self.settings_watch {
+                    watch.mark();
+                }
+            }
+            Err(error) => self.settings_error = Some(error),
+        }
     }
 
     /// Makes `next` the settings, applying what changed.
@@ -2641,6 +2685,7 @@ impl Workspace {
             Command::ToggleRightSidebar => self.right_sidebar = !self.right_sidebar,
             Command::ToggleConsole => self.toggle_console(window, cx),
             Command::NewTerminal => self.new_terminal(window, cx),
+            Command::NewAgent => self.new_agent(window, cx),
             Command::ToggleFeatureMap => self.toggle_feature_map(window, cx),
             Command::MoveFeatureMap => self.move_feature_map(window, cx),
             Command::OpenAsTab => {

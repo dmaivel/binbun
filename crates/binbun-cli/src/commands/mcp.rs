@@ -74,7 +74,8 @@ step a call); with FILE, on FILE alone, without a window.
   --python PYTHON    the Python with binbun installed (default $BINBUN_PYTHON, else the
                      app's Python setting, else python3)
   --socket PATH      the window's script socket (default $BINBUN_SOCKET, else the one running)
-  --database PATH    which of the window's binaries (default: the window focused last)";
+  --database PATH    which of the window's binaries (default $BINBUN_DATABASE, else the window
+                     focused last)";
 
 /// Calls that may wait while a cell runs; one more is refused as busy.
 const QUEUED: usize = 4;
@@ -274,6 +275,13 @@ impl Launch {
         } else {
             let socket = socket.or_else(|| {
                 std::env::var("BINBUN_SOCKET")
+                    .ok()
+                    .filter(|p| !p.is_empty())
+            });
+            // A binbun terminal says its window's (an agent started there
+            // follows that window's binary, not the one focused last).
+            let database = database.or_else(|| {
+                std::env::var("BINBUN_DATABASE")
                     .ok()
                     .filter(|p| !p.is_empty())
             });

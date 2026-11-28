@@ -25,6 +25,7 @@
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -33,7 +34,7 @@ use std::time::{Duration, Instant};
 use binbun_gui_view::agents::{self, Announced, Harness, Setup, Start, setup_rows};
 use binbun_gui_view::banners::{Action, Banner, Button as BannerButton, Kind, Priority, Tone};
 use binbun_gui_view::commands::{self, Command};
-use binbun_gui_view::layout::PaneId;
+use binbun_gui_view::layout::{Axis, PaneId};
 use binbun_gui_view::scroll::Wheel;
 use binbun_gui_view::terminal::{
     Button, Colors, Exit, Frame, Input, Launch, Mods, Pointer, Run, Shape, Size, State, Terminal,
@@ -52,6 +53,7 @@ use gpui_kit::{
 use crate::context_menu::OwnItem;
 use crate::panes::measured;
 use crate::scrolling::wheel;
+use crate::serving;
 use crate::theme::{hsla, solid};
 use crate::workspace::{ICON_BUTTON, TabKind, Workspace};
 
@@ -95,6 +97,13 @@ pub struct TerminalsUi {
     announced: Vec<Announced>,
     /// Reads them while an agent has started lately.
     watching: Option<Task<()>>,
+    /// The `PATH` the user's shell gives a terminal (the agents' programs
+    /// are looked up on it), once read; reading it.
+    login_path: Option<OsString>,
+    reading_path: Option<Task<()>>,
+    /// The agent picker starts the agent chosen (the robot's first start),
+    /// rather than only making it the robot's.
+    pub pick_launches: bool,
 }
 
 /// binbun's setup offered to a harness seen in a terminal: where it is,
@@ -148,6 +157,16 @@ struct TerminalUi {
     colors: Option<Colors>,
     /// The coding agent its program says it is, since its start.
     agent: Option<Seen>,
+    /// The agent the robot started in it, and how (started again by
+    /// Restart, and by Set Up and Restart).
+    launched: Option<Launched>,
+}
+
+/// An agent the robot started in a terminal.
+struct Launched {
+    /// Its name ([`agents::Launchable`]).
+    name: String,
+    launch: Launch,
 }
 
 /// A coding agent seen starting in a terminal.
@@ -175,6 +194,25 @@ struct Look {
 /// `0xRRGGBB` as a colour.
 fn rgb(c: u32) -> Hsla {
     hsla((c << 8) | 0xff)
+}
+
+/// What runs an agent's `command`: the user's login, interactive shell
+/// (`cmd` on Windows), as a terminal would.
+fn agent_command(command: &str) -> Vec<String> {
+    if cfg!(windows) {
+        return vec!["cmd".to_owned(), "/C".to_owned(), command.to_owned()];
+    }
+    let shell = std::env::var("SHELL")
+        .ok()
+        .filter(|shell| !shell.is_empty())
+        .unwrap_or_else(|| "sh".to_owned());
+    vec![
+        shell,
+        "-l".to_owned(),
+        "-i".to_owned(),
+        "-c".to_owned(),
+        command.to_owned(),
+    ]
 }
 
 /// Now, in Unix milliseconds (the clock a server's announcement keeps).
@@ -265,10 +303,16 @@ impl Workspace {
             .and_then(|ui| ui.terminal.as_ref())
             .map(|t| t.frame().title.trim().to_owned())
             .unwrap_or_default();
-        match (title.is_empty(), id) {
-            (false, _) => title,
-            (true, 1) => "Terminal".to_owned(),
-            (true, _) => format!("Terminal {id}"),
+        let launched = self
+            .terminals
+            .list
+            .get(&id)
+            .and_then(|ui| ui.launched.as_ref());
+        match (title.is_empty(), launched, id) {
+            (false, _, _) => title,
+            (true, Some(launched), _) => launched.name.clone(),
+            (true, None, 1) => "Terminal".to_owned(),
+            (true, None, _) => format!("Terminal {id}"),
         }
     }
 
@@ -285,6 +329,7 @@ impl Workspace {
             focused: false,
             colors: None,
             agent: None,
+            launched: None,
         })
     }
 
@@ -296,8 +341,23 @@ impl Workspace {
         )
     }
 
-    /// What a terminal starts: the user's shell, in the binary's folder.
+    /// What a terminal starts: the user's shell, in the binary's folder,
+    /// told this window's socket and binary (`binbun mcp` started in it
+    /// follows them).
     fn terminal_launch(&self) -> Launch {
+        let mut env = Vec::new();
+        if let Some(socket) = serving::socket() {
+            env.push((
+                "BINBUN_SOCKET".to_owned(),
+                socket.to_string_lossy().into_owned(),
+            ));
+        }
+        if let Some(session) = &self.session {
+            env.push((
+                "BINBUN_DATABASE".to_owned(),
+                session.path().to_string_lossy().into_owned(),
+            ));
+        }
         Launch {
             cwd: self
                 .session
@@ -305,8 +365,95 @@ impl Workspace {
                 .and_then(|s| s.path().parent())
                 .filter(|p| !p.as_os_str().is_empty())
                 .map(Path::to_path_buf),
+            env,
             ..Launch::default()
         }
+    }
+
+    /// The agent `name` started by `command` in a new terminal, in a pane
+    /// right of the focused one: the user's login, interactive shell runs
+    /// it (their `PATH`, as typed in a terminal), in the binary's folder,
+    /// tied to this window; its tab closes when it ends without an error.
+    pub fn open_agent_terminal(
+        &mut self,
+        name: &str,
+        command: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let launch = Launch {
+            command: agent_command(command),
+            ..self.terminal_launch()
+        };
+        let id = self.terminals.fresh();
+        self.terminal_ui(id, cx).launched = Some(Launched {
+            name: name.to_owned(),
+            launch,
+        });
+        let from = self.layout.focused();
+        if let Some(pane) = self.layout.split(from, Axis::Row, TabKind::Terminal(id)) {
+            self.ensure_pane(pane, cx);
+            self.focus_pane(pane, window, cx);
+        }
+        cx.notify();
+    }
+
+    /// Terminal `id`'s agent started again (its program ended with an
+    /// error, or set up for binbun since).
+    fn restart_terminal(&mut self, id: u32) {
+        if let Some(ui) = self.terminals.list.get_mut(&id) {
+            ui.terminal = None;
+            ui.error = None;
+            ui.agent = None;
+        }
+    }
+
+    /// Restart, in an ended agent's note.
+    fn restart_button(&self, id: u32, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme;
+        div()
+            .id(("terminal-restart", id))
+            .flex_none()
+            .px(self.z(8.0))
+            .rounded(self.z(4.0))
+            .text_color(hsla(theme.text))
+            .hover(|s| s.bg(hsla(theme.element_hover)))
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                this.restart_terminal(id);
+                this.focus_terminal(id, window, cx);
+                cx.notify();
+            }))
+            .child("Restart")
+            .into_any_element()
+    }
+
+    /// The agents the robot started that run here: each terminal and the
+    /// agent's name.
+    pub fn launched_agents(&self) -> Vec<(u32, String)> {
+        self.terminals
+            .list
+            .iter()
+            .filter_map(|(&id, ui)| Some((id, ui.launched.as_ref()?.name.clone())))
+            .collect()
+    }
+
+    /// The `PATH` the user's shell gives a terminal, once read (read the
+    /// first time this is asked, off the UI thread; `None` until then).
+    pub fn login_path(&mut self, cx: &mut Context<Self>) -> Option<OsString> {
+        if self.terminals.login_path.is_none() && self.terminals.reading_path.is_none() {
+            let task = cx
+                .background_executor()
+                .spawn(async { agents::login_path() });
+            self.terminals.reading_path = Some(cx.spawn(async move |this, cx| {
+                let path = task.await;
+                let _ = this.update(cx, |this, cx| {
+                    this.terminals.login_path = Some(path);
+                    this.terminals.reading_path = None;
+                    cx.notify();
+                });
+            }));
+        }
+        self.terminals.login_path.clone()
     }
 
     /// What a program leaves unset shows in: the code's colours.
@@ -509,7 +656,13 @@ impl Workspace {
             .list
             .get(&id)
             .is_some_and(|ui| ui.terminal.is_some() || ui.error.is_some());
-        let launch = (!started).then(|| self.terminal_launch());
+        let launch = (!started).then(|| {
+            self.terminals
+                .list
+                .get(&id)
+                .and_then(|ui| ui.launched.as_ref())
+                .map_or_else(|| self.terminal_launch(), |l| l.launch.clone())
+        });
         let wake = (!started).then(|| self.terminal_wake(window, cx));
         let ui = self.terminal_ui(id, cx);
         let size = grid_size(ui.bounds.get(), cell);
@@ -517,7 +670,13 @@ impl Workspace {
             (None, Some(size), Some((launch, wake))) => {
                 match Terminal::start(&launch, size, colors, wake) {
                     Ok(t) => ui.terminal = Some(t),
-                    Err(e) => ui.error = Some(format!("The shell did not start: {e}")),
+                    Err(e) => {
+                        let what = ui
+                            .launched
+                            .as_ref()
+                            .map_or_else(|| "The shell".to_owned(), |l| l.name.clone());
+                        ui.error = Some(format!("{what} did not start: {e}"));
+                    }
                 }
                 ui.colors = Some(colors);
             }
@@ -563,16 +722,21 @@ impl Workspace {
         let background = frame
             .as_ref()
             .map_or_else(|| hsla(solid(theme.editor)), |f| rgb(f.background));
+        let what = ui
+            .launched
+            .as_ref()
+            .map_or_else(|| "The shell".to_owned(), |l| l.name.clone());
         let note = match (&ui.error, frame.as_ref().and_then(|f| f.exited)) {
             (Some(error), _) => Some(error.clone()),
             (None, Some(Exit::Code(code))) => Some(format!(
-                "The shell ended with exit code {code}: a key closes the tab."
+                "{what} ended with exit code {code}: a key closes the tab."
             )),
-            (None, Some(Exit::Signal)) => {
-                Some("The shell was killed: a key closes the tab.".to_owned())
-            }
+            (None, Some(Exit::Signal)) => Some(format!("{what} was killed: a key closes the tab.")),
             (None, None) => None,
         };
+        // An agent ended (or did not start) can be started again.
+        let restart =
+            (note.is_some() && ui.launched.is_some()).then(|| self.restart_button(id, cx));
         let weak = cx.weak_entity();
         let grid = canvas(
             |_, _, _| {},
@@ -627,6 +791,9 @@ impl Workspace {
                     .left_0()
                     .right_0()
                     .bottom_0()
+                    .flex()
+                    .items_center()
+                    .justify_between()
                     .px(self.z(8.0))
                     .py(self.z(4.0))
                     .bg(hsla(solid(theme.panel)))
@@ -634,6 +801,7 @@ impl Workspace {
                     .border_color(hsla(theme.border_variant))
                     .text_color(hsla(theme.text_muted))
                     .child(note)
+                    .children(restart)
             }))
             .into_any_element()
     }
@@ -1150,9 +1318,13 @@ impl Workspace {
                 if quiet || !due {
                     return None;
                 }
-                let set_up = match harness.setup {
-                    Some(Setup::Shell(_)) => "Set Up",
-                    Some(Setup::Json { .. }) | None => "Set Up…",
+                // The robot's terminals running it start again once it is
+                // set up.
+                let restarts = !self.launched_running(name).is_empty();
+                let set_up = match (harness.setup, restarts) {
+                    (Some(Setup::Shell(_)), true) => "Set Up and Restart",
+                    (Some(Setup::Shell(_)), false) => "Set Up",
+                    (Some(Setup::Json { .. }) | None, _) => "Set Up…",
                 };
                 Some(banner(
                     Tone::Info,
@@ -1194,19 +1366,34 @@ impl Workspace {
     /// reports leaves its title's own mark out), else a terminal's.
     pub fn terminal_icon(&self, id: u32) -> (IconName, u32) {
         let theme = self.theme;
-        let state = self
-            .terminals
-            .list
-            .get(&id)
+        let ui = self.terminals.list.get(&id);
+        let state = ui
             .and_then(|ui| ui.terminal.as_ref())
             .and_then(|t| t.frame().status.as_ref().map(|status| status.state));
+        let idle = if ui.is_some_and(|ui| ui.launched.is_some()) {
+            IconName::Bot
+        } else {
+            IconName::Terminal
+        };
         match state {
             Some(State::Working) => (IconName::LoaderCircle, theme.accent),
             Some(State::Blocked) => (IconName::CircleAlert, theme.accent),
             Some(State::Done) => (IconName::CircleCheck, theme.success),
             Some(State::Error) => (IconName::CircleX, theme.error),
-            Some(State::Idle) | None => (IconName::Terminal, theme.text_muted),
+            Some(State::Idle) | None => (idle, theme.text_muted),
         }
+    }
+
+    /// The robot's terminals in which agent `name` runs.
+    fn launched_running(&self, name: &str) -> Vec<u32> {
+        self.terminals
+            .list
+            .iter()
+            .filter(|(_, ui)| {
+                ui.launched.is_some() && ui.agent.as_ref().is_some_and(|s| s.harness.name == name)
+            })
+            .map(|(&id, _)| id)
+            .collect()
     }
 
     /// The banner's Set Up: the harness's own command run for this
@@ -1241,6 +1428,18 @@ impl Workspace {
                     };
                     // An agent starting from now has the setup.
                     offer.since = Instant::now();
+                }
+                // Set Up and Restart: the robot's terminals running it
+                // start it again, now with binbun's server.
+                if this
+                    .terminals
+                    .offers
+                    .get(name)
+                    .is_some_and(|offer| matches!(offer.progress, Progress::Done))
+                {
+                    for id in this.launched_running(name) {
+                        this.restart_terminal(id);
+                    }
                 }
                 cx.notify();
             });

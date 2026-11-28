@@ -20,6 +20,7 @@ use binbun_gui_view::listing::{Overlay, Role};
 use binbun_gui_view::map::Kind;
 use binbun_gui_view::number::{Radix, Written, parse, same};
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
+use gpui_kit::component::{Icon, Side};
 use gpui_kit::prelude::*;
 use gpui_kit::{
     AnyElement, Context, DismissEvent, Entity, Focusable, Pixels, Point, SharedString,
@@ -56,6 +57,9 @@ pub struct OwnItem {
     pub checked: bool,
     /// Its keys, shown muted at its right.
     pub key: Option<String>,
+    /// Its icon's asset path (an agent's mark), at its left; a menu with
+    /// icons shows its checks at the right.
+    pub icon: Option<SharedString>,
     /// What it runs.
     pub run: Run,
 }
@@ -71,6 +75,7 @@ impl OwnItem {
             enabled: true,
             checked: false,
             key: None,
+            icon: None,
             run: Rc::new(run),
         }
     }
@@ -401,7 +406,11 @@ impl Workspace {
         self.close_peek();
         let this = cx.entity().downgrade();
         let muted = hsla(self.theme.text_muted);
+        let icons = items.iter().any(|item| item.icon.is_some());
         let popup = PopupMenu::build(window, cx, move |mut m, _, _| {
+            if icons {
+                m = m.check_side(Side::Right);
+            }
             for item in &items {
                 let run = Rc::clone(&item.run);
                 let this = this.clone();
@@ -426,6 +435,10 @@ impl Workspace {
                         })
                     }
                     None => PopupMenuItem::new(item.label.clone()),
+                };
+                let entry = match &item.icon {
+                    Some(path) => entry.icon(Icon::default().path(path.clone())),
+                    None => entry,
                 };
                 m = m.item(
                     entry

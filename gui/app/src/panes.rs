@@ -1334,6 +1334,27 @@ impl Workspace {
                     }),
                 ),
             )
+            .child(
+                // The robot: a click starts the agent started last; its
+                // menu each agent, and changes which.
+                self.icon_button(
+                    "agent-launch",
+                    IconName::Bot,
+                    Command::NewAgent,
+                    self.session.is_some(),
+                    false,
+                    cx,
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, e: &MouseDownEvent, window, cx| {
+                        if this.session.is_some() {
+                            this.agent_menu(e.position, window, cx);
+                        }
+                        cx.stop_propagation();
+                    }),
+                ),
+            )
             .children(self.render_collab_status(self.threads_status(cx), cx))
             .children(error)
             .children(notice);

@@ -100,6 +100,7 @@ command_actions!(
     ToggleRightSidebar,
     ToggleConsole,
     NewTerminal,
+    NewAgent,
     ToggleFeatureMap,
     MoveFeatureMap,
     OpenAsTab,

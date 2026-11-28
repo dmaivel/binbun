@@ -35,8 +35,8 @@ use crate::highlight::Highlight;
 use crate::scrolling::Area;
 use crate::theme::{hsla, solid};
 use crate::workspace::{
-    Candidate, PaletteItem, PeekCard, Picker, PickerKind, Prompt, PromptKind, TabKind, Workspace,
-    f, same_file,
+    Candidate, ICON, PaletteItem, PeekCard, Picker, PickerKind, Prompt, PromptKind, TabKind,
+    Workspace, f, same_file,
 };
 
 /// The most go-anywhere rows.
@@ -417,9 +417,14 @@ impl Workspace {
             | PickerKind::Slice
             | PickerKind::Project
             | PickerKind::Enum
-            | PickerKind::EditEnum => String::new(),
+            | PickerKind::EditEnum
+            | PickerKind::Agent => String::new(),
         };
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(initial));
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(initial)
+                .placeholder(kind.placeholder())
+        });
         let sub = cx.subscribe_in(
             &input,
             window,
@@ -459,9 +464,23 @@ impl Workspace {
             | PickerKind::Slice
             | PickerKind::Project
             | PickerKind::Enum
-            | PickerKind::EditEnum => String::new(),
+            | PickerKind::EditEnum
+            | PickerKind::Agent => String::new(),
         };
         self.filter_picker(&text);
+        if kind == PickerKind::Agent {
+            // The robot's agent now is selected first.
+            let current = &self.settings.agent;
+            if let Some(picker) = &mut self.picker
+                && let Some(k) = picker.rows.iter().position(|(i, _)| {
+                    self.agent_choices
+                        .get(*i)
+                        .is_some_and(|c| &c.name == current)
+                })
+            {
+                picker.selected = k;
+            }
+        }
         if kind == PickerKind::Theme {
             // The theme shown now is selected first.
             let current = match &self.theme_preview {
@@ -643,6 +662,11 @@ impl Workspace {
                 let rows = filter(&query, names, usize::MAX);
                 picker.rows = rows.into_iter().map(|(i, m)| (i, m.positions)).collect();
             }
+            PickerKind::Agent => {
+                let names = self.agent_choices.iter().map(|c| c.name.as_str());
+                let rows = filter(&query, names, usize::MAX);
+                picker.rows = rows.into_iter().map(|(i, m)| (i, m.positions)).collect();
+            }
         }
         picker.selected = 0;
     }
@@ -734,6 +758,7 @@ impl Workspace {
             PickerKind::Slice => self.confirm_slice(window, cx),
             PickerKind::Project => self.confirm_project(window, cx),
             PickerKind::Enum | PickerKind::EditEnum => self.confirm_enum(window, cx),
+            PickerKind::Agent => self.confirm_agent(window, cx),
         }
         cx.notify();
     }
@@ -883,6 +908,7 @@ impl Workspace {
                     }
                     SettingKind::Choice(_) => self.cycle_setting(key, window, cx),
                     SettingKind::Theme { .. } => self.open_picker(PickerKind::Theme, window, cx),
+                    SettingKind::Agent => self.choose_agent(false, window, cx),
                     SettingKind::Number { .. }
                     | SettingKind::Font { .. }
                     | SettingKind::Program
@@ -1027,6 +1053,7 @@ impl Workspace {
             PickerKind::Slice => self.slice_rows(cx),
             PickerKind::Project => self.project_rows(cx),
             PickerKind::Enum | PickerKind::EditEnum => self.enum_rows(cx),
+            PickerKind::Agent => self.agent_rows(cx),
         };
         let list = div().flex().flex_col().p(self.z(4.0)).children(rows);
         let list = self
@@ -1060,7 +1087,8 @@ impl Workspace {
             | PickerKind::Recent
             | PickerKind::Theme
             | PickerKind::Enum
-            | PickerKind::EditEnum => 610.0,
+            | PickerKind::EditEnum
+            | PickerKind::Agent => 610.0,
         };
         Some(frame(self, width, false, content))
     }
@@ -1320,6 +1348,56 @@ impl Workspace {
                                 .text_ellipsis()
                                 .text_color(hsla(theme.text_muted))
                                 .child(spelled.clone()),
+                        )
+                        .into_any_element(),
+                )
+            })
+            .collect()
+    }
+
+    /// The agent picker's rows: each agent's mark and name, and muted its
+    /// command, "not found" when its program isn't on the user's `PATH`.
+    fn agent_rows(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let theme = self.theme;
+        let Some(picker) = &self.picker else {
+            return Vec::new();
+        };
+        picker
+            .rows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, (i, positions))| {
+                let choice = self.agent_choices.get(*i)?;
+                let said = match (choice.runnable(), choice.found) {
+                    (false, _) => "no command".to_owned(),
+                    (true, Some(false)) => format!("{} · not found", choice.command),
+                    (true, Some(true) | None) => choice.command.clone(),
+                };
+                Some(
+                    self.picker_row(index, cx)
+                        .gap(self.z(16.0))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(self.z(8.0))
+                                .child(
+                                    gpui_kit::svg()
+                                        .path(choice.icon.clone())
+                                        .flex_none()
+                                        .size(self.z(ICON))
+                                        .text_color(hsla(theme.text)),
+                                )
+                                .child(self.matched(&choice.name, positions, theme.text)),
+                        )
+                        .child(
+                            div()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_ellipsis()
+                                .text_color(hsla(theme.text_muted))
+                                .child(said),
                         )
                         .into_any_element(),
                 )
