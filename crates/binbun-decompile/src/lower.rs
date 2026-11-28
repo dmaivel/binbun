@@ -1270,7 +1270,8 @@ pub fn interface(
 
 /// [`interface`], and the function's scheme ([`Summary`]): lowered up to
 /// solving its types, with the [`Context`]'s schemes of its callees;
-/// `None` where solving refused.
+/// `None` where solving refused. It is [`lower_ahead`], then
+/// [`summarise_ahead`], under the one context.
 ///
 /// # Errors
 ///
@@ -1280,6 +1281,43 @@ pub fn summarise(
     facts: &Facts,
     context: &Context<'_>,
 ) -> Result<(Found, Option<Summary>), LowerError> {
+    let ahead = lower_ahead(function, facts, context)?;
+    Ok(summarise_ahead(function, facts, context, ahead))
+}
+
+/// What [`summarise`] finds of a function before solving its types
+/// ([`lower_ahead`]): its [`Found`] but for what the solve gives
+/// (arguments, structs, signature), and the lowering, to solve
+/// ([`summarise_ahead`]) under the schemes known then, on another thread.
+pub struct Ahead {
+    /// What it found.
+    pub found: Found,
+    /// The lowering.
+    lowered: facts::Lowered,
+}
+
+impl fmt::Debug for Ahead {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Ahead")
+            .field("found", &self.found)
+            .finish_non_exhaustive()
+    }
+}
+
+/// [`summarise`] up to solving the function's types: what reads of the
+/// [`Context`], besides what holds for the whole program, the interfaces
+/// of the functions it calls or jumps to ([`Found::callees`]) alone, never
+/// the schemes; to finish with [`summarise_ahead`], under a context with
+/// the same interfaces of those.
+///
+/// # Errors
+///
+/// As for [`lower`], before its result is built.
+pub fn lower_ahead(
+    function: &Function,
+    facts: &Facts,
+    context: &Context<'_>,
+) -> Result<Ahead, LowerError> {
     let mut lowering = facts::Lowering::new(function, facts, context)?;
     lowering.signature();
     let own_reads = lowering.own_reads();
@@ -1308,6 +1346,23 @@ pub fn summarise(
         kept: lowering.kept_registers(),
     };
     lowering.fold();
+    Ok(Ahead {
+        found,
+        lowered: lowering.into_parts(),
+    })
+}
+
+/// The rest of [`summarise`] for `function` (with its analyses `facts`)
+/// lowered `ahead`: its types solved under `context`'s schemes, which
+/// has the interfaces [`lower_ahead`] read.
+pub fn summarise_ahead(
+    function: &Function,
+    facts: &Facts,
+    context: &Context<'_>,
+    ahead: Ahead,
+) -> (Found, Option<Summary>) {
+    let Ahead { found, lowered } = ahead;
+    let mut lowering = facts::Lowering::from_parts(function, facts, context, lowered);
     lowering.solve_types();
     let summary = lowering.summary();
     let arguments = lowering.arguments();
@@ -1317,7 +1372,7 @@ pub fn summarise(
     if lowering.allocator.is_some() {
         signature.returns = Some(FieldType::Pointer(None));
     }
-    Ok((
+    (
         Found {
             arguments,
             structs,
@@ -1325,7 +1380,7 @@ pub fn summarise(
             ..found
         },
         summary,
-    ))
+    )
 }
 
 /// Why the type solver types `values` of `function` as it does

@@ -45,7 +45,7 @@ always read by later versions.
 
 ### Changed
 
-- Finding every function's callers settles their interfaces on all the threads, a level of the call graph at a time, instead of on one: on zellij (38,000 functions) its last pass takes 33 s instead of 81 s and the whole 278 s instead of 324 s; on perf 43 s instead of 47 s. Every function's C is as before.
+- Finding every function's callers (the GUI's "Reading callers" stage, `binbun decompile` of a whole program) runs on all the threads instead of one: its sweeps lift and lower each function ahead as soon as its callees are lowered, while one thread solves the types in order, and its later rounds lower a level of the call graph at a time. On perf (7,600 functions) it takes 26 s instead of 47 s; on zellij (38,000 functions), 179 s. Every function's C is as before.
 - The `binbun` command and the GUI allocate memory with jemalloc (but on Windows, where they are built with MSVC), which serves the analysis's many threads faster than the system's allocator: on zellij (50 MB) finding the functions takes 12 s instead of 15 s and the cross-references 14 s instead of 17 s.
 - GUI: the status bar no longer names the C view (`Reading` or `Exact`); the pane's view button does.
 - GUI: `Ctrl+F` in the map (the left sidebar) opens its filter field, empty, for typing a name; typing there filtered before, but nothing showed it. `Escape` clears the filter, then closes the field.
@@ -76,7 +76,7 @@ always read by later versions.
 ### Fixed
 
 - A function of very many blocks no longer takes time quadratic in them to lift (its stack offsets were found by sweeping every block until none changed): a 73,000-instruction function of zellij lifts in 2 s instead of 40 s, and every function of perf decompiles in the exact view in 95 s instead of 113 s, as before.
-- Finding every function's callers (the GUI's "Reading callers" stage, `binbun decompile` of a whole program) keeps at most about 2 GB of the functions' lifted code between its passes, lifting the others again, instead of all of it: on a 50 MB program of 38,000 functions (zellij) it finishes at a peak of 9.6 GB where it ran the machine out of memory past 19 GB; on perf (7,600 functions) it peaks at 3.4 GB instead of 4.3 GB and takes 51 s instead of 47 s; bash's is all kept, as before.
+- Finding every function's callers no longer keeps every function's lifted code between its passes (it lifts each again, on all the threads): on a 50 MB program of 38,000 functions (zellij) it finishes at a peak of 5.3 GB where it ran the machine out of memory past 19 GB, and perf's peaks at 1.7 GB instead of 4.3 GB.
 - GUI: a pane's view button, pressed again, closes its open menu instead of opening it anew.
 - GUI: a font button in Settings, pressed again, closes its open menu instead of opening it anew.
 - A variable or object that holds allocations of known sizes (`malloc(3)` and `malloc(2)` on two paths) is no pointer to a struct larger than the smallest of them, so clang no longer warns that an allocation is too small for its type: on bash, 14 of those warnings go from the exact view.

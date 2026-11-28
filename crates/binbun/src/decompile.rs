@@ -21,7 +21,7 @@ use binbun_ast::ir::{
 };
 use binbun_decompile::data::Data;
 use binbun_decompile::itanium::{Action, CatchDispatch, Exceptions, Floor, TryRegions, Unknown};
-use binbun_decompile::lower::{self as lowering, Context, Facts};
+use binbun_decompile::lower::{self as lowering, Context, Facts, Interface};
 use binbun_decompile::mapping::Mapping;
 use binbun_decompile::msvc::ExceptionCodes;
 use binbun_decompile::names;
@@ -1436,13 +1436,35 @@ pub(crate) fn with_context<T>(
     data: &dyn Data,
     f: impl FnOnce(&Context<'_>) -> Result<T, String>,
 ) -> Result<T, String> {
+    with_context_reading(
+        image,
+        entry,
+        &interfaces.interfaces,
+        interfaces,
+        prototypes,
+        data,
+        f,
+    )
+}
+
+/// [`with_context`], the interfaces of the functions it may call from
+/// `read`, the rest from `interfaces`.
+pub(crate) fn with_context_reading<T>(
+    image: &Image<'_>,
+    entry: u64,
+    read: &BTreeMap<u64, Interface>,
+    interfaces: &Interfaces,
+    prototypes: &dyn Prototypes,
+    data: &dyn Data,
+    f: impl FnOnce(&Context<'_>) -> Result<T, String>,
+) -> Result<T, String> {
     let setup = setup(image, entry)?;
     let convention = convention(image, setup.declarations);
     let context = Context {
         fixed: &setup.fixed,
         prototypes,
         data,
-        interfaces: &interfaces.interfaces,
+        interfaces: read,
         functions: &interfaces.functions,
         read_results: interfaces.callers.result_unread(entry).then_some(&[][..]),
         preferred_result: interfaces.callers.preferred(entry),

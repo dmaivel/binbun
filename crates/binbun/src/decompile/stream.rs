@@ -21,7 +21,7 @@ use binbun_ssa::ir::Function;
 use binbun_ssa::stack::Stack;
 
 use super::callers::Callers;
-use super::{Prepared, decompile_l1, with_context};
+use super::{Prepared, decompile_l1, with_context, with_context_reading};
 use crate::cfg::{FunctionId, Program};
 use crate::summary::{Summaries, callees_first};
 
@@ -418,32 +418,37 @@ pub(super) fn interface(
     )
 }
 
-/// [`interface`], and the function's scheme ([`lowering::summarise`]),
-/// with the interfaces and schemes `known`; where it makes a `futex` call
-/// its code does not settle, or its frame is all memory only because a
-/// stack address may step back from where it points, its interface under
-/// the reading view's assumptions too
-/// ([`Found::assumed`](lowering::Found::assumed)).
+/// [`interface`], and the function's scheme ([`lowering::summarise`])
+/// up to solving its types ([`lowering::lower_ahead`]), with the
+/// interfaces of its callees `read` (the rest of `known`); where it makes
+/// a `futex` call its code does not settle, or its frame is all memory
+/// only because a stack address may step back from where it points, its
+/// interface under the reading view's assumptions too
+/// ([`Found::assumed`](lowering::Found::assumed)). To finish with
+/// [`summarise_ahead`].
 ///
 /// # Errors
 ///
 /// Lowering fails.
-pub(super) fn summarise(
+pub(super) fn lower_ahead(
     image: &Image<'_>,
     prepared: &Prepared,
     prototypes: &dyn Prototypes,
     data: &dyn Data,
+    read: &BTreeMap<u64, Interface>,
     known: &Interfaces,
-) -> Result<(Found, Option<Summary>), String> {
-    with_context(
+) -> Result<lowering::Ahead, String> {
+    with_context_reading(
         image,
         prepared.l1.entry,
+        read,
         known,
         prototypes,
         data,
         |context| {
-            let (mut found, summary) = lowering::summarise(&prepared.l1, &prepared.facts, context)
+            let mut ahead = lowering::lower_ahead(&prepared.l1, &prepared.facts, context)
                 .map_err(|e| e.to_string())?;
+            let found = &mut ahead.found;
             let reading = context.assume_futex && context.assume_forward_reach;
             if (found.unsettled_futex || found.steps_back) && !reading {
                 let assumed = Context {
@@ -455,7 +460,39 @@ pub(super) fn summarise(
                     .ok()
                     .map(Box::new);
             }
-            Ok((found, summary))
+            Ok(ahead)
+        },
+    )
+}
+
+/// The rest of [`lower_ahead`]'s function `prepared` (lowered `ahead`):
+/// its scheme, under the interfaces and schemes `known`, with the same
+/// interfaces of the callees as `ahead` read.
+///
+/// # Errors
+///
+/// The image's code is not lifted.
+pub(super) fn summarise_ahead(
+    image: &Image<'_>,
+    prepared: &Prepared,
+    prototypes: &dyn Prototypes,
+    data: &dyn Data,
+    known: &Interfaces,
+    ahead: lowering::Ahead,
+) -> Result<(Found, Option<Summary>), String> {
+    with_context(
+        image,
+        prepared.l1.entry,
+        known,
+        prototypes,
+        data,
+        |context| {
+            Ok(lowering::summarise_ahead(
+                &prepared.l1,
+                &prepared.facts,
+                context,
+                ahead,
+            ))
         },
     )
 }

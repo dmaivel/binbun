@@ -228,18 +228,19 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 
 use binbun_decompile::data::Data;
-use binbun_decompile::lower::{Convention, Found, Interface, Passed, Read};
+use binbun_decompile::lower::{Ahead, Convention, Found, Interface, Passed, Read};
 use binbun_decompile::mapping::Source;
 use binbun_decompile::prototype::{AllocSize, Prototypes};
 use binbun_decompile::typing::{Argument, Class, FunctionTypes, Schemes};
 use binbun_loader::{Image, SymbolSource};
 use binbun_semantics::ir::RegisterId;
 
-use super::stream::{interface, lifted, summarise};
+use super::stream::{Moved, interface, lower_ahead, summarise_ahead};
 use super::{Interfaces, Prepared, decompile_l1};
 use crate::analysis::names;
 use crate::cfg::{Destination, Exit, FunctionId, Program};
@@ -379,34 +380,8 @@ pub fn callers_for(
     assume: &[bool],
     progress: &Progress,
 ) -> Vec<Callers> {
-    callers_within(
-        image, program, summaries, references, prototypes, data, disabled, threads, assume,
-        progress, KEPT_BYTES,
-    )
-}
-
-/// [`callers_for`], the functions' L1 kept from one pass to the next while
-/// it takes at most `budget` bytes ([`Kept`]).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "what the sweep reads of the program, how to share the lifting, what to keep"
-)]
-fn callers_within(
-    image: &Image<'_>,
-    program: &Program,
-    summaries: &Summaries,
-    references: &References,
-    prototypes: &(dyn Prototypes + Sync),
-    data: &(dyn Data + Sync),
-    disabled: &[String],
-    threads: usize,
-    assume: &[bool],
-    progress: &Progress,
-    budget: usize,
-) -> Vec<Callers> {
     let names = names(image);
     let order = targets_first(program);
-    let mut kept = Kept::new(budget);
     let lowerer = Lowerer {
         image,
         program,
@@ -417,17 +392,17 @@ fn callers_within(
         threads,
         progress,
     };
-    let sweep = |preferred: &BTreeMap<u64, RegisterId>, kept: &mut Kept| {
-        lowerer.sweep(&order, &names, references, preferred, kept)
+    let sweep = |preferred: &BTreeMap<u64, RegisterId>| {
+        lowerer.sweep(&order, &names, references, preferred)
     };
     // A function its callers show to return in the vector register
     // ([`preferred`]) is one from the start of a second sweep: its scheme
     // and its callers' interfaces and schemes are then found with the
     // return value it has. Once: what that sweep shows of others is left.
-    let (mut known, mut whole, mut found) = sweep(&BTreeMap::new(), &mut kept);
+    let (mut known, mut whole, mut found) = sweep(&BTreeMap::new());
     let preferred = preferred(program, &found);
     if !preferred.is_empty() {
-        (known, whole, found) = sweep(&preferred, &mut kept);
+        (known, whole, found) = sweep(&preferred);
     }
     unkept_in_swift(&mut found, &names);
     let convention = setup(image, image.entry.unwrap_or_default())
@@ -461,7 +436,7 @@ fn callers_within(
             }
         })
         .collect();
-    settle(&lowerer, &order, &found, &mut views, &kept);
+    settle(&lowerer, &order, &found, &mut views);
     let pointer = u16::from(data_model(image).pointer) * 8;
     views
         .into_iter()
@@ -608,14 +583,12 @@ const ROUNDS: usize = 64;
 /// own) as before, as lowering them one after another in `order` would;
 /// and the clock a level starts at is when each of its functions read
 /// them, so the same functions are found again the next round. `found`
-/// is the sweep's (its lowerings' callees); `kept` the functions' L1
-/// kept.
+/// is the sweep's (its lowerings' callees).
 fn settle(
     lowerer: &Lowerer<'_>,
     order: &[FunctionId],
     found: &BTreeMap<u64, Found>,
     views: &mut [Interfaces],
-    kept: &Kept,
 ) {
     let place: BTreeMap<FunctionId, usize> =
         order.iter().enumerate().map(|(at, &id)| (id, at)).collect();
@@ -637,7 +610,7 @@ fn settle(
         }
         lowerer.progress.start(work.len());
         for level in levels(lowerer.program, &work, &place, found, &settling) {
-            let findings = lowerer.level(&level, views, &settling, kept);
+            let findings = lowerer.level(&level, views, &settling);
             let at: Vec<usize> = settling.iter().map(|view| view.clock).collect();
             for (&id, finding) in level.iter().zip(findings) {
                 let Some(entry) = lowerer.program.functions.get(id).map(|f| f.entry) else {
@@ -761,15 +734,17 @@ impl Lowerer<'_> {
     /// the functions `preferred` returning in the vector result register:
     /// what is known after it, the functions whose body's interface stays
     /// (callers we do not see, or whose calls lowering does not see), and
-    /// what each function's body gave. Each function's L1 is lifted ahead
-    /// of it, or `kept`.
+    /// what each function's body gave. Each function is lifted and
+    /// lowered ahead of the sweep on the threads ([`Self::lowered_ahead`]),
+    /// and its types solved in the sweep, on this thread, under the
+    /// schemes known then; lowered again here where its callees'
+    /// interfaces it read are not those the sweep knows ([`read_alike`]).
     fn sweep(
         &self,
         order: &[FunctionId],
         names: &BTreeMap<u64, String>,
         references: &References,
         preferred: &BTreeMap<u64, RegisterId>,
-        kept: &mut Kept,
     ) -> (Interfaces, BTreeSet<u64>, BTreeMap<u64, Found>) {
         let (image, program) = (self.image, self.program);
         let callers = Callers {
@@ -778,48 +753,173 @@ impl Lowerer<'_> {
         };
         let mut known = Interfaces::of(program, &callers);
         Arc::make_mut(&mut known.callers.schemes).set_classes(classes(image));
+        // What a function is lowered ahead with but its callees'
+        // interfaces (which lowering ahead reads alone of what the sweep
+        // finds).
+        let base = known.clone();
         let mut whole = visible(image, program, references);
         let mut found: BTreeMap<u64, Found> = BTreeMap::new();
         self.progress.start(order.len());
-        each_lifted(
-            image,
-            program,
-            order,
-            self.summaries,
-            self.disabled,
-            self.threads,
-            kept,
-            |id, prepared| {
-                self.progress.step();
-                let Some(entry) = program.functions.get(id).map(|f| f.entry) else {
-                    return;
-                };
-                Arc::make_mut(&mut known.callers.schemes).visit(entry);
-                let function = prepared.as_ref().ok().and_then(|prepared| {
-                    summarise(image, prepared, self.prototypes, self.data, &known).ok()
-                });
-                let Some((mut function, summary)) = function else {
-                    whole.extend(targets(program, id));
-                    return;
-                };
-                let schemes = Arc::make_mut(&mut known.callers.schemes);
-                if let Some(summary) = summary {
-                    schemes.insert(entry, summary);
+        self.lowered_ahead(order, &base, |id, read, lifted| {
+            self.progress.step();
+            let Some(entry) = program.functions.get(id).map(|f| f.entry) else {
+                return;
+            };
+            Arc::make_mut(&mut known.callers.schemes).visit(entry);
+            let function = match lifted {
+                Ok((prepared, ahead)) => {
+                    let ahead = match ahead {
+                        Ok(ahead) if read_alike(&ahead.found, read, &known.interfaces) => Ok(ahead),
+                        Ok(_) | Err(_) => lower_ahead(
+                            image,
+                            &prepared,
+                            self.prototypes,
+                            self.data,
+                            &known.interfaces,
+                            &known,
+                        ),
+                    };
+                    ahead
+                        .and_then(|ahead| {
+                            summarise_ahead(
+                                image,
+                                &prepared,
+                                self.prototypes,
+                                self.data,
+                                &known,
+                                ahead,
+                            )
+                        })
+                        .ok()
                 }
-                let structs = core::mem::take(&mut function.structs);
-                schemes.add_structs(entry, names.get(&entry).map(String::as_str), structs);
-                for target in targets(program, id) {
-                    if !function.results.contains_key(&target) {
-                        whole.insert(target);
-                    }
+                Err(_) => None,
+            };
+            let Some((mut function, summary)) = function else {
+                whole.extend(targets(program, id));
+                return;
+            };
+            let schemes = Arc::make_mut(&mut known.callers.schemes);
+            if let Some(summary) = summary {
+                schemes.insert(entry, summary);
+            }
+            let structs = core::mem::take(&mut function.structs);
+            schemes.add_structs(entry, names.get(&entry).map(String::as_str), structs);
+            for target in targets(program, id) {
+                if !function.results.contains_key(&target) {
+                    whole.insert(target);
                 }
-                if let Some(interface) = &function.interface {
-                    known.interfaces.insert(entry, interface.clone());
-                }
-                found.insert(entry, function);
-            },
-        );
+            }
+            if let Some(interface) = &function.interface {
+                known.interfaces.insert(entry, interface.clone());
+            }
+            found.insert(entry, function);
+        });
         (known, whole, found)
+    }
+
+    /// Each of `order` lifted and lowered ahead ([`lower_ahead`]) on the
+    /// threads, at most [`LOWER_AHEAD`] a thread beyond the last visited: lifted
+    /// at once, lowered once its callees before it in `order` are, with
+    /// their interfaces so found (the rest of `base`); then handed to
+    /// `visit` in `order`, on this thread, with those interfaces (`read`):
+    /// its L1 and what lowering ahead found, or why there is no L1.
+    fn lowered_ahead(
+        &self,
+        order: &[FunctionId],
+        base: &Interfaces,
+        mut visit: impl FnMut(FunctionId, &Reading, Result<(Prepared, LoweredAhead), String>),
+    ) {
+        let mut schedule = Schedule::new(self.program, order);
+        let mut arrived: BTreeMap<usize, Arrived> = BTreeMap::new();
+        let (jobs, queue) = mpsc::channel::<Work>();
+        let queue = Mutex::new(queue);
+        let (done, results) = mpsc::channel::<Done>();
+        let window = self.threads.max(1).saturating_mul(LOWER_AHEAD);
+        thread::scope(|scope| {
+            let jobs = jobs;
+            for _ in 0..self.threads.max(1) {
+                let (queue, done) = (&queue, done.clone());
+                scope.spawn(move || self.work(base, queue, &done));
+            }
+            drop(done);
+            let mut admitted = 0;
+            for (at, &id) in order.iter().enumerate() {
+                while admitted < order.len() && admitted < at.saturating_add(window) {
+                    schedule.admit(admitted);
+                    if let Some(&id) = order.get(admitted) {
+                        let _ = jobs.send(Work::Lift(admitted, id));
+                    }
+                    admitted += 1;
+                }
+                let (read, lifted) = loop {
+                    if let Some(arrived) = arrived.remove(&at) {
+                        break arrived;
+                    }
+                    // Every worker stopped before lowering it: one
+                    // panicked, which the scope's end reports.
+                    let Ok(done) = results.recv() else {
+                        return;
+                    };
+                    let (place, arrival) = match done {
+                        Done::Lifted(place, Ok(moved)) => {
+                            if let Some(work) = schedule.lifted(place, moved) {
+                                let _ = jobs.send(work);
+                            }
+                            continue;
+                        }
+                        Done::Lifted(place, Err(error)) => (place, (Reading::new(), Err(error))),
+                        Done::Lowered(place, read, moved, ahead) => {
+                            (place, (read, Ok((*moved, *ahead))))
+                        }
+                    };
+                    let interface = match &arrival.1 {
+                        Ok((_, Ok(ahead))) => ahead.found.interface.clone(),
+                        Ok((_, Err(_))) | Err(_) => None,
+                    };
+                    for work in schedule.lowered(place, interface) {
+                        let _ = jobs.send(work);
+                    }
+                    arrived.insert(place, arrival);
+                };
+                visit(
+                    id,
+                    &read,
+                    lifted.map(|(moved, ahead)| (moved.prepared(), ahead)),
+                );
+            }
+        });
+    }
+
+    /// Does each [`Work`] from `queue` until it closes, each to `done`:
+    /// lifts a function ([`decompile_l1`]), or lowers one ahead
+    /// ([`lower_ahead`], with the rest of `base`).
+    fn work(&self, base: &Interfaces, queue: &Mutex<Receiver<Work>>, done: &Sender<Done>) {
+        loop {
+            let work = queue.lock().unwrap_or_else(PoisonError::into_inner).recv();
+            let did = match work {
+                Ok(Work::Lift(at, id)) => Done::Lifted(
+                    at,
+                    decompile_l1(self.image, self.program, id, self.summaries, self.disabled)
+                        .map(|prepared| Box::new(Moved::new(prepared))),
+                ),
+                Ok(Work::Lower(at, moved, read)) => {
+                    let prepared = moved.prepared();
+                    let ahead = lower_ahead(
+                        self.image,
+                        &prepared,
+                        self.prototypes,
+                        self.data,
+                        &read,
+                        base,
+                    );
+                    Done::Lowered(at, read, Box::new(Moved::new(prepared)), Box::new(ahead))
+                }
+                Err(_) => break,
+            };
+            if done.send(did).is_err() {
+                break;
+            }
+        }
     }
 
     /// What function `id`, its L1 `prepared`, finds for each of `views`
@@ -850,30 +950,26 @@ impl Lowerer<'_> {
     }
 
     /// What each of `level`'s functions finds ([`Self::find`]) with
-    /// `views` as they are, in its order: those `kept` on this thread
-    /// (their analyses are its), the others lifted and lowered on the
-    /// threads; each a step of the progress.
+    /// `views` as they are, in its order, each lifted and lowered on the
+    /// threads and a step of the progress.
     fn level(
         &self,
         level: &[FunctionId],
         views: &[Interfaces],
         settling: &[Settling],
-        kept: &Kept,
     ) -> Vec<Finding> {
-        let lifted: Vec<(usize, FunctionId)> = level
-            .iter()
-            .copied()
-            .enumerate()
-            .filter(|&(_, id)| kept.get(id).is_none())
-            .collect();
         let mut findings: Vec<Finding> = vec![Finding::new(); level.len()];
         let next = AtomicUsize::new(0);
         let (done, results) = mpsc::channel();
         thread::scope(|scope| {
-            for _ in 0..self.threads.max(1).min(lifted.len()) {
-                let (next, done, lifted) = (&next, done.clone(), &lifted);
+            for _ in 0..self.threads.max(1).min(level.len()) {
+                let (next, done) = (&next, done.clone());
                 scope.spawn(move || {
-                    while let Some(&(slot, id)) = lifted.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    loop {
+                        let slot = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(&id) = level.get(slot) else {
+                            break;
+                        };
                         let prepared = decompile_l1(
                             self.image,
                             self.program,
@@ -889,14 +985,6 @@ impl Lowerer<'_> {
                 });
             }
             drop(done);
-            for (slot, &id) in level.iter().enumerate() {
-                if let Some(prepared) = kept.get(id) {
-                    if let Some(finding) = findings.get_mut(slot) {
-                        *finding = self.find(id, prepared, views, settling);
-                    }
-                    self.progress.step();
-                }
-            }
             for (slot, found) in results {
                 if let Some(finding) = findings.get_mut(slot) {
                     *finding = found;
@@ -908,117 +996,170 @@ impl Lowerer<'_> {
     }
 }
 
-/// Each function's L1 ([`decompile_l1`](super::decompile_l1)), kept from
-/// one pass to the next while the kept take at most a budget of bytes
-/// ([`KEPT_BYTES`]): it reads only the summaries, never what a pass finds,
-/// so a pass lifts one not kept again the same. Those visited first are
-/// kept; a large program's others are lifted again each pass, on the
-/// lifting threads, ahead of the sweep.
-struct Kept {
-    /// The functions kept.
-    functions: BTreeMap<FunctionId, Result<Prepared, String>>,
-    /// About how many bytes they take ([`weight`]).
-    bytes: usize,
-    /// The most they may take.
-    budget: usize,
+/// The interfaces of its callees a function's lowering ahead read, by
+/// entry ([`Lowerer::lowered_ahead`]).
+type Reading = BTreeMap<u64, Interface>;
+
+/// How many functions per thread the sweep lifts and lowers ahead of the
+/// one it types ([`Lowerer::lowered_ahead`]). Those it lifts wait for
+/// their callees to be lowered, so a call chain's lowerings run one after
+/// another; the further ahead, the less the sweep waits for them, and the
+/// more lifted functions it holds: on perf, 4 a thread waited 3.0 s of an
+/// 11 s sweep, 16 2.1 s of 9.7 s (190 MB more at the peak), 64 1.0 s of
+/// 9 s (1.2 GB more).
+const LOWER_AHEAD: usize = 16;
+
+/// What a thread does for [`Lowerer::lowered_ahead`]: lift the function
+/// at a place in the order, or lower ahead the one there, lifted (its L1
+/// as it moves), with the interfaces of its callees it reads.
+enum Work {
+    Lift(usize, FunctionId),
+    Lower(usize, Box<Moved>, Reading),
 }
 
-impl Kept {
-    /// None kept yet, at most `budget` bytes to be.
-    fn new(budget: usize) -> Self {
+/// What a thread did ([`Work`]): the function at a place lifted (its L1
+/// as it moves) or why it is not, or lowered ahead (with what it read).
+enum Done {
+    Lifted(usize, Result<Box<Moved>, String>),
+    Lowered(usize, Reading, Box<Moved>, Box<LoweredAhead>),
+}
+
+/// What [`Lowerer::lowered_ahead`] knows of the functions it lowers ahead,
+/// by their places in `order`: each one's callees before it, the
+/// interfaces of those lowered (`None`: one has none), and those lifted
+/// or waiting for their callees to be lowered.
+struct Schedule {
+    entries: Vec<Option<u64>>,
+    callees: Vec<Vec<usize>>,
+    interfaces: BTreeMap<usize, Option<Interface>>,
+    /// How many of each waiting function's callees are yet to be lowered.
+    unmet: BTreeMap<usize, usize>,
+    /// The waiting functions each is a callee of.
+    waiting: BTreeMap<usize, Vec<usize>>,
+    /// The waiting functions lifted (their L1 as it moves).
+    lifted: BTreeMap<usize, Box<Moved>>,
+}
+
+impl Schedule {
+    /// The functions of `program` in `order`, none lowered: each one's
+    /// callees before it (what it calls or jumps to).
+    fn new(program: &Program, order: &[FunctionId]) -> Self {
+        let place: BTreeMap<FunctionId, usize> =
+            order.iter().enumerate().map(|(at, &id)| (id, at)).collect();
+        let callees = order
+            .iter()
+            .enumerate()
+            .map(|(at, &id)| {
+                let before: BTreeSet<usize> = targets(program, id)
+                    .into_iter()
+                    .filter_map(|target| program.function_at(target))
+                    .filter_map(|callee| place.get(&callee).copied())
+                    .filter(|&callee| callee < at)
+                    .collect();
+                before.into_iter().collect()
+            })
+            .collect();
         Self {
-            functions: BTreeMap::new(),
-            bytes: 0,
-            budget,
+            entries: order
+                .iter()
+                .map(|&id| program.functions.get(id).map(|f| f.entry))
+                .collect(),
+            callees,
+            interfaces: BTreeMap::new(),
+            unmet: BTreeMap::new(),
+            waiting: BTreeMap::new(),
+            lifted: BTreeMap::new(),
         }
     }
 
-    /// Function `id`'s L1, if kept.
-    fn get(&self, id: FunctionId) -> Option<&Result<Prepared, String>> {
-        self.functions.get(&id)
+    /// The interfaces of the function at `at`'s callees, lowered.
+    fn reading(&self, at: usize) -> Reading {
+        self.callees
+            .get(at)
+            .into_iter()
+            .flatten()
+            .filter_map(|&callee| {
+                let interface = self.interfaces.get(&callee)?.clone()?;
+                Some(((*self.entries.get(callee)?)?, interface))
+            })
+            .collect()
     }
 
-    /// Keeps function `id`'s L1 `prepared` if it fits the budget.
-    fn keep(&mut self, id: FunctionId, prepared: Result<Prepared, String>) {
-        let bytes = self.bytes.saturating_add(weight(&prepared));
-        if bytes <= self.budget {
-            self.bytes = bytes;
-            self.functions.insert(id, prepared);
+    /// The function at `at` to lift and lower: it waits for its callees
+    /// yet to be lowered.
+    fn admit(&mut self, at: usize) {
+        let unfound: Vec<usize> = self
+            .callees
+            .get(at)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|callee| !self.interfaces.contains_key(callee))
+            .collect();
+        if unfound.is_empty() {
+            return;
+        }
+        self.unmet.insert(at, unfound.len());
+        for callee in unfound {
+            self.waiting.entry(callee).or_default().push(at);
         }
     }
-}
 
-/// About how many resident bytes `prepared` takes kept: its L1 and the
-/// analyses lowering reads, [`NODE_BYTES`] for each of the L1's
-/// instructions and values (none for a function that does not lift).
-fn weight(prepared: &Result<Prepared, String>) -> usize {
-    prepared.as_ref().map_or(0, |prepared| {
-        (prepared.l1.insts.len() + prepared.l1.values.len()).saturating_mul(NODE_BYTES)
-    })
-}
+    /// The function at `at` lifted (`moved`): its lowering, if its callees
+    /// are lowered, else none (it waits for them).
+    fn lifted(&mut self, at: usize, moved: Box<Moved>) -> Option<Work> {
+        if self.unmet.contains_key(&at) {
+            self.lifted.insert(at, moved);
+            return None;
+        }
+        Some(Work::Lower(at, moved, self.reading(at)))
+    }
 
-/// About how many resident bytes a kept function takes per instruction
-/// and value of its L1: 120 to 210 measured (zellij, perf, bash), half of
-/// it the analyses lowering reads.
-const NODE_BYTES: usize = 200;
-
-/// The most bytes [`Kept`] keeps ([`weight`]). A whole program's L1 takes
-/// about 0.9 GB for bash, 3.3 GB for perf (7,600 functions), 15 GB for a
-/// 50 MB program (zellij, 38,000 functions), which kept whole runs a
-/// machine out of memory.
-const KEPT_BYTES: usize = 2 << 30;
-
-/// [`lifted`] for the passes of [`callers_for`]: each of `order` handed
-/// to `visit` in that order, those `kept` from an earlier pass as kept,
-/// the others lifted (on `threads` threads) and kept while they fit.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "lifted's arguments and what is kept"
-)]
-fn each_lifted(
-    image: &Image<'_>,
-    program: &Program,
-    order: &[FunctionId],
-    summaries: &Summaries,
-    disabled: &[String],
-    threads: usize,
-    kept: &mut Kept,
-    mut visit: impl FnMut(FunctionId, &Result<Prepared, String>),
-) {
-    let missing: Vec<FunctionId> = order
-        .iter()
-        .copied()
-        .filter(|&id| kept.get(id).is_none())
-        .collect();
-    // The next of `order` to visit: those kept before a function lifted
-    // are visited first.
-    let mut next = 0;
-    lifted(
-        image,
-        program,
-        &missing,
-        summaries,
-        disabled,
-        threads,
-        |id, prepared| {
-            while let Some(&before) = order.get(next)
-                && before != id
-            {
-                if let Some(prepared) = kept.get(before) {
-                    visit(before, prepared);
+    /// The function at `at` lowered, with `interface` (or not lifted): the
+    /// lowerings of the lifted functions waiting for it last.
+    fn lowered(&mut self, at: usize, interface: Option<Interface>) -> Vec<Work> {
+        self.interfaces.insert(at, interface);
+        let mut works = Vec::new();
+        for waiter in self.waiting.remove(&at).unwrap_or_default() {
+            let Some(count) = self.unmet.get_mut(&waiter) else {
+                continue;
+            };
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                self.unmet.remove(&waiter);
+                if let Some(moved) = self.lifted.remove(&waiter) {
+                    works.push(Work::Lower(waiter, moved, self.reading(waiter)));
                 }
-                next += 1;
             }
-            next += 1;
-            visit(id, &prepared);
-            kept.keep(id, prepared);
-        },
-    );
-    for id in order.iter().skip(next) {
-        if let Some(prepared) = kept.get(*id) {
-            visit(*id, prepared);
         }
+        works
     }
+}
+
+/// What lowering a function ahead found ([`lower_ahead`]), or why it did
+/// not lower.
+type LoweredAhead = Result<Ahead, String>;
+
+/// A function lowered ahead as it arrives from the threads: the
+/// interfaces it read, and its L1 (as it moves) with what lowering found,
+/// or why there is no L1.
+type Arrived = (Reading, Result<(Moved, LoweredAhead), String>);
+
+/// Whether lowering a function ahead, which found `found` with its
+/// callees' interfaces `read`, read of each callee it looked up the
+/// interface `known` has (none where it has none): then lowering it with
+/// `known` finds the same.
+fn read_alike(found: &Found, read: &Reading, known: &BTreeMap<u64, Interface>) -> bool {
+    found
+        .callees
+        .iter()
+        .chain(
+            found
+                .assumed
+                .iter()
+                .flat_map(|assumed| assumed.callees.iter()),
+        )
+        .all(|callee| read.get(callee) == known.get(callee))
 }
 
 /// One view's progress through [`settle`].
@@ -2408,48 +2549,5 @@ mod tests {
                 (0x500, vec![RegisterId(6)])
             ])
         );
-    }
-
-    /// Both views' callers are the same whatever of the functions' L1 is
-    /// kept from one pass to the next: with none kept (every pass lifts
-    /// every function again) as with all of it, on programs that take
-    /// several rounds to settle (cycles of calls, a parameter dropped).
-    #[test]
-    fn the_callers_are_the_same_whatever_l1_is_kept() {
-        use crate::Database;
-        use crate::analysis::Seeds;
-
-        for name in [
-            "cycles-x86_64.elf",
-            "forwarded-x86_64.elf",
-            "program-x86_64.elf",
-        ] {
-            let path = format!("{}/../../tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
-            let data = std::fs::read(path).unwrap();
-            let image = Image::parse(&data).unwrap();
-            let database = Database::new(&image, Seeds::ALL).unwrap();
-            let program = database.program();
-            let (references, summaries) =
-                References::build(&image, program, 1, &Progress::default());
-            let prototypes = database.prototypes();
-            let found = |budget| {
-                callers_within(
-                    &image,
-                    program,
-                    &summaries,
-                    &references,
-                    &prototypes,
-                    database.data(),
-                    &[],
-                    2,
-                    &[false, true],
-                    &Progress::default(),
-                    budget,
-                )
-            };
-            let all = found(usize::MAX);
-            assert!(all.len() == 2, "{name}");
-            assert!(found(0) == all, "{name}: nothing kept differs");
-        }
     }
 }
