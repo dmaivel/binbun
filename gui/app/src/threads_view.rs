@@ -880,16 +880,19 @@ impl Workspace {
             .filter(|_| typing)
             .map(|c| self.render_completion(c));
         let input = typing.then(|| {
-            div().flex_none().p(self.z(8.0)).children(completion).child(
-                div()
-                    .px(self.z(8.0))
-                    .py(self.z(4.0))
-                    .rounded(self.z(6.0))
-                    .bg(hsla(theme.editor))
-                    .border_1()
-                    .border_color(hsla(theme.border))
-                    .child(Textarea::new(reply)),
-            )
+            let typed = !reply.read(cx).value().trim().is_empty();
+            let send = self
+                .composer_button("reply-send", IconName::SendHorizontal, typed, typed)
+                .tooltip(self.keyed_tooltip("Send", Some("Enter".to_owned())))
+                .when(typed, |d| {
+                    d.on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.send_reply(window, cx);
+                    }))
+                });
+            self.composer(reply, completion, [send])
+                .when(self.right_dock.lowest(Panel::Threads), |d| {
+                    d.rounded_b(self.island_corner())
+                })
         });
         div()
             .id("threads")
@@ -1268,7 +1271,10 @@ impl Workspace {
             .flex_col()
             .gap(self.z(10.0))
             .child(title)
-            .child(self.code_quote(&thread.quote))
+            // An agent's thread may have no quote.
+            .when(!thread.quote.trim().is_empty(), |d| {
+                d.child(self.code_quote(&thread.quote))
+            })
             .children(
                 groups
                     .iter()
@@ -1318,11 +1324,33 @@ impl Workspace {
                 .map(|p| p.body.clone())
                 .unwrap_or_default();
             let menu = !gone && (mine || owner);
+            let marks = (line.edited || line.evidence > 0).then(|| {
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(self.z(4.0))
+                    .when(line.edited, |d| d.child(self.quiet("(edited)")))
+                    .when(line.evidence > 0, |d| {
+                        d.child(self.tag(
+                            &format!(
+                                "{} {}",
+                                line.evidence,
+                                if line.evidence == 1 {
+                                    "item of evidence"
+                                } else {
+                                    "items of evidence"
+                                }
+                            ),
+                            theme.text_muted,
+                        ))
+                    })
+            });
+            // The text wraps; its marks under it.
             div()
                 .id(("post", i * 1000 + j))
                 .flex()
-                .flex_wrap()
-                .gap(self.z(4.0))
+                .flex_col()
+                .gap(self.z(2.0))
                 .when(gone, |d| d.italic().text_color(hsla(theme.text_muted)))
                 .when(menu, |d| {
                     d.on_mouse_down(
@@ -1333,21 +1361,7 @@ impl Workspace {
                     )
                 })
                 .child(div().child(line.text.shown().to_owned()))
-                .when(line.edited, |d| d.child(self.quiet("(edited)")))
-                .when(line.evidence > 0, |d| {
-                    d.child(self.tag(
-                        &format!(
-                            "{} {}",
-                            line.evidence,
-                            if line.evidence == 1 {
-                                "item of evidence"
-                            } else {
-                                "items of evidence"
-                            }
-                        ),
-                        theme.text_muted,
-                    ))
-                })
+                .children(marks)
                 .into_any_element()
         });
         div()

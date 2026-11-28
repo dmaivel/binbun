@@ -2049,12 +2049,9 @@ impl Workspace {
         self.open_own_menu(position, items, window, cx);
     }
 
-    /// The chat's message box: flat, the whole area under a thin top
-    /// border filled with a raised colour, small Insert Location and Send
-    /// icons at the right of the text's last line. The `@` completion over
-    /// it; the placeholder its only text.
+    /// The chat's message box ([`Self::composer`]) with Insert Location and
+    /// Send.
     fn render_composer(&self, input: &Entity<TextareaState>, cx: &mut Context<Self>) -> Div {
-        let theme = self.theme;
         let completion = self
             .collab
             .completion
@@ -2078,10 +2075,24 @@ impl Workspace {
                     this.send_chat(window, cx);
                 }))
             });
+        self.composer(input, completion, [insert, send])
+            .key_context("Chat")
+    }
+
+    /// A panel's message box (the chat's, a thread's reply): flat, the
+    /// whole area under a thin top border filled with a raised colour,
+    /// `buttons` (small icons) at the right of the text's last line, the
+    /// `@` `completion` over it; the placeholder its only text.
+    pub(crate) fn composer(
+        &self,
+        input: &Entity<TextareaState>,
+        completion: Option<Div>,
+        buttons: impl IntoIterator<Item = Stateful<Div>>,
+    ) -> Div {
+        let theme = self.theme;
         let field = div().flex_1().min_w_0().child(Textarea::new(input));
         div()
             .flex_none()
-            .key_context("Chat")
             .border_t_1()
             .border_color(hsla(theme.border))
             .bg(hsla(solid(theme.editor)))
@@ -2094,14 +2105,13 @@ impl Workspace {
                     .items_end()
                     .gap(self.z(2.0))
                     .child(field.pb(self.z(2.0)))
-                    .child(insert)
-                    .child(send),
+                    .children(buttons),
             )
     }
 
     /// A small icon button of the message box: `glyph` muted, in the
     /// accent when `lit`, faint when not `enabled`.
-    fn composer_button(
+    pub(crate) fn composer_button(
         &self,
         id: &'static str,
         glyph: IconName,

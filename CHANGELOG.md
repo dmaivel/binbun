@@ -92,6 +92,7 @@ always read by later versions.
 - A struct that starts some bytes into an object a call returns (Lua's `lua_State`, 8 bytes into the `LG` its `global_State` follows) takes no fields from that function's accesses to the object, so it is not printed as large as the whole object: on Lua's interpreter, struct field precision rises from 61% to 67%, and pointer parameters whose pointee has the right size from 36% to 43%.
 - A string constant held in a local and passed to two calls prints as the string literal at both, not as its address.
 - GUI: the graph's taken and not-taken edges are green and red in every bundled theme. Taken edges took the theme's string colour (orange in Dark Modern, blue in the GitHub themes, yellow in Dracula and Monokai, cyan in Solarized), and Solarized Dark's not-taken edges were near white. A theme sets them with `--branch-taken` and `--branch-not-taken`, else its `--success` and `--error`.
+- GUI: a thread's posts wrap in the Threads panel instead of running off its right edge, and a thread opened without a quote (as agents open them) shows no empty bar over its posts. The reply box is the chat's message box, with a Send button.
 
 ## v0.1.0 (2026-11-23)
 
