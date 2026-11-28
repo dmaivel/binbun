@@ -15,7 +15,7 @@
 //! - **Rows** ([`Document::flatten`]): the cards and what the open ones
 //!   hold, as the pane's folds and layers say; one height each.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -24,7 +24,7 @@ use binbun::listing::SpanKind;
 
 use crate::hex::{Anchor, HexImage, Kind, Mode, Overlay, Part, Source, span_kind};
 use crate::hex_tree::{self, Key, Step, StructTree};
-use crate::listing::{Item as LineItem, LineKind, Listing};
+use crate::listing::{Arrow, Item as LineItem, LineKind, Listing};
 use crate::scroll::{Scroller, Sideways};
 use crate::selection::Lines;
 
@@ -958,10 +958,18 @@ impl Document {
                 .get(k)
                 .and_then(|r| self.address(r, listing, image, overlays))
         };
-        let after = rows.start
-            + (rows.start..rows.end)
-                .collect::<Vec<_>>()
-                .partition_point(|&k| start(k).is_none_or(|a| a <= address));
+        // The first row past `address` (one without an address counts as
+        // before it).
+        let (mut low, mut high) = (rows.start, rows.end);
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if start(middle).is_none_or(|a| a <= address) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        let after = low;
         // Not a spacer (it has no address of its own): the row above it.
         let spacer = |k: usize| flat.rows.get(k).is_some_and(|r| r.kind == RowKind::Spacer);
         let mut last = after.checked_sub(1).filter(|&k| k >= rows.start)?;
@@ -994,6 +1002,135 @@ impl Document {
         }
         Some(best)
     }
+
+    /// The listing's arrows of the functions with rows of `flat` in
+    /// `shown`, each end the row showing its line wherever that is, so an
+    /// arrow is drawn the same however the view is scrolled: the line's own
+    /// row, or the header of the folded block or loop hiding it. An arrow
+    /// with such a row at both ends is a line (across a part's card and the
+    /// padding between a function's parts, as the listing draws it); else
+    /// it is stubs ([`Arrow::crosses`]) toward the rows the document has
+    /// for its ends (a closed card over one), off any screen where it has
+    /// none. Each with its ends' addresses.
+    pub fn arrows(
+        &self,
+        flat: &Flat,
+        shown: Range<usize>,
+        listing: &Listing,
+        image: &HexImage,
+        overlays: &[Overlay],
+    ) -> Vec<(Arrow, (u64, u64))> {
+        let line_rows = function_rows(flat, shown);
+        let mut arrows = Vec::new();
+        let (Some(&min), Some(&max)) = (line_rows.keys().min(), line_rows.keys().max()) else {
+            return arrows;
+        };
+        let mut by_line: Vec<(u64, u64)> = line_rows.iter().map(|(&l, &r)| (l, r)).collect();
+        by_line.sort_unstable();
+        // A line no row shows: the row of the folded block (or loop) that
+        // holds it, if one does.
+        let folded_into = |line: u64| -> Option<u64> {
+            let i = by_line
+                .partition_point(|&(l, _)| l <= line)
+                .checked_sub(1)?;
+            let &(head, row) = by_line.get(i)?;
+            let RowKind::Block { open: false, .. } =
+                flat.rows.get(usize::try_from(row).ok()?)?.kind
+            else {
+                return None;
+            };
+            let start = listing.line(head)?.address;
+            let inside = match self.loops.get(&start) {
+                Some(&end) => listing.line(line)?.address < end,
+                // A block: up to the next label.
+                None => {
+                    line - head <= FOLD_SCAN
+                        && (head + 1..=line)
+                            .all(|m| listing.line(m).is_none_or(|l| l.kind != LineKind::Label))
+                }
+            };
+            inside.then_some(row)
+        };
+        let address = |line: u64| listing.line(line).map_or(0, |l| l.address);
+        // Where `line` is: its row, and whether that row shows it (the
+        // line's, its folded block's) rather than a closed card over it.
+        let place = |line: u64| -> (u64, bool) {
+            if let Some(row) = line_rows.get(&line).copied().or_else(|| folded_into(line)) {
+                return (row, true);
+            }
+            self.row_of(flat, address(line), listing, image, overlays)
+                .map_or((OFF_SCREEN, false), |k| (k as u64, is_code(flat, k)))
+        };
+        for a in listing.arrows(min..max + 1) {
+            let ((from, from_shown), (to, to_shown)) = (place(a.from), place(a.to));
+            let both = from_shown && to_shown;
+            // Both ends in one folded block: nothing to draw.
+            if both && from == to && a.from != a.to {
+                continue;
+            }
+            let arrow = Arrow {
+                from,
+                to,
+                crosses: a.crosses || !both,
+                ..a
+            };
+            arrows.push((arrow, (address(a.from), address(a.to))));
+        }
+        arrows
+    }
+}
+
+/// The row an arrow's end is given where the document has none: never on
+/// screen.
+const OFF_SCREEN: u64 = u64::MAX / 2;
+/// The most lines a folded block's header is looked back for, from a line
+/// it hides.
+const FOLD_SCAN: u64 = 4096;
+
+/// Whether row `k` of `flat` is a function's code: one of its lines, or
+/// a labelled block's header.
+fn is_code(flat: &Flat, k: usize) -> bool {
+    flat.rows
+        .get(k)
+        .is_some_and(|r| r.depth >= 2 && matches!(r.kind, RowKind::Line(_) | RowKind::Block { .. }))
+}
+
+/// The rows of `flat` showing the listing lines of the functions with rows
+/// in `shown`, by line: a function's lines are 2 deep, its rows taken to
+/// their ends off screen; a label's is its open block's first instruction
+/// (the arrows point at the code), else its block's header.
+fn function_rows(flat: &Flat, shown: Range<usize>) -> HashMap<u64, u64> {
+    let code = |k: usize| is_code(flat, k);
+    let mut lo = shown.start;
+    while lo > 0 && code(lo - 1) {
+        lo -= 1;
+    }
+    let mut hi = shown.end;
+    while code(hi) {
+        hi += 1;
+    }
+    (lo..hi)
+        .filter_map(|k| match flat.rows.get(k)?.kind {
+            RowKind::Line(n) if code(k) => Some((n, k as u64)),
+            RowKind::Block { line: n, open } if code(k) => {
+                let first = open
+                    && flat
+                        .rows
+                        .get(k + 1)
+                        .is_some_and(|r| r.depth >= 2 && matches!(r.kind, RowKind::Line(_)));
+                Some((n, (if first { k + 1 } else { k }) as u64))
+            }
+            RowKind::Card { .. }
+            | RowKind::Line(_)
+            | RowKind::Block { .. }
+            | RowKind::Field(_)
+            | RowKind::Hex(_)
+            | RowKind::Run { .. }
+            | RowKind::Bytes(_)
+            | RowKind::Uninitialised(_)
+            | RowKind::Spacer => None,
+        })
+        .collect()
 }
 
 /// Where tree row `key` (a typed piece's) starts, in `mode`.
@@ -1599,6 +1736,65 @@ mod tests {
             overlays,
             listing,
             file,
+        }
+    }
+
+    /// However the view is scrolled, each arrow is drawn the same (from
+    /// and to the same rows, a line or stubs), and a line passing a
+    /// function's code on screen is drawn. Here several functions have a
+    /// part past their alignment padding (`deregister_tm_clones`'s `ret`)
+    /// that their jumps reach across its card: they had been stubs until
+    /// the part scrolled into view, and nothing when only the code between
+    /// was in view.
+    #[test]
+    fn arrows_are_drawn_the_same_however_the_view_is_scrolled() {
+        let data = fixture("program-x86_64.elf");
+        let (doc, listing, hex, overlays) = document(&data);
+        let flat = doc.flatten(&UnifiedPane::default(), &inputs(&overlays, &listing, &data));
+        let screens: Vec<Range<usize>> = (0..flat.len())
+            .map(|first| first..(first + 12).min(flat.len()))
+            .collect();
+        let drawn: Vec<Vec<(Arrow, (u64, u64))>> = screens
+            .iter()
+            .map(|shown| doc.arrows(&flat, shown.clone(), &listing, &hex, &overlays))
+            .collect();
+        let mut seen: BTreeMap<(u64, u64), (Arrow, Range<usize>)> = BTreeMap::new();
+        for (shown, arrows) in screens.iter().zip(&drawn) {
+            for &(arrow, ends) in arrows {
+                let (first, at) = seen.entry(ends).or_insert((arrow, shown.clone()));
+                assert_eq!(
+                    *first, arrow,
+                    "{ends:x?}: in rows {at:?}, then in rows {shown:?}"
+                );
+            }
+        }
+        let lines: Vec<_> = seen.iter().filter(|(_, (a, _))| !a.crosses).collect();
+        let across = lines
+            .iter()
+            .filter(|&&(&(from, to), _)| {
+                let part = |at: u64| {
+                    doc.items.iter().flat_map(|i| &i.pieces).position(
+                        |p| matches!(p, Piece::Function { start, end, .. } if (*start..*end).contains(&at)),
+                    )
+                };
+                part(from) != part(to)
+            })
+            .count();
+        assert!(
+            across >= 3,
+            "jumps to another part of their function: {across}"
+        );
+        for (shown, arrows) in screens.iter().zip(&drawn) {
+            for &(&ends, (arrow, _)) in &lines {
+                let (top, bottom) = (arrow.from.min(arrow.to), arrow.from.max(arrow.to));
+                let passes = (top..=bottom)
+                    .filter_map(|k| usize::try_from(k).ok())
+                    .any(|k| shown.contains(&k) && is_code(&flat, k));
+                assert!(
+                    !passes || arrows.iter().any(|&(_, e)| e == ends),
+                    "{ends:x?} passes rows {shown:?} but is not drawn"
+                );
+            }
         }
     }
 

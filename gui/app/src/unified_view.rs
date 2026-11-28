@@ -111,11 +111,7 @@ const SIGNATURE_LINES: usize = 32;
 /// a longer name or type pushes its own row on.
 pub const FIELD_NAME_MOST: usize = 28;
 pub const FIELD_TYPE_MOST: usize = 24;
-/// The rows an arrow's end no row shows is given: never on screen.
-const OFF_SCREEN: u64 = u64::MAX / 2;
-/// The most lines a folded block's header is looked back for, from a line
-/// it hides.
-const FOLD_SCAN: u64 = 4096;
+
 /// A section card's strip's width.
 const STRIP_WIDTH: f32 = 180.0;
 /// The overview's width, left of the scrollbar.
@@ -250,116 +246,6 @@ pub fn xref_chips(db: &Database<'_>, listing: &Listing, address: u64) -> Vec<Xre
             }
         })
         .collect()
-}
-
-/// The rows of `flat` showing the listing lines of the functions with rows
-/// in `shown`, by line: a function's lines are 2 deep, its rows taken to
-/// their ends off screen (its arrows reach there); a label's is its open
-/// block's first instruction (the arrows point at the code), else its
-/// block's header.
-fn function_rows(flat: &Flat, shown: std::ops::Range<usize>) -> HashMap<u64, u64> {
-    let code = |k: usize| {
-        flat.rows.get(k).is_some_and(|r| {
-            r.depth >= 2 && matches!(r.kind, RowKind::Line(_) | RowKind::Block { .. })
-        })
-    };
-    let mut lo = shown.start;
-    while lo > 0 && code(lo - 1) {
-        lo -= 1;
-    }
-    let mut hi = shown.end;
-    while code(hi) {
-        hi += 1;
-    }
-    (lo..hi)
-        .filter_map(|k| match flat.rows.get(k)?.kind {
-            RowKind::Line(n) if code(k) => Some((n, k as u64)),
-            RowKind::Block { line: n, open } if code(k) => {
-                let first = open
-                    && flat
-                        .rows
-                        .get(k + 1)
-                        .is_some_and(|r| r.depth >= 2 && matches!(r.kind, RowKind::Line(_)));
-                Some((n, (if first { k + 1 } else { k }) as u64))
-            }
-            RowKind::Card { .. }
-            | RowKind::Line(_)
-            | RowKind::Block { .. }
-            | RowKind::Field(_)
-            | RowKind::Hex(_)
-            | RowKind::Run { .. }
-            | RowKind::Bytes(_)
-            | RowKind::Uninitialised(_)
-            | RowKind::Spacer => None,
-        })
-        .collect()
-}
-
-/// The listing's arrows of the functions with rows of `flat` in `shown`,
-/// their lines as the rows showing them ([`function_rows`]): a line a
-/// folded block or loop hides as its header's row; an end no row here
-/// shows (in another part of the function, under a closed card) the row
-/// the document has for its address (above or below, as it is), the arrow
-/// stubs ([`Arrow::crosses`]). Each with its ends' addresses.
-fn screen_arrows(
-    sources: &Sources,
-    flat: &Flat,
-    shown: std::ops::Range<usize>,
-) -> Vec<(Arrow, (u64, u64))> {
-    let (doc, listing, image, overlays) = sources;
-    let line_rows = function_rows(flat, shown);
-    let mut arrows = Vec::new();
-    let (Some(&min), Some(&max)) = (line_rows.keys().min(), line_rows.keys().max()) else {
-        return arrows;
-    };
-    let mut by_line: Vec<(u64, u64)> = line_rows.iter().map(|(&l, &r)| (l, r)).collect();
-    by_line.sort_unstable();
-    // A line no row shows: the row of the folded block (or loop) that
-    // holds it, if one does.
-    let folded_into = |line: u64| -> Option<u64> {
-        let i = by_line
-            .partition_point(|&(l, _)| l <= line)
-            .checked_sub(1)?;
-        let &(head, row) = by_line.get(i)?;
-        let RowKind::Block { open: false, .. } = flat.rows.get(usize::try_from(row).ok()?)?.kind
-        else {
-            return None;
-        };
-        let start = listing.line(head)?.address;
-        let inside = match doc.loops.get(&start) {
-            Some(&end) => listing.line(line)?.address < end,
-            // A block: up to the next label.
-            None => {
-                line - head <= FOLD_SCAN
-                    && (head + 1..=line)
-                        .all(|m| listing.line(m).is_none_or(|l| l.kind != LineKind::Label))
-            }
-        };
-        inside.then_some(row)
-    };
-    let row = |line: u64| line_rows.get(&line).copied().or_else(|| folded_into(line));
-    let address = |line: u64| listing.line(line).map_or(0, |l| l.address);
-    // Elsewhere in the document: its row there, else off any screen.
-    let elsewhere = |line: u64| {
-        doc.row_of(flat, address(line), listing, image, overlays)
-            .map_or(OFF_SCREEN, |k| k as u64)
-    };
-    for a in listing.arrows(min..max + 1) {
-        let arrow = match (row(a.from), row(a.to)) {
-            // Both ends in one folded block: nothing to draw.
-            (Some(from), Some(to)) if from == to && a.from != a.to => continue,
-            (Some(from), Some(to)) => Arrow { from, to, ..a },
-            (None, None) => continue,
-            (from, to) => Arrow {
-                from: from.unwrap_or_else(|| elsewhere(a.from)),
-                to: to.unwrap_or_else(|| elsewhere(a.to)),
-                crosses: true,
-                ..a
-            },
-        };
-        arrows.push((arrow, (address(a.from), address(a.to))));
-    }
-    arrows
 }
 
 /// `n` bytes, short (`612 B`, `4.2 KB`, `1.3 MB`).
@@ -1769,7 +1655,7 @@ impl Workspace {
 
     /// The branch arrows of the functions with rows in `shown` of pane
     /// `id` (the listing's arrows, their lines mapped to the rows showing
-    /// them: [`screen_arrows`]), in the arrow gutter from `left`: its right
+    /// them: [`Document::arrows`]), in the arrow gutter from `left`: its right
     /// edge at a function line's text. Those with an end on the cursor's
     /// row at full strength.
     fn unified_arrows(
@@ -1782,8 +1668,11 @@ impl Workspace {
         let theme = self.theme;
         let u = &self.panes.get(&id)?.unified;
         self.unified.stubs.borrow_mut().remove(&id);
-        let (arrows, addresses): (Vec<Arrow>, Vec<(u64, u64)>) =
-            screen_arrows(sources, flat, shown).into_iter().unzip();
+        let (doc, listing, image, overlays) = sources;
+        let (arrows, addresses): (Vec<Arrow>, Vec<(u64, u64)>) = doc
+            .arrows(flat, shown, listing, image, overlays)
+            .into_iter()
+            .unzip();
         if arrows.is_empty() {
             return None;
         }
