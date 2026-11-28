@@ -993,6 +993,8 @@ impl Workspace {
         if started.is_empty() {
             return;
         }
+        // What was read for an earlier start is not this one's.
+        self.terminals.announced.clear();
         // Its binbun mcp runs the Python the settings name.
         self.check_python(cx);
         if self.terminals.quiet.is_none() {
@@ -1090,10 +1092,18 @@ impl Workspace {
         let (terminal, since) = (start.map(|s| s.0), start.map(|s| s.1));
         let server = start.and_then(|s| s.2).map(|server| &server.start);
         let due = since.is_some_and(|since| since.elapsed() >= SERVER_AFTER);
+        // Started again since Set Up: its server may be on its way.
+        let restarted = since.is_some_and(|since| since > offer.since);
+        // An offer put away is put away for its terminal; how a setup went,
+        // whichever terminal runs the agent.
+        let place = match offer.progress {
+            Progress::Offered => terminal,
+            Progress::Running | Progress::Done | Progress::Failed(_) => None,
+        };
         let banner = |tone, text: String, buttons, closable| Banner {
             kind: Kind::Agent,
             priority: Priority::Question,
-            about: format!("{name}\n{terminal:?}\n{text}"),
+            about: format!("{name}\n{place:?}\n{text}"),
             text,
             tone,
             buttons,
@@ -1152,17 +1162,16 @@ impl Workspace {
                     true,
                 ))
             }
-            (Progress::Done, None) if due && since.is_some_and(|since| since > offer.since) => {
-                Some(banner(
-                    Tone::Error,
-                    format!(
-                        "{name} restarted without starting binbun's server: its setup isn't \
+            (Progress::Done, None) if restarted && due => Some(banner(
+                Tone::Error,
+                format!(
+                    "{name} restarted without starting binbun's server: its setup isn't \
                          where this {name} reads it."
-                    ),
-                    connect(),
-                    true,
-                ))
-            }
+                ),
+                connect(),
+                true,
+            )),
+            (Progress::Done, None) if restarted => None,
             (Progress::Done, None) => Some(banner(
                 Tone::Info,
                 format!("binbun is added to {name}: restart it to connect."),
