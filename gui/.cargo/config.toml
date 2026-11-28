@@ -1,4 +1,6 @@
 # The Zig libghostty-vt's source builds with (the terminal: gui/Cargo.toml's
-# ghostty-vt), as scripts/zig.sh fetches it; a ZIG of the environment wins.
+# ghostty-vt): the pinned one, fetched the first time it runs
+# (scripts/zig-run.sh). A ZIG of the environment wins; Windows sets one
+# (scripts/zig.sh's output).
 [env]
-ZIG = { value = "target/zig/current/zig", relative = true, force = false }
+ZIG = { value = "../scripts/zig-run.sh", relative = true, force = false }

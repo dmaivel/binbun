@@ -2,9 +2,11 @@
 # Fetches Zig 0.17.1, the version libghostty-vt's source builds with (the
 # GUI's terminal, gui/Cargo.toml's ghostty-vt), into gui/target/zig (or DIR),
 # its archive checked against the SHA-256 pinned here, and prints the path
-# of its `zig`. The GUI's builds find it there (gui/.cargo/config.toml's
-# ZIG); set ZIG to use another Zig 0.17. macOS builds take libghostty-vt
-# prebuilt and need no Zig. Linux and Windows, x86_64 and aarch64.
+# of its `zig`. The GUI's cargo builds run it through scripts/zig-run.sh
+# (gui/.cargo/config.toml's ZIG), which fetches it the first time; set ZIG
+# to use another Zig 0.17, and on Windows to this script's output. macOS
+# builds take libghostty-vt prebuilt and need no Zig. Linux and Windows,
+# x86_64 and aarch64.
 #
 #   scripts/zig.sh [DIR]
 set -euo pipefail
@@ -28,7 +30,10 @@ name=${name%.zip}
 case $asset in *.zip) exe=zig.exe ;; *) exe=zig ;; esac
 
 if [ ! -x "$dir/$name/$exe" ]; then
-    work=$(mktemp -d)
+    mkdir -p "$dir"
+    # Unpacked beside where it goes, then renamed there whole: a build
+    # fetching it at the same time (rust-analyzer's) finds all of it or none.
+    work=$(mktemp -d "$dir/.fetch.XXXXXX")
     trap 'rm -rf "$work"' EXIT
     curl --proto '=https' --tlsv1.2 -fsSL -o "$work/$asset" "https://ziglang.org/download/$version/$asset"
     if command -v sha256sum >/dev/null 2>&1; then
@@ -40,15 +45,16 @@ if [ ! -x "$dir/$name/$exe" ]; then
         echo "zig.sh: $asset's SHA-256 is $actual, expected $sha256" >&2
         exit 1
     }
-    mkdir -p "$dir"
     case $asset in
-        *.zip) (cd "$dir" && unzip -q "$work/$asset") ;;
-        *) tar -xJf "$work/$asset" -C "$dir" ;;
+        *.zip) (cd "$work" && unzip -q "$asset") ;;
+        *) tar -xJf "$work/$asset" -C "$work" ;;
     esac
+    # Another fetch may have put it there first: the same Zig.
+    mv -T "$work/$name" "$dir/$name" 2>/dev/null || [ -x "$dir/$name/$exe" ]
 fi
 case $asset in
-    # Windows: no link (Git Bash copies the directory), and the path as
-    # Windows has it (cargo's build scripts are not Git Bash's); CI sets ZIG.
+    # Windows: the path as Windows has it (cargo's build scripts are not
+    # Git Bash's).
     *.zip)
         if command -v cygpath >/dev/null 2>&1; then
             cygpath -m "$dir/$name/$exe"
@@ -56,9 +62,5 @@ case $asset in
             echo "$dir/$name/$exe"
         fi
         ;;
-    # The path gui/.cargo/config.toml gives, whichever Zig this is.
-    *)
-        ln -sfn "$name" "$dir/current"
-        echo "$dir/current/$exe"
-        ;;
+    *) echo "$dir/$name/$exe" ;;
 esac

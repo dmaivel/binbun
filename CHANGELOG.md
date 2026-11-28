@@ -46,7 +46,7 @@ always read by later versions.
 
 ### Changed
 
-- Building the app from source on Linux and Windows needs Zig 0.17 (`scripts/zig.sh` fetches the pinned one), and the build downloads libghostty-vt's pinned source, checked against its SHA-256 (macOS builds download its prebuilt library and need no Zig).
+- Building the app from source downloads libghostty-vt's pinned source and, on Linux, the pinned Zig 0.17 it builds with (the first time, into `gui/target/zig`), each checked against its SHA-256. On Windows set `ZIG` to `scripts/zig.sh`'s output first; macOS builds download its prebuilt library and need no Zig.
 - Finding every function's callers (the GUI's "Reading callers" stage, `binbun decompile` of a whole program) runs on all the threads instead of one: its sweeps lift, lower and solve the types of each function ahead as soon as its callees are lowered and solved, the function needed next first, while one thread rounds the types to the program's structs in order, and its later rounds lower a level of the call graph at a time. Solving a function's types builds what it reads of the function once instead of five times, and a constant that may point to text is read a run of bytes at a time instead of byte by byte. On perf (7,600 functions) it takes 19 s instead of 47 s; on zellij (38,000 functions), 125 s. Every function's C is as before.
 - The `binbun` command and the GUI allocate memory with jemalloc (but on Windows, where they are built with MSVC), which serves the analysis's many threads faster than the system's allocator: on zellij (50 MB) finding the functions takes 12 s instead of 15 s and the cross-references 14 s instead of 17 s.
 - GUI: the status bar no longer names the C view (`Reading` or `Exact`); the pane's view button does.
