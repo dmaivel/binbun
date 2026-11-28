@@ -18,6 +18,17 @@
 //! navigation opens its target in the pane's preview tab
 //! ([`Layout::open_preview`]) or in a new tab ([`Layout::open_new`]),
 //! equal content or not: two tabs of the listing are two places.
+//!
+//! The dock is a pane along the layout's bottom, spanning it (the root
+//! column's last child): what opens below the code opens there. It hides
+//! without closing (its pane kept aside, its tabs with it), cannot be
+//! split, takes a tab dropped on its edges into itself, and goes when its
+//! last tab does. The panes of the code area always keep one. A window's
+//! dock moves between its tabs' layouts ([`Layout::take_dock`],
+//! [`Layout::put_dock`]).
+
+/// The dock's share of the layout's height when it first shows.
+pub const DOCK_SIZE: f32 = 0.35;
 
 /// A pane's identity, unique for the layout's lifetime.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -177,7 +188,8 @@ pub struct Rect {
 /// Panes in a tree of splits, with one focused pane.
 #[derive(Clone, Debug)]
 pub struct Layout<T> {
-    /// The split tree; its leaves are exactly the ids in `panes`.
+    /// The split tree; its leaves are exactly the ids in `panes` (the
+    /// dock's among them while it is shown, the root column's last).
     tree: Node,
     /// The panes, in tree order.
     panes: Vec<Pane<T>>,
@@ -187,6 +199,33 @@ pub struct Layout<T> {
     next_id: u32,
     /// The id the next new tab gets.
     next_tab: u64,
+    /// The dock, if there is one.
+    dock: Option<Dock<T>>,
+}
+
+/// A layout's dock: its pane's id, the pane itself while hidden, its
+/// share of the height.
+#[derive(Clone, Debug)]
+struct Dock<T> {
+    /// Its pane's id.
+    id: PaneId,
+    /// Its pane while hidden (out of the tree, its tabs kept); `None`
+    /// while it is shown.
+    hidden: Option<Pane<T>>,
+    /// Its share of the layout's height, as last shown.
+    size: f32,
+}
+
+/// A dock taken out of a layout ([`Layout::take_dock`]): to put into
+/// another of the window's ([`Layout::put_dock`]), or saved.
+#[derive(Clone, Debug)]
+pub struct DockParts<T> {
+    /// Its pane: its id, tabs and active one.
+    pub pane: Pane<T>,
+    /// Whether it is shown.
+    pub shown: bool,
+    /// Its share of the layout's height.
+    pub size: f32,
 }
 
 impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
@@ -208,6 +247,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
             focused: PaneId(0),
             next_id: 1,
             next_tab: 1,
+            dock: None,
         }
     }
 
@@ -230,26 +270,64 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
 
     /// Focuses pane `id`; false if there is no such pane.
     pub fn focus(&mut self, id: PaneId) -> bool {
-        let exists = self.pane(id).is_some();
+        let exists = self.shows(id);
         if exists {
             self.focused = id;
         }
         exists
     }
 
-    /// Pane `id`, if it exists.
+    /// Whether pane `id` is on screen (in the tree; not a hidden dock).
+    pub fn shows(&self, id: PaneId) -> bool {
+        self.panes.iter().any(|pane| pane.id == id)
+    }
+
+    /// Pane `id`, if it exists (the dock's while hidden too).
     pub fn pane(&self, id: PaneId) -> Option<&Pane<T>> {
-        self.panes.iter().find(|pane| pane.id == id)
+        self.every_pane().find(|pane| pane.id == id)
     }
 
     /// Pane `id`, mutably, if it exists.
     pub fn pane_mut(&mut self, id: PaneId) -> Option<&mut Pane<T>> {
-        self.panes.iter_mut().find(|pane| pane.id == id)
+        let hidden = self.dock.as_mut().and_then(|dock| dock.hidden.as_mut());
+        self.panes
+            .iter_mut()
+            .chain(hidden)
+            .find(|pane| pane.id == id)
     }
 
-    /// The panes in tree order: left to right, top to bottom.
+    /// The panes on screen in tree order: left to right, top to bottom
+    /// (the dock, while shown, last).
     pub fn panes(&self) -> impl Iterator<Item = &Pane<T>> {
         self.panes.iter()
+    }
+
+    /// The panes on screen, then the dock's while hidden: every pane whose
+    /// tabs the layout holds.
+    pub fn every_pane(&self) -> impl Iterator<Item = &Pane<T>> {
+        let hidden = self.dock.as_ref().and_then(|dock| dock.hidden.as_ref());
+        self.panes.iter().chain(hidden)
+    }
+
+    /// The panes of the code area: those on screen but the dock.
+    pub fn code_panes(&self) -> impl Iterator<Item = &Pane<T>> {
+        let dock = self.dock();
+        self.panes.iter().filter(move |pane| Some(pane.id) != dock)
+    }
+
+    /// The dock's pane, shown or hidden.
+    pub fn dock(&self) -> Option<PaneId> {
+        self.dock.as_ref().map(|dock| dock.id)
+    }
+
+    /// Whether pane `id` is the dock's.
+    pub fn is_dock(&self, id: PaneId) -> bool {
+        self.dock() == Some(id)
+    }
+
+    /// Whether the dock is shown.
+    pub fn dock_shown(&self) -> bool {
+        self.dock.as_ref().is_some_and(|dock| dock.hidden.is_none())
     }
 
     /// The number of panes, at least one.
@@ -282,7 +360,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
 
     /// Where tab `tab` is: its pane and index.
     pub fn find_tab(&self, tab: TabId) -> Option<(PaneId, usize)> {
-        self.panes.iter().find_map(|pane| {
+        self.every_pane().find_map(|pane| {
             let index = pane.tabs.iter().position(|t| t.id == tab)?;
             Some((pane.id, index))
         })
@@ -309,7 +387,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
     }
 
     /// A new pane beside `id` on `axis` (before it if `before`) holding
-    /// `tab`, synced as `id` is, focused; its id.
+    /// `tab`, synced as `id` is, focused; its id. The dock does not split.
     fn split_beside(
         &mut self,
         id: PaneId,
@@ -317,6 +395,9 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
         before: bool,
         tab: Tab<T>,
     ) -> Option<PaneId> {
+        if self.is_dock(id) {
+            return None;
+        }
         let index = self.panes.iter().position(|pane| pane.id == id)?;
         let synced = self.panes.get(index)?.synced;
         let new = PaneId(self.next_id);
@@ -342,15 +423,28 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
     /// is pinned (a preview dragged is kept), and is active and focused
     /// where it lands; the pane it left, if emptied, closes. `None` (and
     /// nothing done) if there is no such tab or pane, or it is the only
-    /// tab of a pane dropped on that pane's own edge.
+    /// tab of a pane dropped on that pane's own edge, or the only tab of
+    /// the code area's last pane leaving it. A tab dropped on the dock's
+    /// edge goes into the dock.
     pub fn move_tab(&mut self, tab: TabId, to: TabDrop) -> Option<PaneId> {
+        let to = match to {
+            TabDrop::Edge { pane, .. } if self.is_dock(pane) => TabDrop::Into {
+                pane,
+                at: usize::MAX,
+            },
+            other @ (TabDrop::Into { .. } | TabDrop::Edge { .. }) => other,
+        };
         let (from, index) = self.find_tab(tab)?;
         let target = match to {
             TabDrop::Into { pane, .. } | TabDrop::Edge { pane, .. } => pane,
         };
         let alone = self.pane(from)?.tabs.len() == 1;
-        if self.pane(target).is_none()
+        let last_code =
+            alone && target != from && !self.is_dock(from) && self.code_panes().count() <= 1;
+        if !self.shows(target)
+            || !self.shows(from)
             || (alone && target == from && matches!(to, TabDrop::Edge { .. }))
+            || last_code
         {
             return None;
         }
@@ -391,15 +485,26 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
         Some(landed)
     }
 
-    /// Closes pane `id` unless it is the only one; a split left with one
-    /// child is replaced by it (and flattened into its parent if same axis);
-    /// the focus, if it was there, moves to the pane that took its place:
-    /// the last pane of the previous sibling, else the first pane of the
-    /// next. Returns whether it closed.
+    /// Closes pane `id` unless it is the code area's last; a split left
+    /// with one child is replaced by it (and flattened into its parent if
+    /// same axis); the focus, if it was there, moves to the pane that took
+    /// its place: the last pane of the previous sibling, else the first
+    /// pane of the next. The dock keeps its height; the dock closed goes
+    /// with its tabs. Returns whether it closed.
     pub fn close_pane(&mut self, id: PaneId) -> bool {
-        if self.panes.len() <= 1 {
+        if self.is_dock(id) {
+            self.detach_dock();
+            self.dock = None;
+            return true;
+        }
+        if self.code_panes().count() <= 1 {
             return false;
         }
+        self.without_dock(|layout| layout.close_code_pane(id))
+    }
+
+    /// Closes pane `id` of the code area (the dock out of the tree).
+    fn close_code_pane(&mut self, id: PaneId) -> bool {
         let Some(index) = self.panes.iter().position(|pane| pane.id == id) else {
             return false;
         };
@@ -542,8 +647,9 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
 
     /// Closes tab `index` of `id`. If it was active, the tab to its left
     /// becomes active (else the new first); otherwise the active tab stays
-    /// active. A pane left empty is closed unless it is the only pane.
-    /// Returns whether a tab closed.
+    /// active. A pane left empty is closed unless it is the code area's
+    /// last (the dock's, shown or hidden, goes). Returns whether a tab
+    /// closed.
     pub fn close_tab(&mut self, id: PaneId, index: usize) -> bool {
         let Some(pane) = self.pane_mut(id) else {
             return false;
@@ -706,7 +812,8 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
     /// The same layout with each tab's content mapped by `f` (what can be
     /// saved; what can be restored): a tab mapped to `None` is dropped, an
     /// active one dropped leaves the tab on its left active (else the
-    /// first), and a pane left without tabs closes unless it is the last.
+    /// first), and a pane left without tabs closes unless it is the code
+    /// area's last (the dock, shown or hidden, goes).
     pub fn map_tabs<U: Clone + PartialEq + std::fmt::Debug>(
         &self,
         mut f: impl FnMut(&T) -> Option<U>,
@@ -714,36 +821,20 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
         let panes = self
             .panes
             .iter()
-            .map(|pane| {
-                let mut tabs = Vec::with_capacity(pane.tabs.len());
-                let mut active = 0;
-                for (index, tab) in pane.tabs.iter().enumerate() {
-                    let Some(content) = f(&tab.content) else {
-                        continue;
-                    };
-                    if index <= pane.active {
-                        active = tabs.len();
-                    }
-                    tabs.push(Tab {
-                        content,
-                        preview: tab.preview,
-                        id: tab.id,
-                    });
-                }
-                Pane {
-                    id: pane.id,
-                    tabs,
-                    active,
-                    synced: pane.synced,
-                }
-            })
+            .map(|pane| mapped_pane(pane, &mut f))
             .collect();
+        let dock = self.dock.as_ref().map(|dock| Dock {
+            id: dock.id,
+            hidden: dock.hidden.as_ref().map(|pane| mapped_pane(pane, &mut f)),
+            size: dock.size,
+        });
         let mut mapped = Layout {
             tree: self.tree.clone(),
             panes,
             focused: self.focused,
             next_id: self.next_id,
             next_tab: self.next_tab,
+            dock,
         };
         mapped.close_empty();
         mapped
@@ -789,6 +880,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
             focused,
             next_id,
             next_tab,
+            dock: None,
         };
         layout.close_empty();
         Some(layout)
@@ -797,12 +889,18 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
     /// A copy keeping only the tabs `keep` takes (a pane left without one
     /// closed, unless it is the last), every pane synced and numbered
     /// afresh from `first`, its sizes kept; each pane's id beside its
-    /// copy's. `None` if the ids run out.
+    /// copy's; the dock left out (a window has one). `None` if the ids run
+    /// out.
     pub fn copied(
         &self,
         first: u32,
         keep: impl Fn(&T) -> bool,
     ) -> Option<(Self, Vec<(PaneId, PaneId)>)> {
+        if self.dock.is_some() {
+            let mut code = self.clone();
+            code.take_dock();
+            return code.copied(first, keep);
+        }
         let mut ids = Vec::with_capacity(self.panes.len());
         let mut next = first;
         for pane in &self.panes {
@@ -843,14 +941,195 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
         self.next_id
     }
 
+    /// Opens `content` in the dock as [`Self::open`] does: the dock made
+    /// along the bottom if there is none, shown if hidden. The dock's
+    /// pane; `None` if the ids run out.
+    pub fn open_in_dock(&mut self, content: T, preview: bool) -> Option<PaneId> {
+        let id = if let Some(id) = self.dock() {
+            id
+        } else {
+            let id = PaneId(self.next_id);
+            self.next_id = self.next_id.checked_add(1)?;
+            self.dock = Some(Dock {
+                id,
+                hidden: Some(Pane {
+                    id,
+                    tabs: Vec::new(),
+                    active: 0,
+                    synced: false,
+                }),
+                size: DOCK_SIZE,
+            });
+            id
+        };
+        self.show_dock();
+        self.open(id, content, preview);
+        Some(id)
+    }
+
+    /// Shows the dock, if hidden, along the bottom at its share (the code
+    /// area's panes scaled to the rest). Returns whether a dock is shown.
+    pub fn show_dock(&mut self) -> bool {
+        let Some(dock) = self.dock.as_mut() else {
+            return false;
+        };
+        let Some(pane) = dock.hidden.take() else {
+            return true;
+        };
+        let size = dock.size.clamp(0.05, 0.95);
+        let id = pane.id;
+        self.panes.push(pane);
+        let code = std::mem::replace(&mut self.tree, Node::Pane(id));
+        self.tree = Node::Split {
+            axis: Axis::Column,
+            children: vec![code, Node::Pane(id)],
+            sizes: vec![1.0 - size, size],
+        };
+        normalize(&mut self.tree);
+        true
+    }
+
+    /// Hides the dock: its pane leaves the tree, kept with its tabs, its
+    /// share remembered; the focus, if on it, goes to the pane above.
+    /// Returns whether it was shown.
+    pub fn hide_dock(&mut self) -> bool {
+        let Some((pane, size)) = self.detach_dock() else {
+            return false;
+        };
+        if let Some(dock) = &mut self.dock {
+            dock.hidden = Some(pane);
+            dock.size = size;
+        }
+        true
+    }
+
+    /// The dock taken out, shown or hidden, for another of the window's
+    /// layouts ([`Self::put_dock`]) or to save; `None` without one.
+    pub fn take_dock(&mut self) -> Option<DockParts<T>> {
+        let shown = self.dock_shown();
+        let (pane, size) = if let Some(parts) = self.detach_dock() {
+            parts
+        } else {
+            let dock = self.dock.as_mut()?;
+            (dock.hidden.take()?, dock.size)
+        };
+        self.dock = None;
+        Some(DockParts { pane, shown, size })
+    }
+
+    /// Puts `parts` in as the dock (another of the window's layouts', or
+    /// as saved): its pane keeps its id unless a pane here has it (new
+    /// panes are numbered past it), its tabs get identities of this
+    /// layout's; into a dock already here its tabs are opened instead. A
+    /// dock without tabs is none. The dock's pane.
+    pub fn put_dock(&mut self, parts: DockParts<T>) -> Option<PaneId> {
+        let DockParts {
+            mut pane,
+            shown,
+            size,
+        } = parts;
+        if pane.tabs.is_empty() {
+            return self.dock();
+        }
+        if let Some(id) = self.dock() {
+            let active = pane.tabs.get(pane.active).map(|tab| tab.content.clone());
+            for tab in pane.tabs {
+                self.open(id, tab.content, tab.preview);
+            }
+            if let Some(content) = active
+                && let Some(dock) = self.pane_mut(id)
+                && let Some(index) = dock.tabs.iter().position(|tab| tab.content == content)
+            {
+                dock.active = index;
+            }
+            if shown {
+                self.show_dock();
+            }
+            return Some(id);
+        }
+        if self.every_pane().any(|other| other.id == pane.id) {
+            pane.id = PaneId(self.next_id);
+        }
+        self.next_id = self.next_id.max(pane.id.0.checked_add(1)?);
+        for tab in &mut pane.tabs {
+            tab.id = self.fresh_tab();
+        }
+        pane.active = pane.active.min(pane.tabs.len().saturating_sub(1));
+        let id = pane.id;
+        self.dock = Some(Dock {
+            id,
+            hidden: Some(pane),
+            size,
+        });
+        if shown {
+            self.show_dock();
+        }
+        Some(id)
+    }
+
+    /// The dock's pane out of the tree, if shown (the code area's panes
+    /// scaled to fill the height; the focus, if on it, to the pane above),
+    /// with its share; the dock itself is the caller's to keep or drop.
+    fn detach_dock(&mut self) -> Option<(Pane<T>, f32)> {
+        let id = self.dock().filter(|_| self.dock_shown())?;
+        let Node::Split {
+            axis: Axis::Column,
+            children,
+            sizes,
+        } = &mut self.tree
+        else {
+            return None;
+        };
+        if children.last() != Some(&Node::Pane(id)) {
+            return None;
+        }
+        children.pop();
+        let size = sizes.pop().unwrap_or(DOCK_SIZE);
+        let count = children.len();
+        fix_sizes(sizes, count);
+        normalize(&mut self.tree);
+        let index = self.panes.iter().position(|pane| pane.id == id)?;
+        let pane = self.panes.remove(index);
+        if self.focused == id
+            && let Some(above) = leaf(&self.tree, true)
+        {
+            self.focused = above;
+        }
+        Some((pane, size))
+    }
+
+    /// `f` done to the code area alone: the dock, if shown, out of the
+    /// tree meanwhile and back at its share after (the focus kept on it).
+    fn without_dock<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let on_dock = self.is_dock(self.focused);
+        let hidden = self.hide_dock();
+        let out = f(self);
+        if hidden {
+            self.show_dock();
+            if on_dock && let Some(dock) = self.dock() {
+                self.focused = dock;
+            }
+        }
+        out
+    }
+
     /// New panes are numbered from `from` at least (ids another layout of
     /// the window holds are not given again).
     pub fn reserve_panes(&mut self, from: u32) {
         self.next_id = self.next_id.max(from);
     }
 
-    /// Closes every pane without tabs unless it is the last.
+    /// Closes every pane without tabs unless it is the code area's last
+    /// (a dock without tabs, shown or hidden, goes).
     fn close_empty(&mut self) {
+        if self
+            .dock
+            .as_ref()
+            .and_then(|dock| dock.hidden.as_ref())
+            .is_some_and(|pane| pane.tabs.is_empty())
+        {
+            self.dock = None;
+        }
         let empty: Vec<PaneId> = self
             .panes
             .iter()
@@ -865,6 +1144,33 @@ impl<T: Clone + PartialEq + std::fmt::Debug> Layout<T> {
 
 /// Tolerance for comparing rectangle edges and measures.
 const EPSILON: f32 = 1e-4;
+
+/// `pane` with each tab's content mapped by `f` ([`Layout::map_tabs`]): a
+/// tab mapped to `None` dropped, an active one dropped leaving the tab on
+/// its left active (else the first).
+fn mapped_pane<T, U>(pane: &Pane<T>, f: &mut impl FnMut(&T) -> Option<U>) -> Pane<U> {
+    let mut tabs = Vec::with_capacity(pane.tabs.len());
+    let mut active = 0;
+    for (index, tab) in pane.tabs.iter().enumerate() {
+        let Some(content) = f(&tab.content) else {
+            continue;
+        };
+        if index <= pane.active {
+            active = tabs.len();
+        }
+        tabs.push(Tab {
+            content,
+            preview: tab.preview,
+            id: tab.id,
+        });
+    }
+    Pane {
+        id: pane.id,
+        tabs,
+        active,
+        synced: pane.synced,
+    }
+}
 
 /// How far a pane is from the focused one in a direction.
 #[derive(Debug)]
@@ -1243,6 +1549,136 @@ mod tests {
 
     fn ids(layout: &Layout<&'static str>) -> Vec<u32> {
         layout.panes().map(|pane| pane.id.0).collect()
+    }
+
+    /// The dock opens along the bottom under the whole code area, hides
+    /// without closing (its tabs kept and closable, the code's shares as
+    /// they were, the focus on the pane above) and shows again as high.
+    #[test]
+    fn the_dock_spans_the_bottom_and_hides_without_closing() {
+        let mut layout = three();
+        let dock = layout.open_in_dock("console", false).unwrap();
+        assert_eq!(dock, PaneId(3));
+        assert!(layout.dock_shown());
+        let r = rect_of(&layout, dock);
+        assert!(close(r.x, 0.0) && close(r.w, 1.0), "{r:?}");
+        assert!(close(r.h, DOCK_SIZE) && close(r.y + r.h, 1.0), "{r:?}");
+        assert!(close(rect_of(&layout, PaneId(0)).h, 1.0 - DOCK_SIZE));
+        layout.open_in_dock("terminal", false);
+        assert_eq!(
+            contents(&layout, dock),
+            vec![("console", false), ("terminal", false)]
+        );
+        assert_eq!(layout.code_panes().count(), 3);
+
+        assert!(layout.focus(dock));
+        assert!(layout.hide_dock());
+        assert!(!layout.dock_shown());
+        assert_eq!(layout.focused(), PaneId(2));
+        assert_eq!(ids(&layout), vec![0, 1, 2]);
+        assert_eq!(shape(layout.tree()), row(vec![p(0), col(vec![p(1), p(2)])]));
+        assert!(all_close(&sizes(&layout, &[]), &[0.5, 0.5]));
+        assert!(!layout.focus(dock));
+        assert_eq!(layout.every_pane().count(), 4);
+        assert!(layout.close_tab(dock, 1));
+        assert_eq!(contents(&layout, dock), vec![("console", false)]);
+
+        assert!(layout.show_dock());
+        assert!(close(rect_of(&layout, dock).h, DOCK_SIZE));
+        assert!(close(rect_of(&layout, PaneId(1)).w, 0.5));
+    }
+
+    /// The dock does not split, takes a tab dropped on its edge, keeps its
+    /// height as code panes close, and goes with its last tab; the code
+    /// area keeps its last pane and that pane's only tab.
+    #[test]
+    fn the_dock_keeps_to_itself_and_the_code_area_keeps_a_pane() {
+        let mut layout = Layout::new("code");
+        let dock = layout.open_in_dock("xrefs", false).unwrap();
+        assert_eq!(layout.split(dock, Axis::Row, "x"), None);
+        let code = layout.active_tab(PaneId(0)).unwrap();
+        assert_eq!(
+            layout.move_tab(code, TabDrop::Into { pane: dock, at: 0 }),
+            None
+        );
+        assert!(!layout.close_pane(PaneId(0)));
+
+        let below = layout.split(PaneId(0), Axis::Column, "c").unwrap();
+        assert_eq!(shape(layout.tree()), col(vec![p(0), p(below.0), p(dock.0)]));
+        let c = layout.active_tab(below).unwrap();
+        let edge = TabDrop::Edge {
+            pane: dock,
+            side: Direction::Right,
+        };
+        assert_eq!(layout.move_tab(c, edge), Some(dock));
+        assert_eq!(
+            contents(&layout, dock),
+            vec![("xrefs", false), ("c", false)]
+        );
+        assert_eq!(ids(&layout), vec![0, dock.0]);
+
+        let height = rect_of(&layout, dock).h;
+        let d = layout.split(PaneId(0), Axis::Column, "d").unwrap();
+        assert!(close(rect_of(&layout, dock).h, height));
+        assert!(layout.focus(dock));
+        assert!(layout.close_pane(d));
+        assert!(close(rect_of(&layout, dock).h, height));
+        assert_eq!(layout.focused(), dock);
+
+        assert!(layout.close_tab(dock, 0));
+        assert!(layout.close_tab(dock, 0));
+        assert_eq!(layout.dock(), None);
+        assert_eq!(ids(&layout), vec![0]);
+        assert_eq!(layout.focused(), PaneId(0));
+    }
+
+    /// A window's dock moves between its tabs' layouts with its pane's id
+    /// (taking another where a pane has it), its tabs numbered afresh;
+    /// copies leave it out; mapping carries it, hidden or not, and drops
+    /// it emptied.
+    #[test]
+    fn the_dock_moves_between_layouts_and_copies_leave_it_out() {
+        let mut first = three();
+        let dock = first.open_in_dock("console", false).unwrap();
+        first.open_in_dock("xrefs", true);
+        first.hide_dock();
+        let (copy, _) = first.copied(10, |_| true).unwrap();
+        assert_eq!(copy.dock(), None);
+        assert_eq!(copy.every_pane().count(), 3);
+
+        let parts = first.take_dock().unwrap();
+        assert!(!parts.shown);
+        assert_eq!(first.dock(), None);
+        let mut second = Layout::new("code");
+        second.reserve_panes(first.next_pane());
+        assert_eq!(second.put_dock(parts), Some(dock));
+        assert!(!second.dock_shown());
+        assert!(second.next_pane() > dock.0);
+        assert_eq!(
+            contents(&second, dock),
+            vec![("console", false), ("xrefs", true)]
+        );
+        let mapped = second.map_tabs(|t| (*t != "xrefs").then_some(*t));
+        assert_eq!(contents(&mapped, dock), vec![("console", false)]);
+        assert_eq!(
+            second.map_tabs(|t| (*t == "code").then_some(*t)).dock(),
+            None
+        );
+
+        let mut third = Layout::new("code");
+        let parts = DockParts {
+            pane: Pane {
+                id: PaneId(0),
+                tabs: vec![Tab::new("console", false)],
+                active: 0,
+                synced: false,
+            },
+            shown: true,
+            size: 0.25,
+        };
+        let id = third.put_dock(parts).unwrap();
+        assert_ne!(id, PaneId(0));
+        assert!(close(rect_of(&third, id).h, 0.25));
     }
 
     fn contents(layout: &Layout<&'static str>, id: PaneId) -> Vec<(&'static str, bool)> {

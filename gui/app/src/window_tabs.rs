@@ -12,7 +12,8 @@
 //! place first), and one is always a place.
 //!
 //! The tab shown is the workspace's own layout, panes, places and trails;
-//! the others wait parked, swapped in when switched to.
+//! the others wait parked, swapped in when switched to. The bottom dock is
+//! the window's: it moves to the tab shown, its pane's state with it.
 
 use std::collections::HashMap;
 
@@ -60,7 +61,7 @@ impl Default for WindowTabs {
 /// What a window tab of `layout` shows instead of a place (the settings,
 /// a struct, the console, a terminal): a lone pane holding only it.
 fn tool_of(layout: &Layout<TabKind>) -> Option<&TabKind> {
-    let mut panes = layout.panes();
+    let mut panes = layout.code_panes();
     let pane = panes.next()?;
     if panes.next().is_some() || pane.tabs.len() != 1 {
         return None;
@@ -74,16 +75,35 @@ fn tool_of(layout: &Layout<TabKind>) -> Option<&TabKind> {
 }
 
 impl Workspace {
-    /// Shows `incoming`; what was shown, parked.
+    /// Shows `incoming`; what was shown, parked. The bottom dock moves to
+    /// `incoming`, its pane's state (and its being maximized) with it.
     fn swap_in(&mut self, incoming: Parked) -> Parked {
-        Parked {
+        let dock = self.layout.take_dock();
+        let dock_id = dock.as_ref().map(|parts| parts.pane.id);
+        let state = dock_id.and_then(|id| self.panes.remove(&id));
+        let maximized = dock_id.is_some() && self.maximized == dock_id;
+        let mut outgoing = Parked {
             layout: std::mem::replace(&mut self.layout, incoming.layout),
             panes: std::mem::replace(&mut self.panes, incoming.panes),
             places: std::mem::replace(&mut self.places, incoming.places),
             trails: std::mem::replace(&mut self.trails, incoming.trails),
             shared: std::mem::replace(&mut self.shared, incoming.shared),
             maximized: std::mem::replace(&mut self.maximized, incoming.maximized),
+        };
+        if maximized {
+            outgoing.maximized = None;
         }
+        if let Some(dock) = dock
+            && let Some(id) = self.layout.put_dock(dock)
+        {
+            if let Some(state) = state {
+                self.panes.insert(id, state);
+            }
+            if maximized {
+                self.maximized = Some(id);
+            }
+        }
+        outgoing
     }
 
     /// The first pane id no tab of the window has given.
@@ -151,11 +171,12 @@ impl Workspace {
         self.window_tabs.active
     }
 
-    /// Whether a window tab, shown or not, has a tab of `kind`.
+    /// Whether a window tab, shown or not, has a tab of `kind` (the bottom
+    /// dock's, hidden or not, among them).
     pub fn has_tab(&self, kind: &TabKind) -> bool {
         let has = |layout: &Layout<TabKind>| {
             layout
-                .panes()
+                .every_pane()
                 .any(|p| p.tabs.iter().any(|t| &t.content == kind))
         };
         has(&self.layout)

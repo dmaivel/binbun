@@ -2386,6 +2386,7 @@ impl Workspace {
             left_sidebar: self.left_sidebar,
             right_sidebar: self.right_sidebar,
             console: self.console_shown(),
+            bottom_dock: self.layout.dock_shown(),
             feature_map: self.settings.feature_map != FeatureMap::Off,
             feature_map_top: self.settings.feature_map == FeatureMap::Top,
             folder: self.folder_key().is_some(),
@@ -2684,6 +2685,7 @@ impl Workspace {
             }
             Command::ToggleRightSidebar => self.right_sidebar = !self.right_sidebar,
             Command::ToggleConsole => self.toggle_console(window, cx),
+            Command::ToggleBottomDock => self.toggle_bottom_dock(window, cx),
             Command::NewTerminal => self.new_terminal(window, cx),
             Command::NewAgent => self.new_agent(window, cx),
             Command::ToggleFeatureMap => self.toggle_feature_map(window, cx),
@@ -2764,13 +2766,14 @@ impl Workspace {
             Command::CloseTab => {
                 // A pane of code (its one tab, a view) or the settings: the
                 // strip's tab closes; the last tab of a place stays (Close
-                // Pane closes a pane). A pane below the code: its tab closes
-                // (the console's only hides it).
+                // Pane closes a pane). The bottom dock or a pane of lists:
+                // its tab closes (the console's only hides it).
                 let index = self.window_tabs_active();
-                let code = self.layout.pane(id).is_some_and(|p| {
-                    !p.tabs.iter().any(|t| crate::tabs::is_below_code(&t.content))
-                });
-                if self.shows_tool() || code {
+                let code = !self.layout.is_dock(id)
+                    && self.layout.pane(id).is_some_and(|p| {
+                        !p.tabs.iter().any(|t| crate::tabs::is_below_code(&t.content))
+                    });
+                if (self.shows_tool() && !self.layout.is_dock(id)) || code {
                     if self.can_close_window_tab(index) {
                         self.close_window_tab(index, window, cx);
                     }
@@ -2792,10 +2795,13 @@ impl Workspace {
                 self.after_layout(window, cx);
             }
             Command::NextTab | Command::PreviousTab => {
-                // A pane of code: the strip's tabs; one below it: its own.
-                if self.layout.pane(id).is_some_and(|p| {
-                    !p.tabs.iter().any(|t| crate::tabs::is_below_code(&t.content))
-                }) {
+                // A pane of code: the strip's tabs; the bottom dock or a
+                // pane of lists: its own.
+                if !self.layout.is_dock(id)
+                    && self.layout.pane(id).is_some_and(|p| {
+                        !p.tabs.iter().any(|t| crate::tabs::is_below_code(&t.content))
+                    })
+                {
                     self.cycle_window_tab(command == Command::NextTab, window, cx);
                 } else {
                     self.layout.cycle(id, command == Command::NextTab);
@@ -2865,14 +2871,21 @@ impl Workspace {
     }
 
     pub(crate) fn after_layout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let live: Vec<PaneId> = self.layout.panes().map(|p| p.id).collect();
-        self.panes.retain(|id, _| live.contains(id));
-        if self.maximized.is_some_and(|m| !live.contains(&m)) || live.len() < 2 {
-            self.maximized = None;
-        }
+        self.forget_closed_panes();
         let focused = self.layout.focused();
         self.focus_pane(focused, window, cx);
         self.ensure_documents();
+    }
+
+    /// Forgets the state of the panes the layout no longer has (a hidden
+    /// bottom dock's is kept), and a maximized pane no longer on screen
+    /// (or alone there).
+    pub(crate) fn forget_closed_panes(&mut self) {
+        let live: Vec<PaneId> = self.layout.every_pane().map(|p| p.id).collect();
+        self.panes.retain(|id, _| live.contains(id));
+        if self.maximized.is_some_and(|m| !self.layout.shows(m)) || self.layout.len() < 2 {
+            self.maximized = None;
+        }
     }
 
     /// Opens `kind` in pane `id` (pinned; a list as [`Workspace::open_below`]
@@ -2889,7 +2902,7 @@ impl Workspace {
         let id = if settings {
             self.open_tool_tab(kind, cx)
         } else if crate::tabs::is_below_code(&kind) {
-            self.open_below(id, kind, false, cx)
+            self.open_below(kind, false, cx)
         } else {
             self.layout.open(id, kind, false);
             id

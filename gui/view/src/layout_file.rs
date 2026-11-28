@@ -5,8 +5,11 @@
 //! the strings, the cross-references to an address, the console), the
 //! active tab of each pane and the focused pane, the map's and the right
 //! dock's widths, and each hex pane's side area share under its bytes.
-//! A file written while the console was a dock under the panes
-//! (`console = true`) has it as a tab under the code.
+//! The bottom dock is `[bottom]` (its pane's id and tabs, whether it is
+//! shown, its share of the height), or `bottom = false` without one; a
+//! file written before it (no `bottom`) has the tabs of its panes of lists
+//! and shells alone moved into it, and the console of one older still
+//! (`console = true`, a dock of its own).
 //! A tab of code also keeps its place (its cursor's address) and whether
 //! it was a graph. A file of another format (written before panes were
 //! views, [`FORMAT`]) is not read: the window opens as it does the first
@@ -33,7 +36,7 @@ use crate::crash_safe;
 use crate::graph_memory::Pan;
 use crate::hex::Anchor;
 use crate::hex_tree::Step;
-use crate::layout::{Axis, Layout, Node, Pane, PaneId, Tab, TabId};
+use crate::layout::{Axis, DOCK_SIZE, DockParts, Layout, Node, Pane, PaneId, Tab, TabId};
 use crate::unified::{Expanded, Fold, Layers, UnifiedView};
 
 /// The format this module writes and reads (`format = 2`): panes as views.
@@ -134,12 +137,20 @@ impl SavedLayout {
         if let Some(dock) = self.dock_width {
             doc.insert("dock", toml_edit::value(rounded(dock)));
         }
-        write_split(&mut doc, &self.layout, &self.hex_sides, &self.places);
+        // The bottom dock apart from the split it is shown under.
+        let mut shown = self.layout.clone();
+        match shown.take_dock() {
+            Some(bottom) => doc.insert("bottom", Item::Table(dock_table(&bottom))),
+            None => doc.insert("bottom", toml_edit::value(false)),
+        };
+        write_split(&mut doc, &shown, &self.hex_sides, &self.places);
         if !self.others.is_empty() {
             let mut others = ArrayOfTables::new();
             for other in &self.others {
                 let mut table = Table::new();
-                write_split(&mut table, &other.layout, &other.hex_sides, &other.places);
+                let mut layout = other.layout.clone();
+                layout.take_dock();
+                write_split(&mut table, &layout, &other.hex_sides, &other.places);
                 others.push(table);
             }
             doc.insert("other", Item::ArrayOfTables(others));
@@ -157,16 +168,21 @@ impl SavedLayout {
     pub fn from_toml(text: &str) -> Result<Self, String> {
         let doc: DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
         let mut shown = read_split(doc.as_table())?;
-        if doc.get("console").and_then(Item::as_bool) == Some(true) {
-            console_from_dock(&mut shown.layout);
-        }
-        let others: Vec<SavedSplit> = doc
+        let mut others: Vec<SavedSplit> = doc
             .get("other")
             .and_then(Item::as_array_of_tables)
             .into_iter()
             .flat_map(ArrayOfTables::iter)
             .filter_map(|table| read_split(table).ok())
             .collect();
+        if let Some(item) = doc.get("bottom") {
+            if let Some(bottom) = item.as_table().and_then(read_dock) {
+                shown.layout.put_dock(bottom);
+            }
+        } else {
+            let console = doc.get("console").and_then(Item::as_bool) == Some(true);
+            dock_from_panes(&mut shown.layout, &mut others, console);
+        }
         #[expect(clippy::cast_possible_truncation, reason = "a width in pixels")]
         let width = |key: &str| {
             doc.get(key)
@@ -264,36 +280,100 @@ fn write_split(
     table.insert("pane", Item::ArrayOfTables(panes));
 }
 
-/// The console of a file written while it was a dock under the panes, as
-/// a tab under the code: in the pane of lists if there is one, else in a
-/// new pane under the focused one; the focus kept.
-fn console_from_dock(layout: &mut Layout<SavedTab>) {
-    if layout
-        .panes()
-        .any(|p| p.tabs.iter().any(|t| t.content == SavedTab::Console))
-    {
-        return;
-    }
-    let focused = layout.focused();
-    let lists = layout
-        .panes()
-        .find(|p| {
-            !p.tabs.is_empty()
-                && p.tabs.iter().all(|t| {
-                    matches!(
-                        t.content,
-                        SavedTab::Strings | SavedTab::Xrefs { .. } | SavedTab::Folder(_)
-                    )
-                })
-        })
-        .map(|p| p.id);
-    match lists {
-        Some(pane) => layout.open(pane, SavedTab::Console, false),
-        None => {
-            layout.split(focused, Axis::Column, SavedTab::Console);
+/// The bottom dock as written: its pane's id, active tab and tabs,
+/// whether it is shown, its share of the height.
+fn dock_table(bottom: &DockParts<SavedTab>) -> Table {
+    let mut table = Table::new();
+    table.insert("id", toml_edit::value(i64::from(bottom.pane.id.0)));
+    table.insert("shown", toml_edit::value(bottom.shown));
+    table.insert("size", toml_edit::value(rounded(bottom.size)));
+    table.insert("active", toml_edit::value(index(bottom.pane.active)));
+    let tabs: Array = bottom.pane.tabs.iter().map(tab_value).collect();
+    table.insert("tabs", Item::Value(Value::Array(tabs)));
+    table
+}
+
+/// The bottom dock read back; `None` without a pane id (its tabs that do
+/// not read skipped, a share that is not one the default's).
+fn read_dock(table: &Table) -> Option<DockParts<SavedTab>> {
+    let id = table
+        .get("id")
+        .and_then(Item::as_integer)
+        .and_then(|id| u32::try_from(id).ok())
+        .map(PaneId)?;
+    let tabs = table
+        .get("tabs")
+        .and_then(Item::as_array)
+        .into_iter()
+        .flat_map(Array::iter)
+        .filter_map(|value| value.as_inline_table().and_then(read_tab))
+        .collect();
+    #[expect(clippy::cast_possible_truncation, reason = "a share of one")]
+    let size = table
+        .get("size")
+        .and_then(Item::as_float)
+        .map(|share| share as f32)
+        .filter(|share| share.is_finite() && *share > 0.0 && *share < 1.0)
+        .unwrap_or(DOCK_SIZE);
+    Some(DockParts {
+        pane: Pane {
+            id,
+            tabs,
+            active: table
+                .get("active")
+                .and_then(Item::as_integer)
+                .and_then(|a| usize::try_from(a).ok())
+                .unwrap_or(0),
+            synced: false,
+        },
+        shown: table.get("shown").and_then(Item::as_bool).unwrap_or(true),
+        size,
+    })
+}
+
+/// A file written before the bottom dock: the tabs of each window tab's
+/// panes of lists and shells alone (but a window tab of them alone) moved
+/// into the shown one's dock, their panes closed; with `console` (a file
+/// older still, the console a dock of its own) the console there too, if
+/// no pane has it.
+fn dock_from_panes(shown: &mut Layout<SavedTab>, others: &mut [SavedSplit], console: bool) {
+    let below = |tab: &SavedTab| {
+        matches!(
+            tab,
+            SavedTab::Strings
+                | SavedTab::Xrefs { .. }
+                | SavedTab::Folder(_)
+                | SavedTab::Console
+                | SavedTab::Terminal
+        )
+    };
+    let mut moved = Vec::new();
+    let mut has_console = false;
+    for layout in std::iter::once(&mut *shown).chain(others.iter_mut().map(|s| &mut s.layout)) {
+        has_console |= layout
+            .panes()
+            .any(|p| p.tabs.iter().any(|t| t.content == SavedTab::Console));
+        let lists: Vec<PaneId> = layout
+            .panes()
+            .filter(|p| !p.tabs.is_empty() && p.tabs.iter().all(|t| below(&t.content)))
+            .map(|p| p.id)
+            .collect();
+        if lists.len() == layout.panes().count() {
+            continue;
+        }
+        for id in lists {
+            if let Some(pane) = layout.pane(id) {
+                moved.extend(pane.tabs.iter().map(|t| t.content.clone()));
+            }
+            layout.close_pane(id);
         }
     }
-    layout.focus(focused);
+    if console && !has_console {
+        moved.push(SavedTab::Console);
+    }
+    for tab in moved {
+        shown.open_in_dock(tab, false);
+    }
 }
 
 /// A window tab's split read from `table` (the file's top level, or an
@@ -971,6 +1051,7 @@ mod tests {
         let text = r#"
 focused = 9
 sidebar = 240.0
+bottom = false
 tree = { split = "row", sizes = [1.0, 1.0], children = [{ pane = 0 }, { pane = 1 }] }
 
 [[pane]]
@@ -1236,12 +1317,12 @@ tabs = [{ kind = "xrefs", of = "0x10" }, { kind = "strings", preview = true }]
         assert_eq!(tabs(&read.layout, 0), vec![(SavedTab::Listing, false)]);
     }
 
-    /// A file written while the console was a dock under the panes
-    /// (`console = true`) has it as a tab under the code: in a new pane
-    /// under the focused one, else in the pane of lists; the focus stays,
-    /// and the file written again has no dock.
+    /// A file written before the bottom dock has its console (a dock of
+    /// its own, `console = true`) and the tabs of its panes of lists alone
+    /// in the dock, those panes closed; the focus stays, and the file
+    /// written again has the dock as `[bottom]`, no `console`.
     #[test]
-    fn a_docked_console_comes_back_as_a_tab_under_the_code() {
+    fn a_file_from_before_the_dock_has_its_console_and_lists_there() {
         let alone = r#"
 format = 2
 focused = 0
@@ -1255,23 +1336,20 @@ id = 0
 tabs = [{ kind = "listing" }]
 "#;
         let saved = SavedLayout::from_toml(alone).unwrap();
-        let ids: Vec<u32> = saved.layout.panes().map(|p| p.id.0).collect();
-        assert_eq!(ids.len(), 2, "{ids:?}");
+        let dock = saved.layout.dock().unwrap();
+        assert!(saved.layout.dock_shown());
         assert_eq!(
-            tabs(&saved.layout, ids[1]),
+            tabs(&saved.layout, dock.0),
             vec![(SavedTab::Console, false)]
         );
-        assert!(matches!(
-            saved.layout.tree(),
-            Node::Split {
-                axis: Axis::Column,
-                ..
-            }
-        ));
+        assert_eq!(saved.layout.code_panes().count(), 1);
         assert_eq!(saved.layout.focused(), PaneId(0));
         let again = saved.to_toml();
         assert!(!again.contains("console =") && !again.contains("console_height"));
-        assert!(again.contains("kind = \"console\""), "{again}");
+        assert!(
+            again.contains("[bottom]") && again.contains("kind = \"console\""),
+            "{again}"
+        );
 
         let lists = r#"
 format = 2
@@ -1289,11 +1367,48 @@ id = 1
 tabs = [{ kind = "strings" }]
 "#;
         let saved = SavedLayout::from_toml(lists).unwrap();
-        assert_eq!(saved.layout.panes().count(), 2);
+        let dock = saved.layout.dock().unwrap();
+        assert_eq!(saved.layout.code_panes().count(), 1);
         assert_eq!(
-            tabs(&saved.layout, 1),
+            tabs(&saved.layout, dock.0),
             vec![(SavedTab::Strings, false), (SavedTab::Console, false)]
         );
         assert_eq!(saved.layout.focused(), PaneId(0));
+
+        // Written with the dock gone: no dock again, a pane of lists stays.
+        let none = lists.replace("console = true", "bottom = false");
+        let saved = SavedLayout::from_toml(&none).unwrap();
+        assert_eq!(saved.layout.dock(), None);
+        assert_eq!(tabs(&saved.layout, 1), vec![(SavedTab::Strings, false)]);
+    }
+
+    /// The bottom dock round-trips, shown or hidden, its pane's id, tabs,
+    /// active one and share of the height kept; the split it is shown
+    /// under is written without it.
+    #[test]
+    fn the_bottom_dock_round_trips_shown_or_hidden() {
+        let mut before = saved();
+        let dock = before
+            .layout
+            .open_in_dock(SavedTab::Folder("f:1".to_owned()), false)
+            .unwrap();
+        before.layout.open_in_dock(SavedTab::Terminal, false);
+        before.layout.activate(dock, 0);
+        for hidden in [false, true] {
+            if hidden {
+                before.layout.hide_dock();
+            }
+            let text = before.to_toml();
+            assert!(text.contains("[bottom]"), "{text}");
+            let after = SavedLayout::from_toml(&text).unwrap();
+            assert_eq!(after.layout.dock(), Some(dock));
+            assert_eq!(after.layout.dock_shown(), !hidden);
+            assert_eq!(tabs(&after.layout, dock.0), tabs(&before.layout, dock.0));
+            assert_eq!(after.layout.pane(dock).unwrap().active, 0);
+            for id in 0..3 {
+                assert_eq!(tabs(&after.layout, id), tabs(&before.layout, id));
+            }
+            assert_eq!(after.to_toml(), text);
+        }
     }
 }

@@ -206,7 +206,7 @@ impl Workspace {
             let i = functions.binary_search_by_key(&entry, |&(e, _)| e).ok()?;
             functions.get(i).map(|&(_, id)| id)
         };
-        let layout = split.layout.map_tabs(|tab| match tab {
+        let mut layout = split.layout.map_tabs(|tab| match tab {
             SavedTab::Listing => Some(TabKind::Listing),
             SavedTab::C { entry, view } => Some(TabKind::C {
                 function: match entry {
@@ -223,6 +223,10 @@ impl Workspace {
         });
         if !layout.panes().any(|p| !p.tabs.is_empty()) {
             return false;
+        }
+        // The window's bottom dock stays (one restored takes its tabs).
+        if let Some(dock) = self.layout.take_dock() {
+            layout.put_dock(dock);
         }
         self.layout = layout;
         // Its tabs are numbered afresh (as saved: their places are by
@@ -248,8 +252,8 @@ impl Workspace {
             }
         }
         self.maximized = None;
-        let live: Vec<PaneId> = self.layout.panes().map(|p| p.id).collect();
-        self.panes.retain(|id, _| live.contains(id));
+        self.forget_closed_panes();
+        let live: Vec<PaneId> = self.layout.every_pane().map(|p| p.id).collect();
         for id in live {
             self.ensure_pane(id, cx);
             // The active tab in the view it was left in.

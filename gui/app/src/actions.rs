@@ -99,6 +99,7 @@ command_actions!(
     ToggleLeftSidebar,
     ToggleRightSidebar,
     ToggleConsole,
+    ToggleBottomDock,
     NewTerminal,
     NewAgent,
     ToggleFeatureMap,

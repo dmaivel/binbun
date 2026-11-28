@@ -1,10 +1,10 @@
-//! The console (Ctrl+backtick, View › Console): a tab of a pane, under
-//! the code unless moved (dragged as any tab), running the user's Python
+//! The console (Ctrl+backtick, View › Console): a tab of the bottom dock
+//! unless moved (dragged as any tab), running the user's Python
 //! ([`binbun_gui_view::console`]) connected to this window's database.
 //! One for the window: it keeps running while its tab is closed, moved or
-//! in another window tab; Ctrl+backtick hides it where it is shown, else
-//! brings it under the code of the window tab shown, from wherever it was
-//! (a terminal instead, if one was used since: `terminal_view`).
+//! in another window tab, or the dock is hidden; Ctrl+backtick shows the
+//! dock with it or hides the dock (shows or hides it where it was dragged,
+//! in the code), a terminal instead if one was used since (`terminal_view`).
 //! Its transcript above (the cells run, coloured; output as it comes;
 //! values; tracebacks; the undo step each cell made), only its visible
 //! lines drawn; the input below: Python coloured, Enter runs the cell
@@ -164,19 +164,55 @@ fn completable(code: &str, at: usize) -> bool {
 }
 
 impl Workspace {
-    /// Ctrl+backtick: [`Workspace::show_shell`] toggling the console or
-    /// the terminal used last.
+    /// Ctrl+backtick and the console button: the bottom dock hidden if it
+    /// shows the console or the terminal used last
+    /// ([`Workspace::shell_kind`]), else shown with it (opened there if no
+    /// pane has it); one dragged out of the dock into the code shown or
+    /// hidden there ([`Workspace::show_shell`]).
     pub fn toggle_console(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let kind = self.shell_kind();
-        self.show_shell(kind, true, window, cx);
+        if let Some((pane, ..)) = self.place_of(&kind)
+            && !self.layout.is_dock(pane)
+        {
+            self.show_shell(kind, true, window, cx);
+            return;
+        }
+        let shows = self.layout.dock_shown()
+            && self.layout.dock().and_then(|dock| self.layout.active(dock)) == Some(&kind);
+        if shows {
+            self.layout.hide_dock();
+            self.after_layout(window, cx);
+        } else {
+            self.show_shell(kind, false, window, cx);
+        }
+        cx.notify();
+    }
+
+    /// Bottom Dock (and the dock's hide button): the bottom dock shown or
+    /// hidden as it is; with none, the console (or the terminal used last)
+    /// opened there.
+    pub fn toggle_bottom_dock(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.layout.dock_shown() {
+            self.layout.hide_dock();
+            self.after_layout(window, cx);
+        } else if let Some(dock) = self.layout.dock() {
+            self.layout.show_dock();
+            self.ensure_pane(dock, cx);
+            self.focus_pane(dock, window, cx);
+        } else {
+            let kind = self.shell_kind();
+            self.show_shell(kind, false, window, cx);
+        }
+        cx.notify();
     }
 
     /// `kind`, the console or a terminal, shown and its input focused
     /// (started if it is not): its tab brought forward where this window
-    /// tab has it, else opened under the code ([`Workspace::open_below`]),
-    /// taken from the window tab that had it. Hidden instead where the
-    /// window tab shown shows it, if `toggle` (its tab closed: it keeps
-    /// running; the focus back on a pane).
+    /// tab has it (the bottom dock shown if it is there), else opened in the
+    /// dock ([`Workspace::open_below`]), taken from the window tab that had
+    /// it. Hidden instead where the window tab shown shows it in a pane of
+    /// the code, if `toggle` (its tab closed: it keeps running; the focus
+    /// back on a pane).
     pub fn show_shell(
         &mut self,
         kind: TabKind,
@@ -191,26 +227,33 @@ impl Workspace {
                 self.after_layout(window, cx);
             }
             Some((pane, index, _)) => {
+                if self.layout.is_dock(pane) {
+                    self.layout.show_dock();
+                }
                 self.layout.activate(pane, index);
                 self.focus_pane(pane, window, cx);
             }
             None => {
                 self.take_parked(&kind);
                 self.hide_terminal(&kind, false);
-                let from = self.layout.focused();
-                let id = self.open_below(from, kind, false, cx);
+                let id = self.open_below(kind, false, cx);
                 self.focus_pane(id, window, cx);
             }
         }
         cx.notify();
     }
 
-    /// The tab of `kind` in the window tab shown: its pane, its index
-    /// there, and whether it is the tab the pane shows.
+    /// The tab of `kind` in the window tab shown (the bottom dock's,
+    /// hidden or not, among them): its pane, its index there, and whether
+    /// it is shown (the tab its pane shows, on screen).
     pub fn place_of(&self, kind: &TabKind) -> Option<(PaneId, usize, bool)> {
-        self.layout.panes().find_map(|pane| {
+        self.layout.every_pane().find_map(|pane| {
             let index = pane.tabs.iter().position(|t| &t.content == kind)?;
-            Some((pane.id, index, pane.active == index))
+            Some((
+                pane.id,
+                index,
+                pane.active == index && self.layout.shows(pane.id),
+            ))
         })
     }
 

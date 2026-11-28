@@ -742,7 +742,7 @@ impl Workspace {
     fn open_results(&mut self, kind: ResultsKind, window: &mut Window, cx: &mut Context<Self>) {
         let id = self.layout.focused();
         // One tab per kind: an open one is brought back.
-        let open = self.layout.panes().find_map(|p| {
+        let open = self.layout.every_pane().find_map(|p| {
             p.tabs.iter().enumerate().find_map(|(i, t)| {
                 if let TabKind::Found(n) = &t.content
                     && self.search.tabs.get(n).is_some_and(|r| r.kind == kind)
@@ -760,6 +760,9 @@ impl Workspace {
             && self.shows_hex(id);
         let initial = self.results_initial(kind);
         if let Some((pane, i, n)) = open {
+            if self.layout.is_dock(pane) {
+                self.layout.show_dock();
+            }
             self.layout.activate(pane, i);
             self.layout.focus(pane);
             if let Some(tab) = self.search.tabs.get_mut(&n) {
@@ -828,7 +831,7 @@ impl Workspace {
                 _sub: sub,
             },
         );
-        let id = self.open_below(id, TabKind::Found(n), false, cx);
+        let id = self.open_below(TabKind::Found(n), false, cx);
         if kind == ResultsKind::Bookmarks {
             self.focus_pane(id, window, cx);
         }

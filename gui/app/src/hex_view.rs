@@ -2460,7 +2460,6 @@ impl Workspace {
                         cx.listener(move |this, e: &MouseDownEvent, window, cx| {
                             if e.click_count == 2 {
                                 this.open_xrefs_to(
-                                    id,
                                     bytes.start,
                                     bytes.end - bytes.start,
                                     window,
@@ -2580,19 +2579,13 @@ impl Workspace {
         Some(if command == Command::SetType {
             self.open_global_type(id, &key, window, cx)
         } else {
-            self.tree_xrefs(id, &key, window, cx)
+            self.tree_xrefs(&key, window, cx)
         })
     }
 
-    /// Lists in pane `id` the references into the bytes of row `key` of a
-    /// whole program global; whether it is one that has references.
-    fn tree_xrefs(
-        &mut self,
-        id: PaneId,
-        key: &Key,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
+    /// Lists in the bottom dock the references into the bytes of row `key`
+    /// of a whole program global; whether it is one that has references.
+    fn tree_xrefs(&mut self, key: &Key, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let Some(bytes) = hex_globals::row_bytes(&self.hex.overlays, key) else {
             return false;
         };
@@ -2603,7 +2596,7 @@ impl Workspace {
             .filter(|_| self.stage >= Stage::Referenced)
             .is_some_and(|db| !db.references().within(bytes.clone()).is_empty());
         if referred {
-            self.open_xrefs_to(id, bytes.start, bytes.end - bytes.start, window, cx);
+            self.open_xrefs_to(bytes.start, bytes.end - bytes.start, window, cx);
         }
         referred
     }
@@ -2721,13 +2714,13 @@ impl Workspace {
                     return true;
                 };
                 let leaf = lines.iter().any(|l| l.key == key && !l.expandable);
-                if !(leaf && self.tree_xrefs(id, &key, window, cx)) {
+                if !(leaf && self.tree_xrefs(&key, window, cx)) {
                     self.tree_toggle(id, &key);
                 }
                 return true;
             }
             "x" => {
-                return selected.is_some_and(|key| self.tree_xrefs(id, &key, window, cx));
+                return selected.is_some_and(|key| self.tree_xrefs(&key, window, cx));
             }
             "y" => {
                 return selected.is_some_and(|key| self.open_global_type(id, &key, window, cx));

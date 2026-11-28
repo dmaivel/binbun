@@ -129,11 +129,15 @@ pub enum Command {
     ToggleLeftSidebar,
     /// Shows or hides the right sidebar.
     ToggleRightSidebar,
-    /// Hides the Python console or the terminal used last where it is
-    /// shown, else brings it under the code of the window tab shown.
+    /// Shows the bottom dock with the Python console or the terminal used
+    /// last, or hides the dock when it shows that (one dragged into the
+    /// code: shown or hidden there).
     ToggleConsole,
-    /// Opens a terminal under the code: the user's shell, in the binary's
-    /// folder.
+    /// Shows or hides the bottom dock as it is (the console, terminals,
+    /// agents and lists open there); with none, opens the console there.
+    ToggleBottomDock,
+    /// Opens a terminal in the bottom dock: the user's shell, in the
+    /// binary's folder.
     NewTerminal,
     /// Starts the coding agent the robot in the status bar starts (the
     /// one started last; asked the first time) where a terminal opens.
@@ -1173,6 +1177,14 @@ pub const COMMANDS: &[Info] = &[
         "window.new_agent",
         "New Agent",
         Some(M::Window),
+        &[],
+        Window,
+    ),
+    info(
+        C::ToggleBottomDock,
+        "view.bottom_dock",
+        "Bottom Dock",
+        None,
         &[],
         Window,
     ),
@@ -2252,6 +2264,8 @@ pub struct Facts {
     pub right_sidebar: bool,
     /// The console is shown.
     pub console: bool,
+    /// The bottom dock is shown.
+    pub bottom_dock: bool,
     /// The feature map is shown.
     pub feature_map: bool,
     /// It is at the top of the panes (else at their right).
@@ -2585,6 +2599,7 @@ fn state_of(command: Command, facts: &Facts) -> State {
         },
         C::ToggleLeftSidebar => pane_toggle(facts.left_sidebar),
         C::ToggleRightSidebar => pane_toggle(facts.right_sidebar),
+        C::ToggleBottomDock => pane_toggle(facts.bottom_dock),
         // Sharing needs the project's id, known once the image is parsed;
         // joining too, unless no binary is open (the host may send it). In
         // a session Share shows it (the ticket again, who is in, Stop).

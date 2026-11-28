@@ -67,7 +67,8 @@ impl Workspace {
     /// Moves tab `tab` where `to` says, the pane it lands in focused. A
     /// pane's view of code dropped into another pane that has one stays
     /// where it was (a pane shows one view of code; on an edge, it makes a
-    /// pane of its own).
+    /// pane of its own). The bottom dock takes only what opens below the
+    /// code (lists, the console, terminals).
     pub fn drop_tab(
         &mut self,
         tab: TabId,
@@ -76,11 +77,20 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.layout_ui.tab_drop = None;
-        let code = self
+        let content = self
             .layout
             .find_tab(tab)
             .and_then(|(pane, index)| self.layout.pane(pane)?.tabs.get(index))
-            .is_some_and(|t| crate::tabs::is_code(Some(&t.content)));
+            .map(|t| t.content.clone());
+        let code = crate::tabs::is_code(content.as_ref());
+        let target = match to {
+            TabDrop::Into { pane, .. } | TabDrop::Edge { pane, .. } => pane,
+        };
+        if self.layout.is_dock(target) && !content.as_ref().is_some_and(crate::tabs::is_below_code)
+        {
+            cx.notify();
+            return;
+        }
         if let TabDrop::Into { pane, .. } = to
             && code
             && self.layout.find_tab(tab).map(|(from, _)| from) != Some(pane)
@@ -99,11 +109,7 @@ impl Workspace {
             cx.notify();
             return;
         };
-        let live: Vec<PaneId> = self.layout.panes().map(|p| p.id).collect();
-        self.panes.retain(|p, _| live.contains(p));
-        if self.maximized.is_some_and(|m| !live.contains(&m)) || live.len() < 2 {
-            self.maximized = None;
-        }
+        self.forget_closed_panes();
         let made = !self.panes.contains_key(&landed);
         self.ensure_pane(landed, cx);
         // A pane made for it shows it at its place, in its view (a pane
@@ -135,7 +141,9 @@ impl Workspace {
         let over = if b.contains(&at) {
             let x = f32::from(at.x - b.origin.x) / f32::from(b.size.width).max(1.0);
             let y = f32::from(at.y - b.origin.y) / f32::from(b.size.height).max(1.0);
-            Some((id, drop_side(x, y)))
+            // The bottom dock takes a tab into itself, edges or not.
+            let side = drop_side(x, y).filter(|_| !self.layout.is_dock(id));
+            Some((id, side))
         } else {
             None
         };

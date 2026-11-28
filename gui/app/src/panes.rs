@@ -427,15 +427,16 @@ impl Workspace {
                     .into_any_element()
             }
         };
-        // Only a pane below the code (lists, the console) has a tab bar:
-        // one showing code has its toolbar as its top, the settings and a
-        // struct their own (the window's tabs are the places, the settings
-        // and structs). The console's header is its toolbar.
-        let bar = self.layout.pane(id).is_some_and(|p| {
-            p.tabs
-                .iter()
-                .any(|t| crate::tabs::is_below_code(&t.content))
-        });
+        // Only the bottom dock and a pane of lists or shells have a tab
+        // bar: one showing code has its toolbar as its top, the settings
+        // and a struct their own (the window's tabs are the places, the
+        // settings and structs). The console's header is its toolbar.
+        let bar = self.layout.is_dock(id)
+            || self.layout.pane(id).is_some_and(|p| {
+                p.tabs
+                    .iter()
+                    .any(|t| crate::tabs::is_below_code(&t.content))
+            });
         self.island()
             .id(("pane", id.0))
             .bg(hsla(self.theme.under(self.theme.editor)))
@@ -810,8 +811,7 @@ impl Workspace {
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 this.layout.close_tab(id, index);
-                                let live: Vec<PaneId> = this.layout.panes().map(|p| p.id).collect();
-                                this.panes.retain(|p, _| live.contains(p));
+                                this.forget_closed_panes();
                                 let to = this.layout.focused();
                                 this.focus_pane(to, window, cx);
                                 this.ensure_documents();
@@ -925,19 +925,32 @@ impl Workspace {
     }
 
     /// Pane `id`'s Split Right and Maximize buttons, and Close Pane where
-    /// its tab has another pane; each acts on this pane (focused first).
+    /// its tab has another pane; the bottom dock's Hide and Maximize. Each
+    /// acts on this pane (focused first).
     fn pane_tools(&self, id: PaneId, cx: &mut Context<Self>) -> Vec<Stateful<Div>> {
         let maximized = self.maximized == Some(id);
-        let several = self.layout.panes().nth(1).is_some();
+        let dock = self.layout.is_dock(id);
+        let several = self.layout.panes().nth(1).is_some() && !dock;
         let mut tools = vec![
-            self.icon_button(
-                ("split", id.0),
-                IconName::Columns2,
-                Command::SplitRight,
-                true,
-                false,
-                cx,
-            ),
+            if dock {
+                self.icon_button(
+                    ("hide-dock", id.0),
+                    IconName::ChevronDown,
+                    Command::ToggleBottomDock,
+                    true,
+                    false,
+                    cx,
+                )
+            } else {
+                self.icon_button(
+                    ("split", id.0),
+                    IconName::Columns2,
+                    Command::SplitRight,
+                    true,
+                    false,
+                    cx,
+                )
+            },
             self.icon_button(
                 ("maximize", id.0),
                 if maximized {

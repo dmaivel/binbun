@@ -1,5 +1,5 @@
-//! Terminals (Window › New Terminal, Ctrl+Shift+backtick): tabs of panes,
-//! under the code unless moved (dragged as any tab), each running the
+//! Terminals (Window › New Terminal, Ctrl+Shift+backtick): tabs of the
+//! bottom dock unless moved (dragged as any tab), each running the
 //! user's shell in the binary's folder through libghostty's emulator
 //! ([`binbun_gui_view::terminal`]). A terminal's program runs while its
 //! tab is shown, moved, in another window tab, or hidden by Ctrl+backtick
@@ -258,11 +258,10 @@ fn grid_size(bounds: Bounds<Pixels>, (cw, ch): (f32, f32)) -> Option<Size> {
 }
 
 impl Workspace {
-    /// Window › New Terminal: a shell opened under the code, focused.
+    /// Window › New Terminal: a shell opened in the bottom dock, focused.
     pub fn new_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let id = self.terminals.fresh();
-        let from = self.layout.focused();
-        let pane = self.open_below(from, TabKind::Terminal(id), false, cx);
+        let pane = self.open_below(TabKind::Terminal(id), false, cx);
         self.focus_pane(pane, window, cx);
         cx.notify();
     }
@@ -400,8 +399,7 @@ impl Workspace {
             name: name.to_owned(),
             launch,
         });
-        let from = self.layout.focused();
-        let pane = self.open_below(from, TabKind::Terminal(id), false, cx);
+        let pane = self.open_below(TabKind::Terminal(id), false, cx);
         self.focus_pane(pane, window, cx);
         cx.notify();
     }

@@ -5,9 +5,9 @@
 //! never opens a tab; Ctrl+click or a middle click opens its target in a
 //! new window tab (`window_tabs`; with Shift, the current one kept
 //! shown). Lists whose rows go places (the strings,
-//! cross-references, results, a map folder) open in a pane of lists, below
+//! cross-references, results, a map folder) open in the bottom dock, below
 //! the code, so a row clicked leaves its list in view
-//! ([`Workspace::open_list`]). A pane's other tabs keep their views when
+//! ([`Workspace::open_below`]), as do the console and terminals. A pane's other tabs keep their views when
 //! brought back; its tab of code brought back shows where the pane is: the
 //! linked place, or its own.
 
@@ -43,9 +43,9 @@ pub fn is_code(kind: Option<&TabKind>) -> bool {
     matches!(kind, Some(TabKind::Listing | TabKind::C { .. }))
 }
 
-/// Whether `kind` opens in a pane below the code, not over it: a list
-/// whose rows go places, the console, a terminal. Such a pane has a tab
-/// bar, and its tabs close and cycle there.
+/// Whether `kind` opens below the code, in the bottom dock: a list whose
+/// rows go places, the console, a terminal. A pane of them has a tab bar,
+/// and its tabs close and cycle there.
 pub fn is_below_code(kind: &TabKind) -> bool {
     matches!(
         kind,
@@ -59,49 +59,22 @@ pub fn is_below_code(kind: &TabKind) -> bool {
 }
 
 impl Workspace {
-    /// Opens `kind`, a list or the console ([`is_below_code`]; `preview`
-    /// as [`Layout::open`] takes it) from pane `from`: in a pane holding
-    /// such tabs and no code (where one equal to it is brought back), else
-    /// in `from` if it has no code, else in a new pane below `from`. The
-    /// pane it is in.
+    /// Opens `kind`, a list or a shell ([`is_below_code`]; `preview` as
+    /// [`Layout::open`] takes it), in the bottom dock: made along the
+    /// bottom if there is none, shown if hidden, a tab equal to it brought
+    /// back. The dock's pane.
     ///
     /// [`Layout::open`]: binbun_gui_view::layout::Layout::open
-    pub fn open_below(
-        &mut self,
-        from: PaneId,
-        kind: TabKind,
-        preview: bool,
-        cx: &mut Context<Self>,
-    ) -> PaneId {
-        // From the settings or a struct: in a tab of a place.
-        let from = if self.shows_tool() {
-            self.leave_tool_tab();
-            self.layout.focused()
+    pub fn open_below(&mut self, kind: TabKind, preview: bool, cx: &mut Context<Self>) -> PaneId {
+        let id = if let Some(id) = self.layout.open_in_dock(kind.clone(), preview) {
+            id
         } else {
-            from
-        };
-        let lists = self
-            .layout
-            .panes()
-            .filter(|p| {
-                p.tabs.iter().any(|t| is_below_code(&t.content))
-                    && !p.tabs.iter().any(|t| is_code(Some(&t.content)))
-            })
-            .map(|p| p.id)
-            .min_by_key(|&id| id != from);
-        let at = lists.or_else(|| self.code_tab_of(from).is_none().then_some(from));
-        if let Some(id) = at {
+            let id = self.layout.focused();
             self.layout.open(id, kind, preview);
-            self.layout.focus(id);
-            return id;
-        }
-        if let Some(new) = self.layout.split(from, Axis::Column, kind.clone()) {
-            self.ensure_pane(new, cx);
-            new
-        } else {
-            self.layout.open(from, kind, preview);
-            from
-        }
+            id
+        };
+        self.ensure_pane(id, cx);
+        id
     }
 
     /// Pane `id`'s active tab is at `address` now.

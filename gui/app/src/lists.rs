@@ -104,21 +104,19 @@ impl Workspace {
         else {
             return;
         };
-        let id = self.layout.focused();
-        self.open_xrefs_to(id, of, 1, window, cx);
+        self.open_xrefs_to(of, 1, window, cx);
     }
 
-    /// Opens the cross-references to the `len` bytes from `of`, from pane
-    /// `id` ([`Workspace::open_list`]).
+    /// Opens the cross-references to the `len` bytes from `of` in the
+    /// bottom dock ([`Workspace::open_below`]).
     pub fn open_xrefs_to(
         &mut self,
-        id: PaneId,
         of: u64,
         len: u64,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let id = self.open_below(id, TabKind::Xrefs { of, len }, true, cx);
+        let id = self.open_below(TabKind::Xrefs { of, len }, true, cx);
         if let Some(state) = self.panes.get_mut(&id) {
             state.list = ListState::default();
         }
