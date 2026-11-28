@@ -80,7 +80,7 @@ An agent started in one of binbun's [terminals](@/docs/gui.md#terminals) that sa
 
 `api` describes the installed Python API. With no query it gives a short digest; with a dotted name such as `Function.decompile`, that name's signature and docstring; with words, the names that match them.
 
-The interpreter is your own Python with `binbun` installed: `python3`, or the one named by `--python` or `BINBUN_PYTHON`. A call's output is cut to 20,000 characters by default (`max_chars`), keeping its start and end around a marker. `Out[n]` keeps cell `n`'s whole output, and `Out[n].result` its value. A call that runs past its `timeout` (120 seconds by default) or that the host cancels is interrupted. If the interpreter is still busy three seconds later, it is killed and a new one started, and the next result says `interpreter: "restarted"` because earlier variables are gone.
+The interpreter is your own Python with `binbun` installed: the one named by `--python` or `BINBUN_PYTHON`, else the app's Python setting (`python.interpreter`, the console's), else `python3`. A call's output is cut to 20,000 characters by default (`max_chars`), keeping its start and end around a marker. `Out[n]` keeps cell `n`'s whole output, and `Out[n].result` its value. A call that runs past its `timeout` (120 seconds by default) or that the host cancels is interrupted. If the interpreter is still busy three seconds later, it is killed and a new one started, and the next result says `interpreter: "restarted"` because earlier variables are gone.
 
 ### Which binary
 

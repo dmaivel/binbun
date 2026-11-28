@@ -699,12 +699,14 @@ impl Workspace {
             } else {
                 self.places.view(tab.id()).unwrap_or_default()
             };
-            let tab_icon = if tab.content == TabKind::Listing && view.hex {
-                IconName::Grid3x3
+            let (tab_icon, icon_color) = if let TabKind::Terminal(terminal) = tab.content {
+                self.terminal_icon(terminal)
+            } else if tab.content == TabKind::Listing && view.hex {
+                (IconName::Grid3x3, theme.text_muted)
             } else if tab.content == TabKind::Listing && view.calls {
-                IconName::Network
+                (IconName::Network, theme.text_muted)
             } else {
-                Self::tab_icon(&tab.content, view.graph)
+                (Self::tab_icon(&tab.content, view.graph), theme.text_muted)
             };
             let dragged = DraggedTab {
                 tab: tab.id(),
@@ -785,7 +787,7 @@ impl Workspace {
                             cx,
                         );
                     }))
-                    .child(icon(tab_icon, self.z(ICON), hsla(theme.text_muted)))
+                    .child(icon(tab_icon, self.z(ICON), hsla(icon_color)))
                     .child(
                         div()
                             .text_color(hsla(label_color))

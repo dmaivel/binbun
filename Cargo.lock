@@ -463,6 +463,7 @@ dependencies = [
  "serde_json",
  "tikv-jemallocator",
  "tokio",
+ "toml",
  "ureq",
 ]
 

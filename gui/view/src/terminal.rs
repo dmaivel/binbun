@@ -324,6 +324,9 @@ pub struct Frame {
     pub exited: Option<Exit>,
     /// What the program running says it is and does (OSC 7501).
     pub status: Option<Status>,
+    /// How many times a program asked whether the terminal takes status
+    /// reports: one more each time one that sends them starts.
+    pub probes: u64,
 }
 
 /// What a program says of itself through the program status protocol
@@ -377,6 +380,7 @@ impl Frame {
             bells: 0,
             exited: None,
             status: None,
+            probes: 0,
         }
     }
 
@@ -664,6 +668,8 @@ struct Engine {
     reports: Reports,
     /// The program's status: the last report of its first record.
     status: Option<Status>,
+    /// The probes answered.
+    probes: u64,
     /// Something changed since the last frame.
     changed: bool,
 }
@@ -698,6 +704,7 @@ impl Engine {
             exited: None,
             reports: Reports::default(),
             status: None,
+            probes: 0,
             changed: true,
         };
         engine.set_colors(colors);
@@ -736,6 +743,7 @@ impl Engine {
                 for payload in self.reports.feed(&bytes) {
                     match report(&payload) {
                         Some(Report::Probe) => {
+                            self.probes += 1;
                             let _ = writer.write_all(PROBE_REPLY).and_then(|()| writer.flush());
                         }
                         Some(Report::Record { id, status }) if id.is_empty() => {
@@ -1123,6 +1131,7 @@ impl Engine {
             bells: self.bells,
             exited: self.exited,
             status: self.status.clone(),
+            probes: self.probes,
         })
     }
 }
@@ -1592,6 +1601,7 @@ mod tests {
             r"stty -echo -icanon min 1; printf '\033]7501;?\033\\'; head -c 9 | tr '\033' E; echo; printf '\033]7501;state=idle:app=claude-code\007'; sleep 10",
         ]);
         let frame = until(&t, |f| f.status.is_some());
+        assert_eq!(frame.probes, 1);
         assert!(
             frame.text().iter().any(|l| l == "E]7501;?:"),
             "{:?}",

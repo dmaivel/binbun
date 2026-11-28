@@ -67,7 +67,8 @@ Without FILE it works in the binbun window running (its binary opened again
 in the interpreter, following the window; writes made in the window, one undo
 step a call); with FILE, on FILE alone, without a window.
 
-  --python PYTHON    the Python with binbun installed (default $BINBUN_PYTHON, else python3)
+  --python PYTHON    the Python with binbun installed (default $BINBUN_PYTHON, else the
+                     app's Python setting, else python3)
   --socket PATH      the window's script socket (default $BINBUN_SOCKET, else the one running)
   --database PATH    which of the window's binaries (default: the window focused last)";
 
@@ -225,6 +226,7 @@ impl Launch {
                     .ok()
                     .filter(|p| !p.is_empty())
             })
+            .or_else(settings_python)
             .unwrap_or_else(|| "python3".to_owned());
         let mut rest: Vec<OsString> = Vec::new();
         if let Some(file) = file {
@@ -263,6 +265,16 @@ fn program(python: &str) -> PathBuf {
         (Some(rest), Some(home)) => home.join(rest),
         _ => PathBuf::from(python.trim()),
     }
+}
+
+/// The Python the app's settings name (`python.interpreter` in
+/// `settings.toml`): the console's, which has binbun installed where the
+/// console works. `None` without one set (or a file that does not parse).
+fn settings_python() -> Option<String> {
+    let text = std::fs::read_to_string(binbun_paths::Place::Settings.path()?).ok()?;
+    let settings: toml::Table = text.parse().ok()?;
+    let python = settings.get("python")?.get("interpreter")?.as_str()?.trim();
+    (!python.is_empty()).then(|| python.to_owned())
 }
 
 /// Serves the tools on standard input and output.
@@ -412,7 +424,8 @@ impl Interpreter {
             if e.kind() == std::io::ErrorKind::NotFound {
                 format!(
                     "No Python at {python}. Give binbun mcp a Python 3.11 or newer with binbun installed \
-                     (--python, or BINBUN_PYTHON; `python3 -m pip install binbun`)."
+                     (--python, BINBUN_PYTHON, or the app's Python setting; \
+                     `python3 -m pip install binbun`)."
                 )
             } else {
                 format!("{python} could not be started: {e}")
@@ -576,7 +589,7 @@ async fn read_events(
             format!(
                 "binbun is not installed for {python}. Install it into that interpreter \
                  (`{python} -m pip install binbun`), or give binbun mcp a Python that has it \
-                 (--python, or BINBUN_PYTHON)."
+                 (--python, BINBUN_PYTHON, or the app's Python setting)."
             )
         } else {
             format!("the interpreter ({python}) stopped before it was ready:\n{said}")

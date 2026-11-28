@@ -764,6 +764,7 @@ dependencies = [
  "serde_json",
  "tikv-jemallocator",
  "tokio",
+ "toml 1.2.1+spec-1.1.0",
  "ureq",
 ]
 

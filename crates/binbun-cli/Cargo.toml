@@ -38,6 +38,8 @@ rmcp = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, optional = true }
+# The app's Python setting, the one `binbun mcp` runs (settings.toml).
+toml.workspace = true
 # `binbun update --check` and the GUI's checks (`update`).
 ureq.workspace = true
 
