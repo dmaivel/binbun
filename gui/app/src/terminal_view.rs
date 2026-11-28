@@ -58,8 +58,8 @@ use crate::workspace::{ICON_BUTTON, TabKind, Workspace};
 /// How long after a coding agent starts in a terminal its harness has to
 /// start binbun's server before the agent is taken not to run it. Claude
 /// Code 2.1.325's server announced itself 24 ms before to 57 ms after its
-/// first status report (three runs); this leaves several times that, and
-/// the reads' interval.
+/// first status report, Pi 1.7.0's 25 to 51 ms after (three runs each);
+/// this leaves several times that, and the reads' interval.
 const SERVER_AFTER: Duration = Duration::from_millis(500);
 /// How long the servers' announcements are read after an agent starts
 /// (an interpreter failing says so once it has tried), and how often.
