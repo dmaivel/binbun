@@ -41,6 +41,9 @@ use crate::user::data_model;
 /// The longest string taken as one: its bytes before the NUL.
 const MAX_STRING: u64 = 4096;
 
+/// How many bytes [`ImageData`] reads at once ([`ImageMemory::plain`]).
+const RUN: usize = 256;
+
 /// The prefixes of the names of sections that hold what the dynamic
 /// loader, the unwinder, the debugger or the operating system read about
 /// the program, not the program's data: ELF symbol, version, relocation,
@@ -241,6 +244,37 @@ impl<'a> ImageData<'a> {
         let bits = self.memory.read(address, 1)?;
         u8::try_from(bits.low_u64()).ok()
     }
+
+    /// How many bytes from `address` on are all in one data section
+    /// ([`Self::in_data`]): 0 where it is in none.
+    fn data_room(&self, address: u64) -> u64 {
+        let after = self
+            .sections
+            .partition_point(|section| section.start <= address);
+        self.sections
+            .get(..after)
+            .unwrap_or_default()
+            .iter()
+            .filter(|section| section.contains(&address))
+            .map(|section| section.end - address)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// The bytes from `address` on that each [`Self::byte`] gives, at
+    /// most `most` of them (at least one, read alone, where the first is
+    /// one), into `buffer`: how many, or `None` where the first is none.
+    fn bytes<'b>(&self, address: u64, most: u64, buffer: &'b mut [u8; RUN]) -> Option<&'b [u8]> {
+        let most = usize::try_from(most).unwrap_or(RUN).min(RUN);
+        let run = buffer.get_mut(..most)?;
+        let read = self.memory.plain(address, run);
+        if read > 0 {
+            return run.get(..read);
+        }
+        let first = run.first_mut()?;
+        *first = self.byte(address)?;
+        run.get(..1)
+    }
 }
 
 /// The C name of an import ([`ImageData`]'s fixed imports): its name, or
@@ -278,14 +312,19 @@ impl Data for ImageData<'_> {
     }
 
     fn string(&self, address: u64) -> Option<u64> {
-        for length in 0..=MAX_STRING {
+        let mut buffer = [0; RUN];
+        let mut length = 0;
+        while length <= MAX_STRING {
             let at = address.checked_add(length)?;
-            if !self.in_data(at, 1) {
+            let room = self.data_room(at).min(MAX_STRING + 1 - length);
+            if room == 0 {
                 return None;
             }
-            if self.byte(at)? == 0 {
-                return Some(length);
+            let run = self.bytes(at, room, &mut buffer)?;
+            if let Some(nul) = run.iter().position(|&byte| byte == 0) {
+                return Some(length + nul as u64);
             }
+            length += run.len() as u64;
         }
         None
     }
@@ -341,9 +380,15 @@ impl Printing for ImageData<'_> {
     }
 
     fn constant(&self, address: u64, bytes: u64) -> Option<Vec<u8>> {
-        (0..bytes)
-            .map(|offset| self.byte(address.checked_add(offset)?))
-            .collect()
+        let mut buffer = [0; RUN];
+        let mut constant = Vec::new();
+        let mut length = 0;
+        while length < bytes {
+            let run = self.bytes(address.checked_add(length)?, bytes - length, &mut buffer)?;
+            constant.extend_from_slice(run);
+            length += run.len() as u64;
+        }
+        Some(constant)
     }
 
     fn string(&self, address: u64) -> Option<Vec<u8>> {

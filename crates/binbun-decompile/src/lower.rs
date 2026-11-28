@@ -1363,11 +1363,12 @@ pub fn summarise_ahead(
 ) -> (Found, Option<Summary>) {
     let Ahead { found, lowered } = ahead;
     let mut lowering = facts::Lowering::from_parts(function, facts, context, lowered);
-    lowering.solve_types();
-    let summary = lowering.summary();
-    let arguments = lowering.arguments();
-    let structs = lowering.structs();
-    let mut signature = lowering.signature_types();
+    let typed::Summarised {
+        summary,
+        arguments,
+        structs,
+        mut signature,
+    } = lowering.solve_summarised();
     // An allocator wrapper's is `void *`: its allocation is any object's.
     if lowering.allocator.is_some() {
         signature.returns = Some(FieldType::Pointer(None));

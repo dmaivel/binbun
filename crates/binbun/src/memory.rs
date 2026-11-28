@@ -117,6 +117,39 @@ impl<'a> ImageMemory<'a> {
             .find(|range| range.contains(&address))
     }
 
+    /// Reads into `buffer` the bytes from `address` that each read alone
+    /// ([`ReadOnly::read`] of one byte) as the image has it, as many as
+    /// it can at once: it stops at the end of `address`'s segment or of
+    /// its RELRO range (the program could change what follows), at the
+    /// next segment's start and at the first byte the dynamic loader
+    /// writes. How many it read: 0 where the byte at `address` is not one
+    /// of them, read alone.
+    pub(crate) fn plain(&self, address: u64, buffer: &mut [u8]) -> usize {
+        let segments = &self.image.segments;
+        let after = segments.partition_point(|segment| segment.start <= address);
+        let Some(segment) = self.image.segment(address) else {
+            return 0;
+        };
+        let mut end = segment.end();
+        if let Some(next) = segments.get(after) {
+            end = end.min(next.start);
+        }
+        if segment.permissions.write {
+            let Some(relro) = self.relro(address) else {
+                return 0;
+            };
+            end = end.min(relro.end);
+        }
+        if let Some(fixup) = self.overlapping(address, end).next() {
+            end = end.min(fixup.start);
+        }
+        let room = usize::try_from(end.saturating_sub(address)).unwrap_or(usize::MAX);
+        let Some(buffer) = buffer.get_mut(..room.min(buffer.len())) else {
+            return 0;
+        };
+        self.image.read(address, buffer).unwrap_or(0)
+    }
+
     /// Whether the dynamic loader writes any of `start..end`
     /// ([`Image::fixups`]).
     pub(crate) fn written(&self, start: u64, end: u64) -> bool {

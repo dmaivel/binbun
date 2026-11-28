@@ -228,8 +228,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread;
 
 use binbun_decompile::data::Data;
@@ -831,12 +831,11 @@ impl Lowerer<'_> {
     ) {
         let mut schedule = Schedule::new(self.program, order);
         let mut arrived: BTreeMap<usize, Arrived> = BTreeMap::new();
-        let (jobs, queue) = mpsc::channel::<Work>();
-        let queue = Mutex::new(queue);
+        let queue = Queue::default();
         let (done, results) = mpsc::channel::<Done>();
         let window = self.threads.max(1).saturating_mul(LOWER_AHEAD);
         thread::scope(|scope| {
-            let jobs = jobs;
+            let _closing = Closing(&queue);
             for _ in 0..self.threads.max(1) {
                 let (queue, done) = (&queue, done.clone());
                 scope.spawn(move || self.work(base, queue, &done));
@@ -847,7 +846,7 @@ impl Lowerer<'_> {
                 while admitted < order.len() && admitted < at.saturating_add(window) {
                     schedule.admit(admitted);
                     if let Some(&id) = order.get(admitted) {
-                        let _ = jobs.send(Work::Lift(admitted, id));
+                        queue.push(Work::Lift(admitted, id));
                     }
                     admitted += 1;
                 }
@@ -863,7 +862,7 @@ impl Lowerer<'_> {
                     let (place, arrival) = match done {
                         Done::Lifted(place, Ok(moved)) => {
                             if let Some(work) = schedule.lifted(place, moved) {
-                                let _ = jobs.send(work);
+                                queue.push(work);
                             }
                             continue;
                         }
@@ -877,7 +876,7 @@ impl Lowerer<'_> {
                         Ok((_, Err(_))) | Err(_) => None,
                     };
                     for work in schedule.lowered(place, interface) {
-                        let _ = jobs.send(work);
+                        queue.push(work);
                     }
                     arrived.insert(place, arrival);
                 };
@@ -890,19 +889,18 @@ impl Lowerer<'_> {
         });
     }
 
-    /// Does each [`Work`] from `queue` until it closes, each to `done`:
-    /// lifts a function ([`decompile_l1`]), or lowers one ahead
-    /// ([`lower_ahead`], with the rest of `base`).
-    fn work(&self, base: &Interfaces, queue: &Mutex<Receiver<Work>>, done: &Sender<Done>) {
-        loop {
-            let work = queue.lock().unwrap_or_else(PoisonError::into_inner).recv();
+    /// Does each [`Work`] from `queue` (the earliest first) until it
+    /// closes, each to `done`: lifts a function ([`decompile_l1`]), or
+    /// lowers one ahead ([`lower_ahead`], with the rest of `base`).
+    fn work(&self, base: &Interfaces, queue: &Queue, done: &Sender<Done>) {
+        while let Some(work) = queue.pop() {
             let did = match work {
-                Ok(Work::Lift(at, id)) => Done::Lifted(
+                Work::Lift(at, id) => Done::Lifted(
                     at,
                     decompile_l1(self.image, self.program, id, self.summaries, self.disabled)
                         .map(|prepared| Box::new(Moved::new(prepared))),
                 ),
-                Ok(Work::Lower(at, moved, read)) => {
+                Work::Lower(at, moved, read) => {
                     let prepared = moved.prepared();
                     let ahead = lower_ahead(
                         self.image,
@@ -914,7 +912,6 @@ impl Lowerer<'_> {
                     );
                     Done::Lowered(at, read, Box::new(Moved::new(prepared)), Box::new(ahead))
                 }
-                Err(_) => break,
             };
             if done.send(did).is_err() {
                 break;
@@ -1015,6 +1012,63 @@ const LOWER_AHEAD: usize = 16;
 enum Work {
     Lift(usize, FunctionId),
     Lower(usize, Box<Moved>, Reading),
+}
+
+impl Work {
+    /// The place of its function in the order.
+    const fn place(&self) -> usize {
+        match *self {
+            Self::Lift(at, _) | Self::Lower(at, ..) => at,
+        }
+    }
+}
+
+/// The [`Work`] waiting for the threads, by its function's place in the
+/// order, and whether more may come: a thread takes the earliest, which
+/// the sweep needs first.
+#[derive(Default)]
+struct Queue {
+    state: Mutex<(BTreeMap<usize, Work>, bool)>,
+    ready: Condvar,
+}
+
+impl Queue {
+    /// Adds `work`.
+    fn push(&self, work: Work) {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.0.insert(work.place(), work);
+        self.ready.notify_one();
+    }
+
+    /// The earliest work, once there is some; none once it is closed and
+    /// empty.
+    fn pop(&self) -> Option<Work> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            if let Some((_, work)) = state.0.pop_first() {
+                return Some(work);
+            }
+            if state.1 {
+                return None;
+            }
+            state = self
+                .ready
+                .wait(state)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+}
+
+/// Closes its [`Queue`] when dropped (the sweep done, or stopped by a
+/// thread's panic): the threads stop once it is empty.
+struct Closing<'a>(&'a Queue);
+
+impl Drop for Closing<'_> {
+    fn drop(&mut self) {
+        let mut state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.1 = true;
+        self.0.ready.notify_all();
+    }
 }
 
 /// What a thread did ([`Work`]): the function at a place lifted (its L1

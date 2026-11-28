@@ -7,7 +7,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use binbun_ast::types::{Evidence, Types};
+use binbun_ast::types::{Evidence, TypeId, Types};
 use binbun_semantics::ir::LaneOp;
 use binbun_ssa::condition::{Relation, comparison};
 use binbun_ssa::ir::{BlockId, Definition, InstId, Op, Terminator, Value, ValueInfo};
@@ -18,8 +18,23 @@ use super::needed::Role;
 use crate::mapping::Source;
 use crate::typing::{
     self, Arguments, Call, Declared, Evolutions, Explained, Members, Parameter, Returns, Shape,
-    Sort, Summary, View,
+    Solved, Sort, Summary, View,
 };
+
+/// What [`Lowering::solve_summarised`] finds of what it solved.
+pub(super) struct Summarised {
+    /// Its scheme (nothing unless solved, or past
+    /// [`typing::SCHEME_SIZE`]).
+    pub(super) summary: Option<Summary>,
+    /// What the calls pass their callees ([`typing::Arguments`]).
+    pub(super) arguments: Arguments,
+    /// What it adds to the program's synthesised structs
+    /// ([`typing::Contribution`]), with the declared structs its roots
+    /// point to ([`Lowering::declared_roots`]).
+    pub(super) structs: typing::Contribution,
+    /// The function's signature ([`typing::FunctionTypes`]).
+    pub(super) signature: typing::FunctionTypes,
+}
 
 impl Lowering<'_, '_> {
     /// Generation and solving (after folding).
@@ -31,11 +46,37 @@ impl Lowering<'_, '_> {
         }
     }
 
-    /// The scheme of what [`Self::solve_types`] solved (nothing unless
-    /// solved, or past [`typing::SCHEME_SIZE`]).
-    pub(super) fn summary(&self) -> Option<Summary> {
-        let solved = self.solved.as_ref()?;
-        typing::summary(&self.typing_view(), solved)
+    /// [`Self::solve_types`], and what it solved summarised
+    /// ([`Summarised`]; empty unless solved): of one view of this
+    /// lowering, which solving does not change.
+    pub(super) fn solve_summarised(&mut self) -> Summarised {
+        let mut view = self.typing_view();
+        let solved = typing::solve(&view);
+        let summarised = match &solved {
+            Ok(solved) => {
+                let summary = typing::summary(&view, solved);
+                let mut types = self.types.clone();
+                view.codes = self.codes(&view, &mut types);
+                Summarised {
+                    summary,
+                    arguments: typing::arguments(&view, solved, &mut types.clone()),
+                    structs: self.contribution(&view, solved, &mut types.clone()),
+                    signature: typing::signature(&view, solved, &mut types),
+                }
+            }
+            Err(_) => Summarised {
+                summary: None,
+                arguments: Arguments::new(),
+                structs: typing::Contribution::default(),
+                signature: typing::FunctionTypes::default(),
+            },
+        };
+        drop(view);
+        match solved {
+            Ok(solved) => self.solved = Some(solved),
+            Err(outcome) => self.typing = outcome,
+        }
+        summarised
     }
 
     /// Why what [`Self::solve_types`] solved types `values` as it does
@@ -45,46 +86,19 @@ impl Lowering<'_, '_> {
         Some(typing::explained(solved, values))
     }
 
-    /// What the calls pass their callees by what [`Self::solve_types`]
-    /// solved ([`typing::Arguments`]; nothing unless solved).
-    pub(super) fn arguments(&self) -> Arguments {
-        let Some(solved) = self.solved.as_ref() else {
-            return Arguments::new();
-        };
-        let mut types = self.types.clone();
-        let view = self.rounding_view(&mut types);
-        typing::arguments(&view, solved, &mut types)
-    }
-
-    /// The signature [`Self::solve_types`] solved ([`typing::Signature`];
-    /// empty unless solved).
-    pub(super) fn signature_types(&self) -> typing::FunctionTypes {
-        let Some(solved) = self.solved.as_ref() else {
-            return typing::FunctionTypes::default();
-        };
-        let mut types = self.types.clone();
-        let view = self.rounding_view(&mut types);
-        typing::signature(&view, solved, &mut types)
-    }
-
-    /// What [`Self::solve_types`] solved adds to the program's synthesised
-    /// structs ([`typing::Contribution`]; nothing unless solved), with the
-    /// declared structs its roots point to ([`Self::declared_roots`]).
-    pub(super) fn structs(&self) -> typing::Contribution {
-        let Some(solved) = self.solved.as_ref() else {
-            return typing::Contribution::default();
-        };
-        let mut types = self.types.clone();
-        let view = self.rounding_view(&mut types);
-        let mut contribution = typing::contribution(&view, solved, &mut types);
-        let roots = self.declared_roots(&view);
-        typing::declare(
-            solved,
-            &roots,
-            self.cx.prototypes,
-            &mut types,
-            &mut contribution,
-        );
+    /// What `solved` adds to the program's synthesised structs
+    /// ([`typing::Contribution`]), with the declared structs its roots
+    /// point to ([`Self::declared_roots`]); `view` is its rounding view
+    /// ([`Self::rounding_view`]), its types interned in `types`.
+    fn contribution(
+        &self,
+        view: &View<'_>,
+        solved: &Solved,
+        types: &mut Types,
+    ) -> typing::Contribution {
+        let mut contribution = typing::contribution(view, solved, types);
+        let roots = self.declared_roots(view);
+        typing::declare(solved, &roots, self.cx.prototypes, types, &mut contribution);
         contribution
     }
 
@@ -214,8 +228,15 @@ impl Lowering<'_, '_> {
     /// `types`), each with whether it is the convention's guess.
     fn rounding_view(&self, types: &mut Types) -> View<'_> {
         let mut view = self.typing_view();
-        view.codes = view
-            .shapes
+        view.codes = self.codes(&view, types);
+        view
+    }
+
+    /// The code types of the functions whose addresses `view` keeps as
+    /// constants (interned in `types`), each with whether it is the
+    /// convention's guess ([`View::codes`]).
+    fn codes(&self, view: &View<'_>, types: &mut Types) -> BTreeMap<u64, (TypeId, bool)> {
+        view.shapes
             .iter()
             .filter_map(|shape| match shape {
                 Some(Shape::Const(bits)) if self.cx.functions.contains(&bits.low_u64()) => {
@@ -224,8 +245,7 @@ impl Lowering<'_, '_> {
                 Some(_) | None => None,
             })
             .filter_map(|address| Some((address, self.guessed_scalar_code_type(address, types)?)))
-            .collect();
-        view
+            .collect()
     }
 
     /// What typing reads of this lowering.
