@@ -5,6 +5,7 @@
 //! has the Bot glyph), and how it is told to start `binbun mcp` (File ›
 //! Connect an Agent…, with the binbun [`setup_binbun`] chooses).
 
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::fs;
@@ -425,6 +426,99 @@ pub fn setup_binbun(own: &Path, path: Option<&OsStr>) -> PathBuf {
         return found;
     }
     binbun_paths::canonical(own).unwrap_or_else(|_| own.to_path_buf())
+}
+
+/// The binbun this process's setups name: [`setup_binbun`] for its own
+/// command and `PATH`; `binbun` if it cannot say where it is.
+pub fn this_binbun() -> PathBuf {
+    std::env::current_exe().map_or_else(
+        |_| PathBuf::from("binbun"),
+        |exe| setup_binbun(&own_command(exe), std::env::var_os("PATH").as_deref()),
+    )
+}
+
+/// Runs a harness's setup `command` (a [`Setup::Shell`]'s) as the user's
+/// shell runs it in a terminal: a login, interactive one, so that its
+/// `PATH` is the one the harness was found on; on Windows through `cmd`.
+///
+/// # Errors
+///
+/// The last line it wrote if it fails, or why it did not run.
+pub fn run_setup(command: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    let mut shell = {
+        use std::os::windows::process::CommandExt as _;
+        /// No console window flashing up for it.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut shell = std::process::Command::new("cmd");
+        shell
+            .arg("/C")
+            .raw_arg(command)
+            .creation_flags(CREATE_NO_WINDOW);
+        shell
+    };
+    #[cfg(not(windows))]
+    let mut shell = {
+        let program = std::env::var_os("SHELL")
+            .filter(|shell| !shell.is_empty())
+            .unwrap_or_else(|| "sh".into());
+        let mut shell = std::process::Command::new(program);
+        shell.args(["-l", "-i", "-c", command]);
+        shell
+    };
+    let out = shell
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| e.to_string())?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let said = [&out.stderr, &out.stdout]
+        .into_iter()
+        .find_map(|bytes| {
+            String::from_utf8_lossy(bytes)
+                .lines()
+                .rev()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| out.status.to_string());
+    Err(said)
+}
+
+/// Where the harnesses not to offer binbun's setup to are kept
+/// ([`binbun_paths::Place::QuietAgents`]).
+pub fn quiet_path() -> Option<PathBuf> {
+    binbun_paths::Place::QuietAgents.path()
+}
+
+/// The harnesses named in the file at `path`, one a line (none if it is
+/// not there).
+pub fn read_quiet(path: &Path) -> BTreeSet<String> {
+    fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// `names` written to the file at `path`, one a line, its folder made.
+///
+/// # Errors
+///
+/// The folder or the file that could not be written, and why.
+pub fn write_quiet(path: &Path, names: &BTreeSet<String>) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let text = names.iter().fold(String::new(), |mut text, name| {
+        let _ = writeln!(text, "{name}");
+        text
+    });
+    fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Whether `file` is a file this user may run (on Windows, any file).

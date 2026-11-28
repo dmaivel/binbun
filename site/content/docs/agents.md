@@ -72,6 +72,8 @@ The entry for a config file goes under its `mcpServers`:
 
 These forms find `binbun` on the host's search path. **File → Connect an Agent…** shows each harness's command or entry for the binbun you are running, ready to copy: by the path the search path gives when the first `binbun` there is this one (a link there still works after an update), else by its absolute path. On Windows the setup runs the command, `bin\binbun.exe` beside the app.
 
+An agent started in one of binbun's [terminals](@/docs/gui.md#terminals) that says what it is (Claude Code, Pi and Crush do, through the terminal status protocol OSC 7501) and has not connected three seconds later gets a banner. **Set Up** runs that harness's command from Connect an Agent through your shell (a harness configured by a file opens the dialog instead); restart the agent to connect. **Don't Ask Again** stops the offer for that harness, kept in the `quiet-agents` file of binbun's state folder.
+
 ### The two tools
 
 `python` runs code in a persistent interpreter: variables, imports and functions survive between calls until the interpreter restarts. `db`, `here`, `current_function` and `selection` are predefined as in the console, read from the window before each call, so `here` is your cursor and `current_function` the function you are looking at. The value of a final expression and printed output are returned. A call can give an `intent`, a few words that label its undo step.

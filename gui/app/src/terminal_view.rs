@@ -13,13 +13,22 @@
 //! program that asks for it (Shift held selects there); the wheel scrolls
 //! back, or goes to the program. A saved layout's terminal comes back as a
 //! fresh shell.
+//!
+//! A coding agent that says what it is (OSC 7501, `app=claude-code`) and
+//! has not connected to this window [`OFFER_AFTER`] later gets a banner
+//! offering binbun's setup: its harness's own `mcp add` command run (or
+//! Connect an Agent where a config file takes it), or never again for it
+//! (`binbun_paths::Place::QuietAgents`).
 
 use std::cell::Cell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use binbun_gui_view::agents::{self, Harness, Setup, setup_rows};
+use binbun_gui_view::banners::{Action, Banner, Button as BannerButton, Kind, Priority, Tone};
 use binbun_gui_view::commands::{self, Command};
 use binbun_gui_view::layout::PaneId;
 use binbun_gui_view::scroll::Wheel;
@@ -41,6 +50,10 @@ use crate::scrolling::wheel;
 use crate::theme::{hsla, solid};
 use crate::workspace::{ICON_BUTTON, TabKind, Workspace};
 
+/// How long a coding agent seen in a terminal has to connect before
+/// binbun's setup is offered to it.
+const OFFER_AFTER: Duration = Duration::from_secs(3);
+
 /// The window's terminals, by number.
 #[derive(Default)]
 pub struct TerminalsUi {
@@ -58,6 +71,32 @@ pub struct TerminalsUi {
     poll: Option<Task<()>>,
     /// The keys taken while a terminal has the focus.
     keys: Option<Subscription>,
+    /// The coding agents seen in terminals, by harness: binbun's setup
+    /// offered to each that has not connected.
+    offers: BTreeMap<&'static str, Offer>,
+    /// The harnesses not to offer it to (Don't Ask Again), read once.
+    quiet: Option<BTreeSet<String>>,
+}
+
+/// binbun's setup offered to a harness seen in a terminal.
+struct Offer {
+    /// The terminal it was seen in, and since when.
+    terminal: u32,
+    since: Instant,
+    progress: Progress,
+}
+
+/// Where an offer is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Progress {
+    /// Offered, once due.
+    Offered,
+    /// Its setup command runs.
+    Running,
+    /// Set up: the harness connects once restarted.
+    Done,
+    /// The setup command failed, saying this.
+    Failed(String),
 }
 
 impl TerminalsUi {
@@ -283,6 +322,7 @@ impl Workspace {
         for id in ended {
             self.end_terminal(id, window, cx);
         }
+        self.watch_agents(window, cx);
         cx.notify();
     }
 
@@ -845,6 +885,200 @@ impl Workspace {
                 )
                 .into_any_element(),
         )
+    }
+}
+
+impl Workspace {
+    /// The harness terminal `id`'s program says it is, if a known one with
+    /// a setup.
+    fn terminal_harness(&self, id: u32) -> Option<&'static Harness> {
+        let ui = self.terminals.list.get(&id)?;
+        let status = ui.terminal.as_ref()?.frame().status.clone()?;
+        agents::harness(&status.app).filter(|harness| harness.setup.is_some())
+    }
+
+    /// Whether an agent of `harness` is connected to this window.
+    fn harness_connected(&self, harness: &Harness) -> bool {
+        self.served.as_ref().is_some_and(|(_, ui, _)| {
+            ui.agents()
+                .iter()
+                .any(|agent| agents::harness(&agent.name).is_some_and(|h| h.name == harness.name))
+        })
+    }
+
+    /// The coding agents the terminals' programs say they are: an offer
+    /// made for each harness first seen (or seen again in another
+    /// terminal, its first one gone), the window drawn again when it is
+    /// due.
+    fn watch_agents(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let seen: Vec<(u32, &'static Harness)> = self
+            .terminals
+            .list
+            .keys()
+            .filter_map(|&id| Some((id, self.terminal_harness(id)?)))
+            .collect();
+        for (id, harness) in seen {
+            let current = self
+                .terminals
+                .offers
+                .get(harness.name)
+                .is_some_and(|offer| {
+                    offer.progress != Progress::Offered
+                        || self.terminals.list.contains_key(&offer.terminal)
+                });
+            if current {
+                continue;
+            }
+            if self.terminals.quiet.is_none() {
+                self.terminals.quiet = Some(
+                    agents::quiet_path()
+                        .map(|path| agents::read_quiet(&path))
+                        .unwrap_or_default(),
+                );
+            }
+            self.terminals.offers.insert(
+                harness.name,
+                Offer {
+                    terminal: id,
+                    since: Instant::now(),
+                    progress: Progress::Offered,
+                },
+            );
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor().timer(OFFER_AFTER).await;
+                let _ = this.update(cx, |_, cx| cx.notify());
+            })
+            .detach();
+        }
+    }
+
+    /// The banners offering binbun's setup to the coding agents in
+    /// terminals that have not connected, or saying how their setup went
+    /// (the stack shows the first not put away).
+    pub fn agent_banners(&self) -> Vec<Banner> {
+        self.terminals
+            .offers
+            .iter()
+            .filter_map(|(&name, offer)| {
+                let harness = agents::harness(name)?;
+                if offer.progress != Progress::Running && self.harness_connected(harness) {
+                    return None;
+                }
+                let banner = |tone, text: String, buttons, closable| Banner {
+                    kind: Kind::Agent,
+                    priority: Priority::Question,
+                    about: format!("{name}\n{}\n{text}", offer.terminal),
+                    text,
+                    tone,
+                    buttons,
+                    closable,
+                };
+                let button = |label: &str, action| BannerButton {
+                    label: label.to_owned(),
+                    action,
+                };
+                match &offer.progress {
+                    Progress::Offered => {
+                        let quiet = self
+                            .terminals
+                            .quiet
+                            .as_ref()
+                            .is_some_and(|q| q.contains(name));
+                        let running = self
+                            .terminal_harness(offer.terminal)
+                            .is_some_and(|h| h.name == name);
+                        if quiet || !running || offer.since.elapsed() < OFFER_AFTER {
+                            return None;
+                        }
+                        let set_up = match harness.setup {
+                            Some(Setup::Shell(_)) => "Set Up",
+                            Some(Setup::Json { .. }) | None => "Set Up…",
+                        };
+                        Some(banner(
+                            Tone::Info,
+                            format!(
+                                "{name} is running in a terminal but isn't connected to binbun."
+                            ),
+                            vec![
+                                button(set_up, Action::SetUpAgent(name.to_owned())),
+                                button("Don't Ask Again", Action::QuietAgent(name.to_owned())),
+                            ],
+                            true,
+                        ))
+                    }
+                    Progress::Running => Some(banner(
+                        Tone::Busy,
+                        format!("Adding binbun to {name}…"),
+                        Vec::new(),
+                        false,
+                    )),
+                    Progress::Done => Some(banner(
+                        Tone::Info,
+                        format!("binbun is added to {name}: restart it to connect."),
+                        Vec::new(),
+                        true,
+                    )),
+                    Progress::Failed(error) => Some(banner(
+                        Tone::Error,
+                        format!("Adding binbun to {name} failed: {error}"),
+                        vec![button(
+                            "Connect an Agent…",
+                            Action::Command(Command::ConnectAgent),
+                        )],
+                        true,
+                    )),
+                }
+            })
+            .collect()
+    }
+
+    /// The banner's Set Up: the harness's own command run for this
+    /// binbun, off the UI thread; Connect an Agent where a config file
+    /// takes it.
+    pub fn set_up_agent(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(harness) = agents::harness(name) else {
+            return;
+        };
+        let row = match harness.setup {
+            Some(Setup::Shell(_)) => setup_rows(&agents::this_binbun())
+                .into_iter()
+                .find(|row| row.name == harness.name),
+            Some(Setup::Json { .. }) | None => None,
+        };
+        let (Some(row), Some(offer)) = (row, self.terminals.offers.get_mut(harness.name)) else {
+            self.run(Command::ConnectAgent, window, cx);
+            return;
+        };
+        offer.progress = Progress::Running;
+        let ran = cx
+            .background_executor()
+            .spawn(async move { agents::run_setup(&row.text) });
+        let name = harness.name;
+        cx.spawn(async move |this, cx| {
+            let result = ran.await;
+            let _ = this.update(cx, |this, cx| {
+                if let Some(offer) = this.terminals.offers.get_mut(name) {
+                    offer.progress = match result {
+                        Ok(()) => Progress::Done,
+                        Err(error) => Progress::Failed(error),
+                    };
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// The banner's Don't Ask Again: the harness named never offered
+    /// binbun's setup again (kept with the other harnesses so named).
+    pub fn quiet_agent(&mut self, name: &str) {
+        let quiet = self.terminals.quiet.get_or_insert_with(BTreeSet::new);
+        quiet.insert(name.to_owned());
+        if let Some(path) = agents::quiet_path()
+            && let Err(error) = agents::write_quiet(&path, quiet)
+        {
+            self.error = Some(error);
+        }
     }
 }
 

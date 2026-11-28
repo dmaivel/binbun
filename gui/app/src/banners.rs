@@ -4,7 +4,8 @@
 //! button where it can be put away; two at most, the rest behind a
 //! "+N more" line that expands them. Its banners: the symbol server's
 //! (`symbols_bar`), the settings file's problems, the first launch's
-//! update question and the update offer (`binbun_gui_view::updates`).
+//! update question, the update offer (`binbun_gui_view::updates`) and
+//! binbun's setup offered to a coding agent in a terminal (`terminal_view`).
 //!
 //! Update checks run once agreed: every half second the window asks the
 //! process's checks (shared by its windows) whether one is due (at
@@ -65,6 +66,7 @@ impl Workspace {
             offered.push(banners::settings_error(error));
         }
         offered.extend(self.analysis_banner());
+        offered.extend(self.agent_banners());
         let build = updates::build();
         if updates::asks(&build, self.settings.updates) {
             offered.push(updates::question());
@@ -117,6 +119,7 @@ impl Workspace {
         let theme = self.theme;
         let (glyph, color) = match (banner.tone, banner.kind) {
             (Tone::Info, Kind::Update) => (IconName::CircleArrowUp, theme.accent),
+            (Tone::Info, Kind::Agent) => (IconName::Bot, theme.accent),
             (
                 Tone::Info,
                 Kind::Settings | Kind::UpdateQuestion | Kind::Symbols | Kind::Analysis,
@@ -248,6 +251,8 @@ impl Workspace {
             Action::Command(command) => self.run(*command, window, cx),
             Action::Open(url) => cx.open_url(url),
             Action::FetchDebug(from) => self.fetch_debug(*from, cx),
+            Action::SetUpAgent(name) => self.set_up_agent(name, window, cx),
+            Action::QuietAgent(name) => self.quiet_agent(name),
             Action::SkipVersion => {
                 if let Err(error) = cx.default_global::<UpdateChecks>().0.skip() {
                     self.error = Some(error);
@@ -276,7 +281,7 @@ impl Workspace {
                     session.dismiss_symbols();
                 }
             }
-            Kind::Settings | Kind::UpdateQuestion | Kind::Update | Kind::Analysis => {
+            Kind::Settings | Kind::UpdateQuestion | Kind::Update | Kind::Analysis | Kind::Agent => {
                 self.banners.stack.close(banner);
             }
         }

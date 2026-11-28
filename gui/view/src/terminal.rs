@@ -322,6 +322,34 @@ pub struct Frame {
     pub bells: u64,
     /// How the program ended, once it has.
     pub exited: Option<Exit>,
+    /// What the program running says it is and does (OSC 7501).
+    pub status: Option<Status>,
+}
+
+/// What a program says of itself through the program status protocol
+/// (OSC 7501): its name, its state. Claude Code, Pi and Crush send it,
+/// once the terminal answers that it takes it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Status {
+    /// Its name (`claude-code`); empty if it gave none.
+    pub app: String,
+    /// What it is doing.
+    pub state: State,
+}
+
+/// A program's state, as it says it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum State {
+    /// At rest, at its own prompt.
+    Idle,
+    /// Running on its own.
+    Working,
+    /// Finished something the user has not looked at.
+    Done,
+    /// Waiting on the user (an approval, an answer, a login).
+    Blocked,
+    /// Failed and stopped.
+    Error,
 }
 
 /// How a program ended.
@@ -348,6 +376,7 @@ impl Frame {
             title: String::new(),
             bells: 0,
             exited: None,
+            status: None,
         }
     }
 
@@ -631,6 +660,10 @@ struct Engine {
     title: String,
     bells: u64,
     exited: Option<Exit>,
+    /// The program status reports in the output.
+    reports: Reports,
+    /// The program's status: the last report of its first record.
+    status: Option<Status>,
     /// Something changed since the last frame.
     changed: bool,
 }
@@ -663,6 +696,8 @@ impl Engine {
             title: String::new(),
             bells: 0,
             exited: None,
+            reports: Reports::default(),
+            status: None,
             changed: true,
         };
         engine.set_colors(colors);
@@ -695,6 +730,20 @@ impl Engine {
     fn take(&mut self, message: Message, writer: &mut dyn Write) -> usize {
         match message {
             Message::Output(bytes) => {
+                // Answered ahead of what follows it, as libghostty would
+                // (a program asks, then asks for the device attributes:
+                // their answer first means no).
+                for payload in self.reports.feed(&bytes) {
+                    match report(&payload) {
+                        Some(Report::Probe) => {
+                            let _ = writer.write_all(PROBE_REPLY).and_then(|()| writer.flush());
+                        }
+                        Some(Report::Record { id, status }) if id.is_empty() => {
+                            self.status = status;
+                        }
+                        Some(Report::Record { .. }) | None => {}
+                    }
+                }
                 self.vt.vt_write(&bytes);
                 self.drain(writer);
                 self.changed = true;
@@ -1073,6 +1122,7 @@ impl Engine {
             title: self.title.clone(),
             bells: self.bells,
             exited: self.exited,
+            status: self.status.clone(),
         })
     }
 }
@@ -1171,6 +1221,129 @@ fn row_runs(
     runs
 }
 
+/// The answer to a program asking whether the terminal takes program
+/// status reports (`OSC 7501 ; ?`): yes, every state and kind, as
+/// libghostty answers when its embedder takes them.
+const PROBE_REPLY: &[u8] =
+    b"\x1b]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\x1b\\";
+/// The longest report the protocol allows, in bytes.
+const REPORT: usize = 4096;
+
+/// The program status reports (`OSC 7501 ; …` ended by BEL or `ESC \`)
+/// in a program's output, found as it comes, in pieces. libghostty-vt
+/// parses them too, but its Rust crate does not hand them on.
+#[derive(Debug, Default)]
+struct Reports {
+    scan: Scan,
+    payload: Vec<u8>,
+}
+
+/// Where [`Reports`] is in the output.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Scan {
+    /// Outside a report.
+    #[default]
+    Ground,
+    /// After ESC.
+    Escape,
+    /// After `ESC ]` and this many bytes of `7501;`.
+    Code(usize),
+    /// In a report's payload.
+    Payload,
+    /// In a payload, after ESC (`ESC \` ends it).
+    PayloadEscape,
+}
+
+impl Reports {
+    /// The payloads `bytes` completes, in order (one longer than
+    /// [`REPORT`] dropped).
+    fn feed(&mut self, bytes: &[u8]) -> Vec<Vec<u8>> {
+        const CODE: &[u8] = b"7501;";
+        let mut done = Vec::new();
+        for &byte in bytes {
+            self.scan = match (self.scan, byte) {
+                (Scan::Payload, 0x07) | (Scan::PayloadEscape, b'\\') => {
+                    done.push(std::mem::take(&mut self.payload));
+                    Scan::Ground
+                }
+                (Scan::Payload, 0x1b) => Scan::PayloadEscape,
+                (Scan::Payload, _) if self.payload.len() < REPORT => {
+                    self.payload.push(byte);
+                    Scan::Payload
+                }
+                (Scan::Payload | Scan::PayloadEscape, _) => {
+                    self.payload.clear();
+                    match byte {
+                        0x1b => Scan::Escape,
+                        b']' if self.scan == Scan::PayloadEscape => Scan::Code(0),
+                        _ => Scan::Ground,
+                    }
+                }
+                (Scan::Ground | Scan::Escape | Scan::Code(_), 0x1b) => Scan::Escape,
+                (Scan::Escape, b']') => Scan::Code(0),
+                (Scan::Code(at), _) if CODE.get(at) == Some(&byte) => {
+                    if at + 1 == CODE.len() {
+                        Scan::Payload
+                    } else {
+                        Scan::Code(at + 1)
+                    }
+                }
+                (Scan::Ground | Scan::Escape | Scan::Code(_), _) => Scan::Ground,
+            };
+        }
+        done
+    }
+}
+
+/// What a program status report says.
+#[derive(Debug, PartialEq, Eq)]
+enum Report {
+    /// `?`: whether the terminal takes them.
+    Probe,
+    /// Record `id`'s new state (the first record's: empty); `None`:
+    /// cleared.
+    Record {
+        /// The record.
+        id: String,
+        /// Its program and state.
+        status: Option<Status>,
+    },
+}
+
+/// The report `payload` (`key=value` pairs joined by `:`) makes; `None`
+/// if it is not one (no state, or one the protocol has not).
+fn report(payload: &[u8]) -> Option<Report> {
+    let text = std::str::from_utf8(payload).ok()?;
+    if text.starts_with('?') {
+        return Some(Report::Probe);
+    }
+    let (mut state, mut id, mut app) = (None, "", "");
+    for pair in text.split(':') {
+        match pair.split_once('=')? {
+            ("state", value) => state = Some(value),
+            ("id", value) => id = value,
+            ("app", value) => app = value,
+            _ => {}
+        }
+    }
+    let state = match state? {
+        "idle" => Some(State::Idle),
+        "working" => Some(State::Working),
+        "done" => Some(State::Done),
+        "blocked" => Some(State::Blocked),
+        "error" => Some(State::Error),
+        "clear" => None,
+        _ => return None,
+    };
+    Some(Report::Record {
+        id: id.to_owned(),
+        status: state.map(|state| Status {
+            app: app.to_owned(),
+            state,
+        }),
+    })
+}
+
 /// The key GPUI names `name`.
 fn key_code(name: &str) -> key::Key {
     use key::Key;
@@ -1220,6 +1393,57 @@ fn key_code(name: &str) -> key::Key {
         "/" => Key::Slash,
         "`" => Key::Backquote,
         _ => Key::Unidentified,
+    }
+}
+
+#[cfg(test)]
+mod report_tests {
+    use super::*;
+
+    const IDLE: &[u8] = b"state=idle:app=claude-code";
+
+    /// A report is found however the output is cut, ended by BEL or by
+    /// `ESC \`; other OSCs and one too long are not reports.
+    #[test]
+    fn reports_are_found_in_output_cut_anywhere() {
+        let mut output = b"text\x1b]0;a title\x07\x1b]7501;".to_vec();
+        output.extend_from_slice(IDLE);
+        output.extend_from_slice(b"\x07more\x1b]7501;?\x1b\\");
+        for cut in 0..=output.len() {
+            let (head, tail) = output.split_at(cut);
+            let mut reports = Reports::default();
+            let mut found = reports.feed(head);
+            found.extend(reports.feed(tail));
+            assert_eq!(found, [IDLE.to_vec(), b"?".to_vec()], "cut at {cut}");
+        }
+        let mut long = b"\x1b]7501;".to_vec();
+        long.resize(long.len() + REPORT + 1, b'a');
+        long.extend_from_slice(b"\x07\x1b]7501;state=done\x07");
+        assert_eq!(Reports::default().feed(&long), [b"state=done".to_vec()]);
+    }
+
+    #[test]
+    fn a_report_says_its_program_and_state() {
+        assert_eq!(
+            report(b"state=blocked:kind=permission:app=terraform:msg=QXBwbHk/"),
+            Some(Report::Record {
+                id: String::new(),
+                status: Some(Status {
+                    app: "terraform".to_owned(),
+                    state: State::Blocked
+                })
+            })
+        );
+        assert_eq!(report(b"?"), Some(Report::Probe));
+        assert_eq!(
+            report(b"state=clear:id=build"),
+            Some(Report::Record {
+                id: "build".to_owned(),
+                status: None
+            })
+        );
+        assert_eq!(report(b"state=napping"), None);
+        assert_eq!(report(b"app=claude-code"), None);
     }
 }
 
@@ -1356,6 +1580,30 @@ mod tests {
             .collect();
         assert_eq!(runs[..2], [("a", 0, 1), ("\u{4e16}", 1, 2)]);
         assert_eq!((runs[2].0, runs[2].1), ("b", 3));
+    }
+
+    /// A program asking whether the terminal takes status reports is
+    /// answered yes, and the one it then sends is in the frame.
+    #[test]
+    fn a_programs_status_is_answered_and_in_the_frame() {
+        let t = start(&[
+            "sh",
+            "-c",
+            r"stty -echo -icanon min 1; printf '\033]7501;?\033\\'; head -c 9 | tr '\033' E; echo; printf '\033]7501;state=idle:app=claude-code\007'; sleep 10",
+        ]);
+        let frame = until(&t, |f| f.status.is_some());
+        assert!(
+            frame.text().iter().any(|l| l == "E]7501;?:"),
+            "{:?}",
+            frame.text()
+        );
+        assert_eq!(
+            frame.status,
+            Some(Status {
+                app: "claude-code".to_owned(),
+                state: State::Idle
+            })
+        );
     }
 
     /// A double click selects a word, a drag from a cell what it spans;

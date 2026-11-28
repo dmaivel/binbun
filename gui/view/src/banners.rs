@@ -8,8 +8,10 @@
 //!
 //! Its users: the symbol server's bar ([`crate::symbols`]), the settings
 //! file's problems ([`settings_error`]), the first launch's question and
-//! the update offer ([`crate::updates`]), and in a shared session an
-//! analysis that differs from a peer's ([`crate::collab::analysis_banner`]).
+//! the update offer ([`crate::updates`]), in a shared session an analysis
+//! that differs from a peer's ([`crate::collab::analysis_banner`]), and a
+//! coding agent running in a terminal without binbun's tools (the app's
+//! `terminal_view`).
 
 use std::collections::HashSet;
 
@@ -49,6 +51,9 @@ pub enum Kind {
     Update,
     /// This analysis differs from a peer's (debug files, fingerprint).
     Analysis,
+    /// A coding agent runs in a terminal but has not connected: binbun's
+    /// setup offered for it.
+    Agent,
 }
 
 /// A banner's icon and colour.
@@ -78,6 +83,11 @@ pub enum Action {
     /// Fetches the debug file this participant's analysis read, which
     /// they send ([`crate::collab::analysis_banner`]).
     FetchDebug(PublicKey),
+    /// Adds binbun's MCP server to the harness named (its own command, or
+    /// Connect an Agent where a config file takes it).
+    SetUpAgent(String),
+    /// Never offers the harness named binbun's setup again.
+    QuietAgent(String),
 }
 
 /// A button of a banner.

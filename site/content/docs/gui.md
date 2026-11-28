@@ -67,6 +67,8 @@ Hover a C token for its peek card and the contributing instructions. **View → 
 
 **Window → New Terminal** (`Ctrl+Shift+Backtick`) opens your shell in the binary's folder, in a tab of the pane under the code, as the console opens. Drag its tab like any other. A terminal runs until its tab closes; closing it while a program the shell started still runs asks first (on Windows, which cannot tell, it never asks), and the shell exiting without an error closes its tab. `Ctrl+Backtick` hides and brings back the console or the terminal you used last, and a hidden terminal keeps running. Right-click the console button in the status bar to choose the console, a terminal or a new one. A saved layout's terminal reopens as a fresh shell.
 
+A coding agent started in a terminal that isn't connected to binbun gets a banner offering to set it up; see [Agents](@/docs/agents.md).
+
 Keys go to the program except `Ctrl+Backtick`, the `Ctrl+Shift` chords and, on macOS, the `Cmd` chords. `Ctrl+Shift+C` copies the selection; `Ctrl+Shift+V` or `Shift+Insert` pastes (`⌘C` and `⌘V` on macOS). `Shift+Enter` sends a line feed, which agent CLIs take as a new line. Drag to select, double-click for a word, triple-click for a line, right-click for Copy and Paste. A program that takes the mouse gets it; hold `Shift` to select there instead. The wheel scrolls back through the history, or goes to the program. The terminal draws in the code font and the theme's code colours, with the standard 16-colour palette. Text from input methods (IME composition) does not reach it yet.
 
 ## Themes and settings

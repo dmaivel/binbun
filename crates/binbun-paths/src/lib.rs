@@ -294,6 +294,10 @@ pub enum Place {
     ConsoleHistory,
     /// The update skipped, `skipped-update` ([`Dir::State`]).
     SkippedUpdate,
+    /// The coding agents not to offer binbun's setup to when they run in a
+    /// terminal without it, `quiet-agents` ([`Dir::State`]): their names,
+    /// one a line.
+    QuietAgents,
     /// binbun's own symbol cache, `symbols` ([`Dir::Cache`]): where its
     /// downloads go, the one folder binbun may clear.
     Symbols,
@@ -321,7 +325,7 @@ pub enum Place {
 
 impl Place {
     /// Every place.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::Settings,
         Self::Startup,
         Self::Themes,
@@ -331,6 +335,7 @@ impl Place {
         Self::Slices,
         Self::ConsoleHistory,
         Self::SkippedUpdate,
+        Self::QuietAgents,
         Self::Symbols,
         Self::Servers,
         Self::TypeDb,
@@ -344,7 +349,11 @@ impl Place {
         match self {
             Self::Settings | Self::Startup | Self::Themes => Dir::Config,
             Self::Projects | Self::Identity | Self::Signatures | Self::Downloads => Dir::Data,
-            Self::Recent | Self::Slices | Self::ConsoleHistory | Self::SkippedUpdate => Dir::State,
+            Self::Recent
+            | Self::Slices
+            | Self::ConsoleHistory
+            | Self::SkippedUpdate
+            | Self::QuietAgents => Dir::State,
             Self::Symbols | Self::TypeDb | Self::Fetches => Dir::Cache,
             Self::Servers => Dir::Runtime,
         }
@@ -362,6 +371,7 @@ impl Place {
             Self::Slices => &["slices"],
             Self::ConsoleHistory => &["console_history"],
             Self::SkippedUpdate => &["skipped-update"],
+            Self::QuietAgents => &["quiet-agents"],
             Self::Symbols => &["symbols"],
             Self::Servers => &[],
             Self::TypeDb => &["typedb"],

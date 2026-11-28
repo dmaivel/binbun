@@ -47,7 +47,7 @@ Without overrides, the base directories are:
 
 - **Config** holds `settings.toml`, `startup.py` and user themes in `themes`.
 - **Data** holds `projects`, the identity's private keys in `identity` and user packs in `signatures`.
-- **State** holds recent files, remembered universal slices, console history and the skipped-update choice.
+- **State** holds recent files, remembered universal slices, console history, the skipped-update choice and the agents not to offer setup to (`quiet-agents`).
 - **Cache** holds downloaded symbols in `symbols`. Clearing it can require another download, but it is not where your project edits live.
 - **Runtime** holds live-server sockets or named-pipe discovery files used by Python connections.
 

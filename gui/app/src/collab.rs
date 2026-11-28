@@ -741,15 +741,7 @@ impl Workspace {
     /// it, else its own path), in read-only fields.
     fn open_agents_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_overlays(window, cx);
-        let bin = std::env::current_exe().map_or_else(
-            |_| PathBuf::from("binbun"),
-            |exe| {
-                agents::setup_binbun(
-                    &agents::own_command(exe),
-                    std::env::var_os("PATH").as_deref(),
-                )
-            },
-        );
+        let bin = agents::this_binbun();
         self.collab.setup = setup_rows(&bin)
             .into_iter()
             .map(|row| {
