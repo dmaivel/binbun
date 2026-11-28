@@ -26,7 +26,7 @@ use binbun::target::setup;
 use binbun_ast::ir::{Function as Ast, Origin, Stmt, StmtId};
 use binbun_loader::Image;
 use binbun_semantics::Bits;
-use binbun_semantics::interpret::{Machine, Value};
+use binbun_semantics::interpret::{Machine, Value, extract};
 
 const BASH: &str = "/usr/bin/bash";
 
@@ -514,8 +514,7 @@ fn pair(database: &Database<'_>, entry: u64, id: binbun::cfg::FunctionId, tally:
             continue;
         };
         tally.shared += 1;
-        let agree = a_values.iter().zip(b_values).all(|(a, b)| same(a, b));
-        if agree {
+        if a_values.iter().zip(b_values).all(|(a, b)| agree(*a, *b)) {
             tally.agreed += 1;
         } else {
             tally.disagreed.push(format!(
@@ -526,4 +525,13 @@ fn pair(database: &Database<'_>, entry: u64, id: binbun::cfg::FunctionId, tally:
             ));
         }
     }
+}
+
+/// Whether the views' values of a statement agree: on the bits both
+/// define, over the narrower width where the views type it at different
+/// widths (the reading view's `int i` where the exact view keeps the
+/// 64-bit register the counter lives in).
+fn agree(a: Value, b: Value) -> bool {
+    let width = a.width().min(b.width());
+    same(&extract(a, 0, width), &extract(b, 0, width))
 }
