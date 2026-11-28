@@ -14,6 +14,9 @@ set -euo pipefail
 version=0.17.1
 root=$(cd "$(dirname "$0")/.." && pwd)
 dir=${1:-$root/gui/target/zig}
+mkdir -p "$dir"
+# Absolute (and Git Bash's on Windows): the path printed is run elsewhere.
+dir=$(cd "$dir" && pwd)
 
 case $(uname -s)-$(uname -m) in
     Linux-x86_64) asset=zig-x86_64-linux-$version.tar.xz sha256=3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a ;;
@@ -30,7 +33,6 @@ name=${name%.zip}
 case $asset in *.zip) exe=zig.exe ;; *) exe=zig ;; esac
 
 if [ ! -x "$dir/$name/$exe" ]; then
-    mkdir -p "$dir"
     # Unpacked beside where it goes, then renamed there whole: a build
     # fetching it at the same time (rust-analyzer's) finds all of it or none.
     work=$(mktemp -d "$dir/.fetch.XXXXXX")
@@ -49,8 +51,12 @@ if [ ! -x "$dir/$name/$exe" ]; then
         *.zip) (cd "$work" && unzip -q "$asset") ;;
         *) tar -xJf "$work/$asset" -C "$work" ;;
     esac
-    # Another fetch may have put it there first: the same Zig.
-    mv -T "$work/$name" "$dir/$name" 2>/dev/null || [ -x "$dir/$name/$exe" ]
+    # Another fetch may have put it there first: the same Zig. A copy
+    # without its zig (a cache that kept the folders, not the files) goes.
+    if ! mv -T "$work/$name" "$dir/$name" 2>/dev/null && [ ! -x "$dir/$name/$exe" ]; then
+        rm -rf "${dir:?}/$name"
+        mv -T "$work/$name" "$dir/$name"
+    fi
 fi
 case $asset in
     # Windows: the path as Windows has it (cargo's build scripts are not
