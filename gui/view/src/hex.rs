@@ -2178,7 +2178,7 @@ mod tests {
     /// A Mach-O's load commands are typed by their kinds (a library's and
     /// the dynamic linker's by their paths), its symbols as `nlist_64`s
     /// (each by its name), and the link-edit data's blobs are parts. The
-    /// x86_64 slice, whatever the host: the arm64 ones have chained fixups
+    /// `x86_64` slice, whatever the host: the arm64 ones have chained fixups
     /// instead of `dyld_info_command`.
     #[test]
     fn mach_o_commands_and_tables_are_typed() {
