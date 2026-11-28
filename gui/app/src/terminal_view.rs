@@ -56,13 +56,15 @@ use crate::theme::{hsla, solid};
 use crate::workspace::{ICON_BUTTON, TabKind, Workspace};
 
 /// How long after a coding agent starts in a terminal its harness has to
-/// start binbun's server (it announces itself at its handshake, a
-/// harness's first milliseconds) before the agent is taken not to run it.
-const SERVER_AFTER: Duration = Duration::from_secs(2);
+/// start binbun's server before the agent is taken not to run it. Claude
+/// Code 2.1.325's server announced itself 24 ms before to 57 ms after its
+/// first status report (three runs); this leaves several times that, and
+/// the reads' interval.
+const SERVER_AFTER: Duration = Duration::from_millis(500);
 /// How long the servers' announcements are read after an agent starts
 /// (an interpreter failing says so once it has tried), and how often.
 const WATCH: Duration = Duration::from_secs(15);
-const WATCH_EVERY: Duration = Duration::from_millis(200);
+const WATCH_EVERY: Duration = Duration::from_millis(100);
 /// How much earlier than its agent was seen a server may have started (a
 /// harness starts its servers before it says what it is) and be its.
 const SERVER_BEFORE: u64 = 10_000;
