@@ -2006,7 +2006,10 @@ impl Workspace {
                 self.xref_badge(chips, (k, row_h), quiet, cx)
             });
             let stripe = kind.and_then(|k| kind_color(theme, k));
+            // At the view's top edge the bar's border above is its rule
+            // (both drawn, the line would be doubled).
             let rule = match header {
+                _ if y < 1.0 => None,
                 Header::Item | Header::Piece => Some(theme.border_variant),
                 Header::Block if loop_head => Some(with_alpha(theme.border_variant, 0x70)),
                 Header::Block | Header::None => None,

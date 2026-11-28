@@ -288,7 +288,16 @@ impl Workspace {
 
     /// Terminal `id` takes the focus (its keys taken from then on).
     pub fn focus_terminal(&mut self, id: u32, window: &mut Window, cx: &mut Context<Self>) {
-        self.terminals.last = Some(id);
+        // The console button's terminal (and Ctrl+Backtick's): not one of
+        // the robot's agents, which have the robot.
+        if self
+            .terminals
+            .list
+            .get(&id)
+            .is_none_or(|ui| ui.launched.is_none())
+        {
+            self.terminals.last = Some(id);
+        }
         self.ensure_terminal_keys(window, cx);
         let focus = self.terminal_ui(id, cx).focus.clone();
         window.focus(&focus, cx);
@@ -435,6 +444,20 @@ impl Workspace {
             .iter()
             .filter_map(|(&id, ui)| Some((id, ui.launched.as_ref()?.name.clone())))
             .collect()
+    }
+
+    /// Whether an agent the robot started is shown (its tab the active
+    /// one of a pane): the robot is lit, as the console button is for the
+    /// console.
+    pub fn agent_shown(&self) -> bool {
+        self.terminals
+            .list
+            .iter()
+            .filter(|(_, ui)| ui.launched.is_some())
+            .any(|(&id, _)| {
+                self.place_of(&TabKind::Terminal(id))
+                    .is_some_and(|(_, _, shown)| shown)
+            })
     }
 
     /// The `PATH` the user's shell gives a terminal, once read (read the
@@ -1012,7 +1035,15 @@ impl Workspace {
                 this.show_shell(TabKind::Console, false, window, cx);
             })
         }];
-        for &id in self.terminals.list.keys() {
+        // The robot's agents are in the robot's menu.
+        let plain: Vec<u32> = self
+            .terminals
+            .list
+            .iter()
+            .filter(|(_, ui)| ui.launched.is_none())
+            .map(|(&id, _)| id)
+            .collect();
+        for id in plain {
             items.push(OwnItem {
                 checked: shown(&TabKind::Terminal(id)),
                 ..OwnItem::new(self.terminal_title(id), move |this, window, cx| {

@@ -1305,6 +1305,7 @@ impl Workspace {
         let left = div()
             .flex()
             .items_center()
+            .gap(self.z(2.0))
             .min_w_0()
             .child(self.icon_button(
                 "map-toggle",
@@ -1342,7 +1343,7 @@ impl Workspace {
                     IconName::Bot,
                     Command::NewAgent,
                     self.session.is_some(),
-                    false,
+                    self.agent_shown(),
                     cx,
                 )
                 .on_mouse_down(
