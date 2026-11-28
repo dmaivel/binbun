@@ -1223,6 +1223,7 @@ impl Workspace {
         // Its console was connected to the database closed.
         self.console.stop();
         self.save_layout();
+        self.close_binary_panels();
         self.collab.close(None);
         self.threads = ThreadsUi::default();
         self.projects.closed();
@@ -1277,6 +1278,12 @@ impl Workspace {
         self.facts = FactsUi::default();
         self.ir = IrUi::default();
         self.calls = CallsUi::default();
+        // The Origin's question went with the analysis; the Pathfinder's
+        // is read and asked again.
+        self.close_panel(Panel::Origin);
+        if self.right_dock.is_open(Panel::Pathfinder) {
+            self.pathfinder_opened();
+        }
         self.peek = None;
         let ids: Vec<PaneId> = self.layout.panes().map(|p| p.id).collect();
         for id in ids {

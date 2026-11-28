@@ -2,7 +2,8 @@
 //! [`binbun_gui_view::layout_file`]) and restored when the binary opens
 //! again: the panes and their sizes, the tabs that can be restored, the
 //! active and focused ones (the console's among them), the map's and the
-//! dock's widths, the hex side areas' shares under their bytes. Saved
+//! dock's widths, the right dock's panels that restore from the project,
+//! the hex side areas' shares under their bytes. Saved
 //! when it changes (looked at every
 //! half second), when the binary closes and when the app quits.
 //! Each tab of code is restored at its place, in its view, a graph
@@ -118,6 +119,7 @@ impl Workspace {
             layout: main.layout,
             sidebar_width: self.sidebar_width,
             dock_width: self.layout_ui.dock_width,
+            right: self.right_dock.saved(self.right_sidebar),
             hex_sides: main.hex_sides,
             places: main.places,
             shown: shown.min(splits.len()),
@@ -192,6 +194,9 @@ impl Workspace {
             }
             self.sidebar_width = saved.sidebar_width.clamp(MIN_WIDTH, MAX_WIDTH);
             self.layout_ui.dock_width = saved.dock_width.map(|w| w.clamp(MIN_WIDTH, MAX_WIDTH));
+            if let Some(right) = &saved.right {
+                self.restore_right_dock(right);
+            }
         }
         self.layout_ui.saved = Some(self.saved_layout().to_toml());
         self.layout_ui.save_failed = false;

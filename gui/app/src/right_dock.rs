@@ -6,6 +6,9 @@
 //! dragged. A panel reopens in the half it was last in. The dock's width
 //! drags at its left edge; its › hides it with its panels kept, as View ›
 //! Right Dock does. Its tabs stay in it (they are panels, not panes).
+//! The panels that restore from the project alone (Threads, History, the
+//! Pathfinder) are saved with the layout, as they were placed; the
+//! binary's panels close with it.
 
 use std::cell::Cell;
 use std::collections::HashSet;
@@ -13,6 +16,7 @@ use std::rc::Rc;
 
 use binbun_gui_view::commands::Command;
 use binbun_gui_view::layout::TabId;
+use binbun_gui_view::layout_file::{SavedHalf, SavedPanel, SavedRight};
 use gpui_kit::assets::IconName;
 use gpui_kit::prelude::*;
 use gpui_kit::{
@@ -86,6 +90,25 @@ impl Panel {
             Self::Session(_) => SESSION_WIDTH,
             Self::Origin => ORIGIN_WIDTH,
             Self::Pathfinder => PATHFINDER_WIDTH,
+        }
+    }
+
+    /// As saved, if it is: one that restores from the project alone.
+    fn saved(self) -> Option<SavedPanel> {
+        match self {
+            Self::Threads => Some(SavedPanel::Threads),
+            Self::History => Some(SavedPanel::History),
+            Self::Pathfinder => Some(SavedPanel::Pathfinder),
+            Self::Session(_) | Self::Origin => None,
+        }
+    }
+
+    /// The panel saved as `saved`.
+    fn restored(saved: SavedPanel) -> Self {
+        match saved {
+            SavedPanel::Threads => Self::Threads,
+            SavedPanel::History => Self::History,
+            SavedPanel::Pathfinder => Self::Pathfinder,
         }
     }
 }
@@ -261,6 +284,57 @@ impl RightDock {
             }
         }
     }
+
+    /// The dock as saved, `shown` or not: its panels that are saved, each
+    /// half's front one (the nearest saved one on its left, if it is not
+    /// saved); `None` without any.
+    pub fn saved(&self, shown: bool) -> Option<SavedRight> {
+        let halves = self.halves.each_ref().map(|half| {
+            let panels: Vec<SavedPanel> = half.panels.iter().filter_map(|p| p.saved()).collect();
+            let before = half
+                .panels
+                .iter()
+                .take(half.active + 1)
+                .filter(|p| p.saved().is_some())
+                .count();
+            SavedHalf {
+                panels,
+                active: before.saturating_sub(1),
+            }
+        });
+        if halves.iter().all(|half| half.panels.is_empty()) {
+            return None;
+        }
+        Some(SavedRight {
+            halves,
+            split: self.split,
+            shown,
+        })
+    }
+
+    /// The panels of `saved` put back in their halves after those open
+    /// (a session's), its front ones in front, its share taken.
+    fn restore(&mut self, saved: &SavedRight) {
+        self.split = saved.split.clamp(0.2, 0.8);
+        for (h, half) in saved.halves.iter().enumerate() {
+            for panel in half.panels.iter().copied().map(Panel::restored) {
+                if self.is_open(panel) {
+                    continue;
+                }
+                if h == 1 {
+                    self.below.insert(panel);
+                }
+                if let Some(to) = self.halves.get_mut(h) {
+                    to.panels.push(panel);
+                }
+            }
+            let front = half.panels.get(half.active).copied().map(Panel::restored);
+            if let Some((h, i)) = front.and_then(|panel| self.place(panel)) {
+                self.activate(h, i);
+            }
+        }
+        self.settle();
+    }
 }
 
 /// A panel's tab being dragged.
@@ -281,6 +355,13 @@ impl Workspace {
     pub fn open_panel(&mut self, panel: Panel) {
         self.right_dock.open(panel);
         self.right_sidebar = true;
+        self.panel_opened(panel);
+    }
+
+    /// What panel `panel` shows, taken when it opens: the threads and the
+    /// history from the session, the Pathfinder's question from the
+    /// project.
+    fn panel_opened(&mut self, panel: Panel) {
         match panel {
             Panel::Threads | Panel::History => self.refresh_talk(),
             Panel::Pathfinder => self.pathfinder_opened(),
@@ -288,9 +369,37 @@ impl Workspace {
         }
     }
 
+    /// The saved panels opened again with the binary's layout, each where
+    /// it was; the dock shown if it was, or if it already shows a panel.
+    pub fn restore_right_dock(&mut self, saved: &SavedRight) {
+        let showing = self.right_sidebar && !self.right_dock.is_empty();
+        self.right_dock.restore(saved);
+        for half in &saved.halves {
+            for &panel in &half.panels {
+                self.panel_opened(Panel::restored(panel));
+            }
+        }
+        self.right_sidebar = !self.right_dock.is_empty() && (saved.shown || showing);
+    }
+
+    /// The binary's panels closed with it (or with its analysis made
+    /// again): what they showed is gone. The session's stay.
+    pub fn close_binary_panels(&mut self) {
+        for panel in [
+            Panel::Threads,
+            Panel::History,
+            Panel::Origin,
+            Panel::Pathfinder,
+        ] {
+            self.close_panel(panel);
+        }
+    }
+
     /// Closes panel `panel`; the dock hidden with its last.
     pub fn close_panel(&mut self, panel: Panel) {
-        self.right_dock.close(panel);
+        if !self.right_dock.close(panel) {
+            return;
+        }
         match panel {
             Panel::Origin => self.facts.origin = None,
             Panel::Pathfinder => self.pathfinder_closed(),
@@ -699,6 +808,8 @@ impl Workspace {
 
 #[cfg(test)]
 mod tests {
+    use binbun_gui_view::layout_file::SavedPanel;
+
     use super::{Panel, RightDock};
     use crate::collab::Tab;
 
@@ -732,6 +843,47 @@ mod tests {
             (vec![Panel::Threads, Panel::Pathfinder], 0)
         );
         assert!(!dock.stacked());
+    }
+
+    /// The saved panels come back in their halves with the front ones in
+    /// front; one not saved in front leaves its saved neighbour on the
+    /// left in front, and panels already open stay before them.
+    #[test]
+    fn saved_panels_come_back_where_they_were() {
+        let mut dock = RightDock::default();
+        assert_eq!(dock.saved(true), None);
+        dock.open(Panel::Threads);
+        dock.open(CHAT);
+        dock.open(Panel::Pathfinder);
+        dock.open(Panel::Origin);
+        dock.open(Panel::History);
+        dock.move_to(Panel::History, 1, 0);
+        dock.open(CHAT);
+        dock.split = 0.3;
+        let saved = dock.saved(false).unwrap();
+        assert!(!saved.shown);
+        let names = |h: usize| (saved.halves[h].panels.clone(), saved.halves[h].active);
+        assert_eq!(
+            names(0),
+            (vec![SavedPanel::Threads, SavedPanel::Pathfinder], 0)
+        );
+        assert_eq!(names(1), (vec![SavedPanel::History], 0));
+
+        let mut after = RightDock::default();
+        after.open(CHAT);
+        after.restore(&saved);
+        assert_eq!(
+            halves(&after),
+            vec![
+                (vec![CHAT, Panel::Threads, Panel::Pathfinder], 1),
+                (vec![Panel::History], 0),
+            ]
+        );
+        assert!((after.split - 0.3).abs() < 1e-6);
+        // History reopens below.
+        after.close(Panel::History);
+        after.open(Panel::History);
+        assert!(after.stacked());
     }
 
     /// A panel moved below stacks a half of its own, reopens there while

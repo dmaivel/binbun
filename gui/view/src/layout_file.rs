@@ -10,6 +10,10 @@
 //! file written before it (no `bottom`) has the tabs of its panes of lists
 //! and shells alone moved into it, and the console of one older still
 //! (`console = true`, a dock of its own).
+//! The right dock's panels that restore from the project alone (the
+//! threads, the history, the Pathfinder) are `[right]`: each half's panels
+//! and the one in front, the top half's share while they are stacked,
+//! whether it is shown; without such a panel there is no `[right]`.
 //! A tab of code also keeps its place (its cursor's address) and whether
 //! it was a graph. A file of another format (written before panes were
 //! views, [`FORMAT`]) is not read: the window opens as it does the first
@@ -41,6 +45,59 @@ use crate::unified::{Expanded, Fold, Layers, UnifiedView};
 
 /// The format this module writes and reads (`format = 2`): panes as views.
 pub const FORMAT: i64 = 2;
+
+/// A panel of the right dock as saved: one that restores from the project
+/// alone (the session's panels and Value Origin do not).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SavedPanel {
+    /// The threads.
+    Threads,
+    /// The history.
+    History,
+    /// The Pathfinder (its question is the project's own file).
+    Pathfinder,
+}
+
+impl SavedPanel {
+    /// Its name in the file.
+    fn name(self) -> &'static str {
+        match self {
+            Self::Threads => "threads",
+            Self::History => "history",
+            Self::Pathfinder => "pathfinder",
+        }
+    }
+
+    /// The panel named `name`, if it is one.
+    fn named(name: &str) -> Option<Self> {
+        [Self::Threads, Self::History, Self::Pathfinder]
+            .into_iter()
+            .find(|panel| panel.name() == name)
+    }
+}
+
+/// One half of the right dock as saved: its panels in order, the one in
+/// front.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SavedHalf {
+    /// Its panels.
+    pub panels: Vec<SavedPanel>,
+    /// The one in front, by its index in `panels`.
+    pub active: usize,
+}
+
+/// The right dock as saved: its halves (top, then the one stacked under
+/// it), the top half's share of the height while both show, whether it
+/// is shown.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SavedRight {
+    /// The top half, then the bottom one.
+    pub halves: [SavedHalf; 2],
+    /// The top half's share while they are stacked.
+    pub split: f32,
+    /// Whether it is shown.
+    pub shown: bool,
+}
 
 /// A tab as saved.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,6 +151,8 @@ pub struct SavedLayout {
     pub sidebar_width: f32,
     /// The right dock's width (logical), if it was dragged.
     pub dock_width: Option<f32>,
+    /// The right dock's saved panels, if it has any.
+    pub right: Option<SavedRight>,
     /// The side area's share of each hex pane's height under its bytes,
     /// where it is not the default.
     pub hex_sides: Vec<(PaneId, f32)>,
@@ -136,6 +195,9 @@ impl SavedLayout {
         doc.insert("sidebar", toml_edit::value(rounded(self.sidebar_width)));
         if let Some(dock) = self.dock_width {
             doc.insert("dock", toml_edit::value(rounded(dock)));
+        }
+        if let Some(right) = &self.right {
+            doc.insert("right", Item::Table(right_table(right)));
         }
         // The bottom dock apart from the split it is shown under.
         let mut shown = self.layout.clone();
@@ -194,6 +256,10 @@ impl SavedLayout {
             layout: shown.layout,
             sidebar_width: width("sidebar").ok_or("no sidebar width")?,
             dock_width: width("dock"),
+            right: doc
+                .get("right")
+                .and_then(Item::as_table)
+                .and_then(read_right),
             hex_sides: shown.hex_sides,
             places: shown.places,
             shown: doc
@@ -328,6 +394,60 @@ fn read_dock(table: &Table) -> Option<DockParts<SavedTab>> {
         },
         shown: table.get("shown").and_then(Item::as_bool).unwrap_or(true),
         size,
+    })
+}
+
+/// The right dock as written: each half's panels (`top`, `bottom`) and
+/// the one in front, the top half's share, whether it is shown.
+fn right_table(right: &SavedRight) -> Table {
+    let mut table = Table::new();
+    table.insert("shown", toml_edit::value(right.shown));
+    table.insert("split", toml_edit::value(rounded(right.split)));
+    for (half, key) in right.halves.iter().zip(["top", "bottom"]) {
+        let panels: Array = half.panels.iter().map(|p| p.name()).collect();
+        table.insert(key, Item::Value(Value::Array(panels)));
+        table.insert(
+            &format!("{key}_active"),
+            toml_edit::value(index(half.active)),
+        );
+    }
+    table
+}
+
+/// The right dock read back (a panel it does not know skipped, the one in
+/// front kept among its half's); `None` without a panel.
+fn read_right(table: &Table) -> Option<SavedRight> {
+    let half = |key: &str| {
+        let panels: Vec<SavedPanel> = table
+            .get(key)
+            .and_then(Item::as_array)
+            .into_iter()
+            .flat_map(Array::iter)
+            .filter_map(|value| value.as_str().and_then(SavedPanel::named))
+            .collect();
+        let active = table
+            .get(&format!("{key}_active"))
+            .and_then(Item::as_integer)
+            .and_then(|a| usize::try_from(a).ok())
+            .unwrap_or(0)
+            .min(panels.len().saturating_sub(1));
+        SavedHalf { panels, active }
+    };
+    let halves = [half("top"), half("bottom")];
+    if halves.iter().all(|half| half.panels.is_empty()) {
+        return None;
+    }
+    #[expect(clippy::cast_possible_truncation, reason = "a share of one")]
+    let split = table
+        .get("split")
+        .and_then(Item::as_float)
+        .map(|share| share as f32)
+        .filter(|share| share.is_finite() && *share > 0.0 && *share < 1.0)
+        .unwrap_or(0.5);
+    Some(SavedRight {
+        halves,
+        split,
+        shown: table.get("shown").and_then(Item::as_bool).unwrap_or(true),
     })
 }
 
@@ -864,6 +984,7 @@ mod tests {
             layout,
             sidebar_width: 312.0,
             dock_width: Some(380.5),
+            right: None,
             hex_sides: vec![(PaneId(0), 0.35)],
             places: HashMap::new(),
             others: Vec::new(),
@@ -1410,5 +1531,46 @@ tabs = [{ kind = "strings" }]
             }
             assert_eq!(after.to_toml(), text);
         }
+    }
+
+    /// The right dock's panels round-trip by half with the one in front,
+    /// its share and whether it is shown; a panel the file does not know
+    /// is skipped, and a dock left without one is none.
+    #[test]
+    fn the_right_dock_round_trips_and_skips_what_it_does_not_know() {
+        let mut before = saved();
+        let right = SavedRight {
+            halves: [
+                SavedHalf {
+                    panels: vec![SavedPanel::Threads, SavedPanel::Pathfinder],
+                    active: 1,
+                },
+                SavedHalf {
+                    panels: vec![SavedPanel::History],
+                    active: 0,
+                },
+            ],
+            split: 0.375,
+            shown: false,
+        };
+        before.right = Some(right.clone());
+        let text = before.to_toml();
+        let after = SavedLayout::from_toml(&text).unwrap();
+        assert_eq!(after.right, Some(right));
+        assert_eq!(after.to_toml(), text);
+
+        let unknown = text.replace("\"pathfinder\"", "\"origin\"");
+        let after = SavedLayout::from_toml(&unknown).unwrap();
+        let top = &after.right.unwrap().halves[0];
+        assert_eq!(
+            (top.panels.as_slice(), top.active),
+            ([SavedPanel::Threads].as_slice(), 0)
+        );
+
+        let none = text
+            .replace("\"threads\", ", "")
+            .replace("\"pathfinder\"", "")
+            .replace("\"history\"", "");
+        assert_eq!(SavedLayout::from_toml(&none).unwrap().right, None);
     }
 }
