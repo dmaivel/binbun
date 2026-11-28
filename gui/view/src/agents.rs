@@ -239,7 +239,7 @@ pub const HARNESSES: &[Harness] = &[
     },
     Harness {
         name: "Muse",
-        command: None,
+        command: Some("muse"),
         aliases: &["tbh"],
         mark: Some(mono!("muse.svg", [0.0, 0.0, 287.56, 191.0], 72)),
         setup: Some(Setup::Json {
