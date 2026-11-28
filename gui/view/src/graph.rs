@@ -385,6 +385,25 @@ impl Default for Viewport {
 }
 
 impl Viewport {
+    /// The view as drawn, `scale` device pixels a pixel: its origin moved
+    /// by under half a device pixel so that the graph's origin falls on a
+    /// whole device pixel. Panned, everything then moves by whole device
+    /// pixels, so what the renderer rounds to them on its own (a block's
+    /// edges, its text's baseline) rounds alike from frame to frame: text
+    /// never jumps a pixel against its block while the view glides.
+    #[must_use]
+    pub fn snapped(self, scale: f32) -> Self {
+        let unit = self.zoom * scale;
+        if unit <= 0.0 {
+            return self;
+        }
+        Self {
+            x: (self.x * unit).round() / unit,
+            y: (self.y * unit).round() / unit,
+            ..self
+        }
+    }
+
     /// `p` (graph) on screen, relative to the pane.
     pub fn to_screen(&self, p: Point) -> Point {
         Point {
@@ -577,6 +596,54 @@ mod tests {
         Size {
             width: 800.0,
             height: 600.0,
+        }
+    }
+
+    /// Panned by any fraction of a pixel, a snapped view keeps every
+    /// point's fraction of a device pixel on screen (what the renderer
+    /// rounds moves by whole device pixels), and moves less than half a
+    /// device pixel from the view it snaps.
+    #[test]
+    fn a_snapped_view_moves_by_whole_device_pixels() {
+        let p = Point {
+            x: 123.37,
+            y: 45.81,
+        };
+        // How far apart two fractions are, round the pixel's ends.
+        let apart = |a: f32, b: f32| {
+            let d = (a - b).rem_euclid(1.0);
+            d.min(1.0 - d)
+        };
+        for scale in [1.0, 1.5, 2.0] {
+            for zoom in [1.0, 0.83, 1.7] {
+                let at = |v: Viewport| {
+                    let s = v.to_screen(p);
+                    (s.x * scale, s.y * scale)
+                };
+                let first = at(Viewport {
+                    zoom,
+                    x: 10.0,
+                    y: -4.0,
+                }
+                .snapped(scale));
+                for k in 0..40_u8 {
+                    let pan = f32::from(k) * 0.137;
+                    let view = Viewport {
+                        zoom,
+                        x: 10.0 + pan,
+                        y: -4.0 - pan / 2.0,
+                    };
+                    let snapped = view.snapped(scale);
+                    let now = at(snapped);
+                    assert!(apart(now.0, first.0) < 1e-3, "x {scale} {zoom} {k}");
+                    assert!(apart(now.1, first.1) < 1e-3, "y {scale} {zoom} {k}");
+                    let moved = (snapped.x - view.x).abs().max((snapped.y - view.y).abs());
+                    assert!(
+                        moved * zoom * scale <= 0.5 + 1e-3,
+                        "moved {scale} {zoom} {k}"
+                    );
+                }
+            }
         }
     }
 

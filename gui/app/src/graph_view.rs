@@ -290,7 +290,9 @@ impl Workspace {
         if !known || g.glide() {
             window.request_animation_frame();
         }
-        let view = g.view;
+        // Drawn on whole device pixels: the text keeps its place in its
+        // block as the view glides.
+        let view = g.view.snapped(window.scale_factor());
         let bounds = Rc::clone(&state.bounds);
         let focus = state.focus.clone();
         let token = state.listing.token;

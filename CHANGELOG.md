@@ -82,6 +82,7 @@ always read by later versions.
 
 ### Fixed
 
+- GUI: the graph view's blocks and edges no longer shift a pixel against each other while the view glides (the wheel, a touchpad): it is drawn on whole device pixels.
 - A function of very many blocks no longer takes time quadratic in them to lift (its stack offsets were found by sweeping every block until none changed): a 73,000-instruction function of zellij lifts in 2 s instead of 40 s, and every function of perf decompiles in the exact view in 95 s instead of 113 s, as before.
 - Finding every function's callers no longer keeps every function's lifted code between its passes (it lifts each again, on all the threads): on a 50 MB program of 38,000 functions (zellij) it finishes at a peak of 5.3 GB where it ran the machine out of memory past 19 GB, and perf's peaks at 1.7 GB instead of 4.3 GB.
 - GUI: a pane's view button, pressed again, closes its open menu instead of opening it anew.
