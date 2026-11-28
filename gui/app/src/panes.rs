@@ -261,10 +261,6 @@ impl Workspace {
                 }
             }
             EdgeDrag::HexSide(id) => self.drag_hex_side(*id, e.position.y),
-            EdgeDrag::Console => {
-                let bottom = window.viewport_size().height - self.bar(STATUS_PAD);
-                self.drag_console(f32::from(bottom - e.position.y) / scale, window);
-            }
         }
     }
 
@@ -419,6 +415,7 @@ impl Workspace {
             Some(TabKind::Struct(_)) => self.render_struct(id, cx),
             Some(TabKind::Found(n)) => self.render_results(id, *n, window, cx),
             Some(TabKind::Folder(key)) => self.render_folder(id, key, cx),
+            Some(TabKind::Console) => self.render_console(window, cx),
             None => {
                 let focus = self.panes.get(&id).map(|s| s.focus.clone());
                 div()
@@ -429,19 +426,25 @@ impl Workspace {
                     .into_any_element()
             }
         };
-        // Only a pane holding lists has a tab bar: one showing code has its
-        // toolbar as its top, the settings and a struct their own (the
-        // window's tabs are the places, the settings and structs).
-        let bar = self
-            .layout
-            .pane(id)
-            .is_some_and(|p| p.tabs.iter().any(|t| crate::tabs::is_list(&t.content)));
+        // Only a pane below the code (lists, the console) has a tab bar:
+        // one showing code has its toolbar as its top, the settings and a
+        // struct their own (the window's tabs are the places, the settings
+        // and structs). The console's header is its toolbar.
+        let bar = self.layout.pane(id).is_some_and(|p| {
+            p.tabs
+                .iter()
+                .any(|t| crate::tabs::is_below_code(&t.content))
+        });
         self.island()
             .id(("pane", id.0))
             .bg(hsla(self.theme.under(self.theme.editor)))
             .when(bar, |d| d.child(self.tab_bar(id, cx)))
             .when(
-                kind.is_some() && !matches!(kind, Some(TabKind::Settings | TabKind::Struct(_))),
+                kind.is_some()
+                    && !matches!(
+                        kind,
+                        Some(TabKind::Settings | TabKind::Struct(_) | TabKind::Console)
+                    ),
                 |d| d.child(self.toolbar(id, !bar, cx)),
             )
             .child(
@@ -608,6 +611,7 @@ impl Workspace {
                 .folder_path(key)
                 .pop()
                 .unwrap_or_else(|| "Folder".to_owned()),
+            TabKind::Console => "Console".to_owned(),
         }
     }
 
@@ -622,6 +626,7 @@ impl Workspace {
             TabKind::Xrefs { .. } => IconName::ArrowRightLeft,
             TabKind::Struct(_) => IconName::Braces,
             TabKind::Found(_) => IconName::Search,
+            TabKind::Console => IconName::SquareTerminal,
             // The icon of the folder's items.
             TabKind::Folder(key) => {
                 let items = match Group::of_key(key) {
@@ -901,7 +906,7 @@ impl Workspace {
                     crumbs.push((name, color));
                 }
             }
-            Some(TabKind::Settings | TabKind::Struct(_)) | None => {}
+            Some(TabKind::Settings | TabKind::Struct(_) | TabKind::Console) | None => {}
         }
         crumbs
     }
@@ -1301,7 +1306,7 @@ impl Workspace {
                 IconName::SquareTerminal,
                 Command::ToggleConsole,
                 self.session.is_some(),
-                self.console.open,
+                self.console_shown(),
                 cx,
             ))
             .children(self.render_collab_status(self.threads_status(cx), cx))
@@ -1557,13 +1562,6 @@ impl Render for Workspace {
         } else {
             body
         };
-        // The bottom dock (the console) under the editor area, between
-        // the side docks.
-        let console = self
-            .console
-            .open
-            .then(|| self.render_console(window, cx))
-            .filter(|_| self.session.is_some());
         let editor = div()
             .flex_1()
             .min_w_0()
@@ -1577,8 +1575,7 @@ impl Render for Workspace {
                     .flex()
                     .child(editor)
                     .children(map_right),
-            )
-            .children(console);
+            );
         let body = body
             .children(left.filter(|_| self.session.is_some()))
             .child(editor)
@@ -1612,7 +1609,7 @@ impl Render for Workspace {
                     EdgeDrag::Split { path, .. } => {
                         matches!(self.layout.split_at(path), Some((Axis::Column, _)))
                     }
-                    EdgeDrag::HexSide(_) | EdgeDrag::Console => true,
+                    EdgeDrag::HexSide(_) => true,
                     EdgeDrag::Map | EdgeDrag::Dock => false,
                 };
                 let d = if rows {

@@ -118,7 +118,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let id = self.open_list(id, TabKind::Xrefs { of, len }, true, cx);
+        let id = self.open_below(id, TabKind::Xrefs { of, len }, true, cx);
         if let Some(state) = self.panes.get_mut(&id) {
             state.list = ListState::default();
         }
@@ -172,6 +172,7 @@ impl Workspace {
             TabKind::Listing
             | TabKind::C { .. }
             | TabKind::Settings
+            | TabKind::Console
             | TabKind::Struct(_)
             | TabKind::Found(_) => return,
         };
@@ -230,6 +231,7 @@ impl Workspace {
             TabKind::Listing
             | TabKind::C { .. }
             | TabKind::Settings
+            | TabKind::Console
             | TabKind::Struct(_)
             | TabKind::Found(_) => None,
         }
@@ -462,6 +464,7 @@ impl Workspace {
                 TabKind::Listing
                 | TabKind::C { .. }
                 | TabKind::Settings
+                | TabKind::Console
                 | TabKind::Strings
                 | TabKind::Struct(_)
                 | TabKind::Found(_)

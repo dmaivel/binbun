@@ -1200,6 +1200,7 @@ impl Workspace {
                 (document, Start::Node(node), format!("{address:X}"))
             }
             TabKind::Settings
+            | TabKind::Console
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)

@@ -79,7 +79,7 @@ impl Workspace {
             self.layout.activate(id, index);
             id
         } else {
-            let id = self.open_list(self.layout.focused(), kind, false, cx);
+            let id = self.open_below(self.layout.focused(), kind, false, cx);
             if let Some(state) = self.panes.get_mut(&id) {
                 state.list = ListState::default();
             }

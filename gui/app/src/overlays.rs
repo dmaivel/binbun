@@ -139,6 +139,7 @@ impl Workspace {
                 Some(by_name.unwrap_or(document.entry))
             }
             TabKind::Settings
+            | TabKind::Console
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)

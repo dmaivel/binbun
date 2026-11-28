@@ -6,8 +6,9 @@
 //! ([`Workspace::open_window_tab`]).
 //!
 //! The settings and a struct being edited are tabs of the strip too, of a
-//! pane of their own: not places, nothing navigates in them (a navigation
-//! from one goes to a tab of a place first), and one is always a place.
+//! pane of their own (and the console, left alone in one): not places,
+//! nothing navigates in them (a navigation from one goes to a tab of a
+//! place first), and one is always a place.
 //!
 //! The tab shown is the workspace's own layout, panes, places and trails;
 //! the others wait parked, swapped in when switched to.
@@ -56,7 +57,7 @@ impl Default for WindowTabs {
 }
 
 /// What a window tab of `layout` shows instead of a place (the settings,
-/// a struct): a lone pane holding only it.
+/// a struct, the console): a lone pane holding only it.
 fn tool_of(layout: &Layout<TabKind>) -> Option<&TabKind> {
     let mut panes = layout.panes();
     let pane = panes.next()?;
@@ -64,7 +65,11 @@ fn tool_of(layout: &Layout<TabKind>) -> Option<&TabKind> {
         return None;
     }
     let tab = pane.tabs.first()?;
-    matches!(tab.content, TabKind::Settings | TabKind::Struct(_)).then_some(&tab.content)
+    matches!(
+        tab.content,
+        TabKind::Settings | TabKind::Struct(_) | TabKind::Console
+    )
+    .then_some(&tab.content)
 }
 
 impl Workspace {
@@ -102,6 +107,42 @@ impl Workspace {
     /// Whether the tab shown is the settings or a struct, not a place.
     pub fn shows_tool(&self) -> bool {
         tool_of(&self.layout).is_some()
+    }
+
+    /// Takes the tabs of `kind` (the console, which one window tab shows)
+    /// out of the window tabs not shown: a pane left without tabs closes,
+    /// a window tab left without any goes.
+    pub fn take_parked(&mut self, kind: &TabKind) {
+        let mut emptied = Vec::new();
+        for (index, slot) in self.window_tabs.slots.iter_mut().enumerate() {
+            let Some(parked) = slot else {
+                continue;
+            };
+            loop {
+                let found = parked
+                    .layout
+                    .panes()
+                    .find_map(|p| Some((p.id, p.tabs.iter().position(|t| &t.content == kind)?)));
+                let Some((pane, at)) = found else {
+                    break;
+                };
+                parked.layout.close_tab(pane, at);
+            }
+            let live: Vec<PaneId> = parked.layout.panes().map(|p| p.id).collect();
+            parked.panes.retain(|id, _| live.contains(id));
+            if parked.maximized.is_some_and(|m| !live.contains(&m)) {
+                parked.maximized = None;
+            }
+            if parked.layout.panes().all(|p| p.tabs.is_empty()) {
+                emptied.push(index);
+            }
+        }
+        for index in emptied.into_iter().rev() {
+            self.window_tabs.slots.remove(index);
+            if index < self.window_tabs.active {
+                self.window_tabs.active -= 1;
+            }
+        }
     }
 
     /// The shown window tab's index.
@@ -377,10 +418,16 @@ impl Workspace {
     /// function its place is in, else the address; with no binary, Start.
     fn window_tab_title(&self, index: usize) -> String {
         if let Some(tool) = self.layout_of(index).and_then(tool_of) {
-            return if let TabKind::Struct(target) = tool {
-                self.struct_tab_label(target)
-            } else {
-                "Settings".to_owned()
+            return match tool {
+                TabKind::Struct(target) => self.struct_tab_label(target),
+                TabKind::Console => "Console".to_owned(),
+                TabKind::Settings
+                | TabKind::Listing
+                | TabKind::C { .. }
+                | TabKind::Strings
+                | TabKind::Xrefs { .. }
+                | TabKind::Found(_)
+                | TabKind::Folder(_) => "Settings".to_owned(),
             };
         }
         if self.session.is_none() {

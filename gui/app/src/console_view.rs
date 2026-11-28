@@ -1,6 +1,9 @@
-//! The console (Ctrl+backtick, View › Console): a dock under the panes, as
-//! an editor's terminal panel, running the user's Python
+//! The console (Ctrl+backtick, View › Console): a tab of a pane, under
+//! the code unless moved (dragged as any tab), running the user's Python
 //! ([`binbun_gui_view::console`]) connected to this window's database.
+//! One for the window: it keeps running while its tab is closed, moved or
+//! in another window tab; Ctrl+backtick hides it where it is shown, else
+//! brings it under the code of the window tab shown, from wherever it was.
 //! Its transcript above (the cells run, coloured; output as it comes;
 //! values; tracebacks; the undo step each cell made), only its visible
 //! lines drawn; the input below: Python coloured, Enter runs the cell
@@ -8,8 +11,8 @@
 //! breaks the line, Up and Down at the first and last line walk the
 //! history; completions as typed (Tab or Enter takes one, the arrows move,
 //! Escape closes) and the signature of the call typed above the input;
-//! Ctrl+C interrupts the cell running, Ctrl+L clears. Its top edge drags
-//! its height; open and height are saved with the layout.
+//! Ctrl+C interrupts the cell running, Ctrl+L clears. Its tab is saved
+//! with the layout, as the others.
 
 use std::cell::Cell;
 use std::ops::Range;
@@ -18,6 +21,7 @@ use std::sync::Arc;
 
 use binbun_gui_view::console::python::{self, Kind as PyKind};
 use binbun_gui_view::console::{Console, Item, Launch, Line, LineKind, Status, history};
+use binbun_gui_view::layout::PaneId;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::Sizable as _;
 use gpui_kit::component::input::{
@@ -36,14 +40,8 @@ use crate::panes::measured;
 use crate::scrolling::wheel;
 use crate::serving;
 use crate::theme::{Theme, hsla, solid};
-use crate::workspace::{EdgeDrag, ICON, STATUS_PAD, Workspace, f};
+use crate::workspace::{ICON, STATUS_PAD, TabKind, Workspace, f};
 
-/// The console's height (logical) until its edge is dragged.
-const HEIGHT: f32 = 260.0;
-/// Its least height (logical).
-const MIN_HEIGHT: f32 = 90.0;
-/// The panes keep at least this much height (logical) above it.
-const PANES_MIN: f32 = 160.0;
 /// The input's most lines before it scrolls.
 const INPUT_LINES: usize = 12;
 /// The completions shown at once.
@@ -52,13 +50,9 @@ const COMPLETIONS: usize = 10;
 const PROMPT: &str = ">>> ";
 const CONTINUATION: &str = "... ";
 
-/// The console's dock.
+/// The console: its Python, its input, its transcript's scrolling.
 #[derive(Default)]
 pub struct ConsoleUi {
-    /// Whether it is shown.
-    pub open: bool,
-    /// Its height (logical) once its edge was dragged.
-    pub height: Option<f32>,
     console: Option<Console>,
     input: Option<Entity<EditorState>>,
     /// The cell sent, until the console says whether it runs.
@@ -169,20 +163,56 @@ fn completable(code: &str, at: usize) -> bool {
 }
 
 impl Workspace {
-    /// Ctrl+backtick: shows the console (started if it is not, the input
-    /// focused) or hides it (the focus back on the pane).
+    /// Ctrl+backtick: hides the console where the window tab shown shows
+    /// it (its tab closed: it keeps running; the focus back on a pane);
+    /// else shows it, its input focused (started if it is not): its tab
+    /// brought forward where this window tab has it, else opened under the
+    /// code ([`Workspace::open_below`]), taken from the window tab that had
+    /// it.
     pub fn toggle_console(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.console.open = !self.console.open;
-        if self.console.open {
-            self.ensure_console(window, cx);
-            if let Some(input) = &self.console.input {
-                input.update(cx, |s, cx| s.focus(window, cx));
+        match self.console_place() {
+            Some((pane, index, true)) => {
+                self.layout.close_tab(pane, index);
+                self.after_layout(window, cx);
             }
-        } else {
-            let id = self.layout.focused();
-            self.focus_pane(id, window, cx);
+            Some((pane, index, false)) => {
+                self.layout.activate(pane, index);
+                self.focus_pane(pane, window, cx);
+            }
+            None => {
+                self.take_parked(&TabKind::Console);
+                let from = self.layout.focused();
+                let id = self.open_below(from, TabKind::Console, false, cx);
+                self.focus_pane(id, window, cx);
+            }
         }
         cx.notify();
+    }
+
+    /// The console's tab in the window tab shown: its pane, its index
+    /// there, and whether it is the tab the pane shows.
+    fn console_place(&self) -> Option<(PaneId, usize, bool)> {
+        self.layout.panes().find_map(|pane| {
+            let index = pane
+                .tabs
+                .iter()
+                .position(|t| t.content == TabKind::Console)?;
+            Some((pane.id, index, pane.active == index))
+        })
+    }
+
+    /// Whether the window tab shown shows the console.
+    pub fn console_shown(&self) -> bool {
+        self.console_place().is_some_and(|(_, _, shown)| shown)
+    }
+
+    /// The console's input takes the focus (the console started if it is
+    /// not).
+    pub fn focus_console(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.ensure_console(window, cx);
+        if let Some(input) = &self.console.input {
+            input.update(cx, |s, cx| s.focus(window, cx));
+        }
     }
 
     /// What starts the console: the setting's interpreter, this window's
@@ -374,7 +404,7 @@ impl Workspace {
         let Some(input) = self.console.input.clone() else {
             return false;
         };
-        if !self.console.open || !input.read(cx).focus_handle(cx).is_focused(window) {
+        if !self.console_shown() || !input.read(cx).focus_handle(cx).is_focused(window) {
             return false;
         }
         let m = &keystroke.modifiers;
@@ -590,57 +620,24 @@ impl Workspace {
         true
     }
 
-    /// The console's edge dragged to `height` (logical) above the status
-    /// bar.
-    pub fn drag_console(&mut self, height: f32, window: &Window) {
-        let scale = self.settings.ui_scale;
-        let most = (f32::from(window.viewport_size().height) / scale - PANES_MIN).max(MIN_HEIGHT);
-        self.console.height = Some(height.clamp(MIN_HEIGHT, most));
-    }
-
-    /// The console's dock.
+    /// The console as its pane shows it: its header, its transcript, the
+    /// signature of the call typed, its input.
     pub fn render_console(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         self.ensure_console(window, cx);
-        let theme = self.theme;
-        let height = self.z(self.console.height.unwrap_or(HEIGHT));
-        let edge = div()
-            .id("console-edge")
-            .absolute()
-            .top_0()
-            .left_0()
-            .right_0()
-            .h(px(4.0))
-            .cursor_row_resize()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _, _, cx| {
-                    this.layout_ui.drag = Some(EdgeDrag::Console);
-                    cx.stop_propagation();
-                    cx.notify();
-                }),
-            );
-        let island = self
-            .island()
-            .relative()
-            .h(height)
-            .flex_none()
-            .bg(hsla(theme.under(theme.panel)));
-        let island = if self.settings.islands {
-            island
-        } else {
-            island.border_t_1().border_color(hsla(theme.border))
-        };
-        island
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .min_h_0()
             .child(self.console_header(cx))
             .child(self.console_transcript(cx))
             .children(self.console_signature(cx))
             .child(self.console_input(window, cx))
-            .child(edge)
-            .children(self.island_edge())
             .into_any_element()
     }
 
-    /// The header: the title, what the console is, Clear and Restart.
+    /// The header (its tab names it): what the console is, Clear and
+    /// Restart.
     fn console_header(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
         let status = self.console.console.as_ref().map(|c| match &c.status {
@@ -677,10 +674,7 @@ impl Workspace {
             .px(self.z(8.0))
             .border_b_1()
             .border_color(hsla(theme.border_variant))
-            // The dock's surface here (it paints none while translucent).
             .bg(hsla(theme.panel))
-            .rounded_t(self.island_corner())
-            .child(div().text_color(hsla(theme.text)).child("Console"))
             .child(
                 div()
                     .flex_1()

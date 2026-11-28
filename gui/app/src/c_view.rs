@@ -1357,6 +1357,7 @@ impl Workspace {
             TabKind::C { view, .. } => Some(*view),
             TabKind::Listing
             | TabKind::Settings
+            | TabKind::Console
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)

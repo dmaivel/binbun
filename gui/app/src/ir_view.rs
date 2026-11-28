@@ -165,6 +165,7 @@ impl Workspace {
             TabKind::C { function: None, .. }
             | TabKind::Listing
             | TabKind::Settings
+            | TabKind::Console
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)

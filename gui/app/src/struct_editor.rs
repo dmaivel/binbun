@@ -717,6 +717,7 @@ impl Workspace {
                 TabKind::Listing
                 | TabKind::C { .. }
                 | TabKind::Settings
+                | TabKind::Console
                 | TabKind::Strings
                 | TabKind::Xrefs { .. }
                 | TabKind::Found(_)

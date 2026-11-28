@@ -1,9 +1,9 @@
 //! The window's layout saved per project (its `layout.toml`,
 //! [`binbun_gui_view::layout_file`]) and restored when the binary opens
 //! again: the panes and their sizes, the tabs that can be restored, the
-//! active and focused ones, the map's and the dock's widths, the console
-//! open or not and its height, the hex side areas' shares under their
-//! bytes. Saved when it changes (looked at every
+//! active and focused ones (the console's among them), the map's and the
+//! dock's widths, the hex side areas' shares under their bytes. Saved
+//! when it changes (looked at every
 //! half second), when the binary closes and when the app quits.
 //! Each tab of code is restored at its place, in its view, a graph
 //! following the tab it followed.
@@ -44,6 +44,7 @@ impl Workspace {
             TabKind::Strings => Some(SavedTab::Strings),
             TabKind::Xrefs { of, len } => Some(SavedTab::Xrefs { of: *of, len: *len }),
             TabKind::Folder(key) => Some(SavedTab::Folder(key.clone())),
+            TabKind::Console => Some(SavedTab::Console),
             TabKind::Settings | TabKind::Struct(_) | TabKind::Found(_) => None,
         });
         let hex_sides = layout
@@ -116,8 +117,6 @@ impl Workspace {
             layout: main.layout,
             sidebar_width: self.sidebar_width,
             dock_width: self.layout_ui.dock_width,
-            console: self.console.open,
-            console_height: self.console.height,
             hex_sides: main.hex_sides,
             places: main.places,
             shown: shown.min(splits.len()),
@@ -192,8 +191,6 @@ impl Workspace {
             }
             self.sidebar_width = saved.sidebar_width.clamp(MIN_WIDTH, MAX_WIDTH);
             self.layout_ui.dock_width = saved.dock_width.map(|w| w.clamp(MIN_WIDTH, MAX_WIDTH));
-            self.console.open = saved.console;
-            self.console.height = saved.console_height;
         }
         self.layout_ui.saved = Some(self.saved_layout().to_toml());
         self.layout_ui.save_failed = false;
@@ -220,6 +217,7 @@ impl Workspace {
             SavedTab::Strings => Some(TabKind::Strings),
             SavedTab::Xrefs { of, len } => Some(TabKind::Xrefs { of: *of, len: *len }),
             SavedTab::Folder(key) => Some(TabKind::Folder(key.clone())),
+            SavedTab::Console => Some(TabKind::Console),
         });
         if !layout.panes().any(|p| !p.tabs.is_empty()) {
             return false;

@@ -230,6 +230,7 @@ impl Workspace {
             }
             TabKind::C { .. }
             | TabKind::Settings
+            | TabKind::Console
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)
@@ -826,7 +827,7 @@ impl Workspace {
                 _sub: sub,
             },
         );
-        let id = self.open_list(id, TabKind::Found(n), false, cx);
+        let id = self.open_below(id, TabKind::Found(n), false, cx);
         if kind == ResultsKind::Bookmarks {
             self.focus_pane(id, window, cx);
         }

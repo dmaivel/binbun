@@ -134,6 +134,7 @@ impl Workspace {
             }
             Some(
                 TabKind::Settings
+                | TabKind::Console
                 | TabKind::Strings
                 | TabKind::Xrefs { .. }
                 | TabKind::Struct(_)
@@ -235,6 +236,7 @@ impl Workspace {
                 Some((listing.line(state.listing.cursor)?.address, written))
             }
             TabKind::Settings
+            | TabKind::Console
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)

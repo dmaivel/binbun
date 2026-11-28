@@ -129,7 +129,8 @@ pub enum Command {
     ToggleLeftSidebar,
     /// Shows or hides the right sidebar.
     ToggleRightSidebar,
-    /// Shows or hides the console (the bottom dock's Python).
+    /// Hides the Python console where it is shown, else brings it under
+    /// the code of the window tab shown.
     ToggleConsole,
     /// Shows or hides the feature map (the strip standing for the whole
     /// image).

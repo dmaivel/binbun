@@ -43,23 +43,29 @@ pub fn is_code(kind: Option<&TabKind>) -> bool {
     matches!(kind, Some(TabKind::Listing | TabKind::C { .. }))
 }
 
-/// Whether `kind` is a list whose rows go places (it opens in a pane of
-/// lists, not over the code its rows show).
-pub fn is_list(kind: &TabKind) -> bool {
+/// Whether `kind` opens in a pane below the code, not over it: a list
+/// whose rows go places, or the console. Such a pane has a tab bar, and
+/// its tabs close and cycle there.
+pub fn is_below_code(kind: &TabKind) -> bool {
     matches!(
         kind,
-        TabKind::Strings | TabKind::Xrefs { .. } | TabKind::Found(_) | TabKind::Folder(_)
+        TabKind::Strings
+            | TabKind::Xrefs { .. }
+            | TabKind::Found(_)
+            | TabKind::Folder(_)
+            | TabKind::Console
     )
 }
 
 impl Workspace {
-    /// Opens list `kind` (`preview` as [`Layout::open`] takes it) from pane
-    /// `from`: in a pane holding lists and no code (where one equal to it
-    /// is brought back), else in `from` if it has no code, else in a new
-    /// pane below `from`. The pane it is in.
+    /// Opens `kind`, a list or the console ([`is_below_code`]; `preview`
+    /// as [`Layout::open`] takes it) from pane `from`: in a pane holding
+    /// such tabs and no code (where one equal to it is brought back), else
+    /// in `from` if it has no code, else in a new pane below `from`. The
+    /// pane it is in.
     ///
     /// [`Layout::open`]: binbun_gui_view::layout::Layout::open
-    pub fn open_list(
+    pub fn open_below(
         &mut self,
         from: PaneId,
         kind: TabKind,
@@ -77,7 +83,7 @@ impl Workspace {
             .layout
             .panes()
             .filter(|p| {
-                p.tabs.iter().any(|t| is_list(&t.content))
+                p.tabs.iter().any(|t| is_below_code(&t.content))
                     && !p.tabs.iter().any(|t| is_code(Some(&t.content)))
             })
             .map(|p| p.id)
@@ -248,6 +254,7 @@ impl Workspace {
             Some(
                 TabKind::Listing
                 | TabKind::Settings
+                | TabKind::Console
                 | TabKind::Strings
                 | TabKind::Xrefs { .. }
                 | TabKind::Struct(_)

@@ -2,10 +2,11 @@
 //! ([`binbun_session::Project::layout`], beside the Pathfinder's question
 //! and the user's overlays): the split tree with its sizes, each pane's tabs that
 //! can be restored (the listing, a function's C by its entry and view,
-//! the strings, the cross-references to an address), the active tab of
-//! each pane and the focused pane, the map's and the right dock's widths,
-//! whether the console (the bottom dock) is open and its height once
-//! dragged, and each hex pane's side area share under its bytes.
+//! the strings, the cross-references to an address, the console), the
+//! active tab of each pane and the focused pane, the map's and the right
+//! dock's widths, and each hex pane's side area share under its bytes.
+//! A file written while the console was a dock under the panes
+//! (`console = true`) has it as a tab under the code.
 //! A tab of code also keeps its place (its cursor's address) and whether
 //! it was a graph. A file of another format (written before panes were
 //! views, [`FORMAT`]) is not read: the window opens as it does the first
@@ -62,6 +63,8 @@ pub enum SavedTab {
     },
     /// A folder of the map as a list (Open as Tab): its key.
     Folder(String),
+    /// The Python console.
+    Console,
 }
 
 /// A window tab as saved: its panes, their hex side areas, its tabs'
@@ -86,10 +89,6 @@ pub struct SavedLayout {
     pub sidebar_width: f32,
     /// The right dock's width (logical), if it was dragged.
     pub dock_width: Option<f32>,
-    /// Whether the console is open.
-    pub console: bool,
-    /// The console's height (logical), if its edge was dragged.
-    pub console_height: Option<f32>,
     /// The side area's share of each hex pane's height under its bytes,
     /// where it is not the default.
     pub hex_sides: Vec<(PaneId, f32)>,
@@ -133,12 +132,6 @@ impl SavedLayout {
         if let Some(dock) = self.dock_width {
             doc.insert("dock", toml_edit::value(rounded(dock)));
         }
-        if self.console {
-            doc.insert("console", toml_edit::value(true));
-        }
-        if let Some(height) = self.console_height {
-            doc.insert("console_height", toml_edit::value(rounded(height)));
-        }
         write_split(&mut doc, &self.layout, &self.hex_sides, &self.places);
         if !self.others.is_empty() {
             let mut others = ArrayOfTables::new();
@@ -161,7 +154,10 @@ impl SavedLayout {
     /// layout is skipped).
     pub fn from_toml(text: &str) -> Result<Self, String> {
         let doc: DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
-        let shown = read_split(doc.as_table())?;
+        let mut shown = read_split(doc.as_table())?;
+        if doc.get("console").and_then(Item::as_bool) == Some(true) {
+            console_from_dock(&mut shown.layout);
+        }
         let others: Vec<SavedSplit> = doc
             .get("other")
             .and_then(Item::as_array_of_tables)
@@ -180,8 +176,6 @@ impl SavedLayout {
             layout: shown.layout,
             sidebar_width: width("sidebar").ok_or("no sidebar width")?,
             dock_width: width("dock"),
-            console: doc.get("console").and_then(Item::as_bool).unwrap_or(false),
-            console_height: width("console_height"),
             hex_sides: shown.hex_sides,
             places: shown.places,
             shown: doc
@@ -266,6 +260,38 @@ fn write_split(
         panes.push(entry);
     }
     table.insert("pane", Item::ArrayOfTables(panes));
+}
+
+/// The console of a file written while it was a dock under the panes, as
+/// a tab under the code: in the pane of lists if there is one, else in a
+/// new pane under the focused one; the focus kept.
+fn console_from_dock(layout: &mut Layout<SavedTab>) {
+    if layout
+        .panes()
+        .any(|p| p.tabs.iter().any(|t| t.content == SavedTab::Console))
+    {
+        return;
+    }
+    let focused = layout.focused();
+    let lists = layout
+        .panes()
+        .find(|p| {
+            !p.tabs.is_empty()
+                && p.tabs.iter().all(|t| {
+                    matches!(
+                        t.content,
+                        SavedTab::Strings | SavedTab::Xrefs { .. } | SavedTab::Folder(_)
+                    )
+                })
+        })
+        .map(|p| p.id);
+    match lists {
+        Some(pane) => layout.open(pane, SavedTab::Console, false),
+        None => {
+            layout.split(focused, Axis::Column, SavedTab::Console);
+        }
+    }
+    layout.focus(focused);
 }
 
 /// A window tab's split read from `table` (the file's top level, or an
@@ -459,6 +485,9 @@ fn tab_value(tab: &Tab<SavedTab>) -> Value {
             table.insert("kind", Value::from("folder"));
             table.insert("key", Value::from(key.as_str()));
         }
+        SavedTab::Console => {
+            table.insert("kind", Value::from("console"));
+        }
     }
     if tab.preview {
         table.insert("preview", Value::from(true));
@@ -488,6 +517,7 @@ fn read_tab(table: &InlineTable) -> Option<Tab<SavedTab>> {
             len: u64::try_from(table.get("len")?.as_integer()?).ok()?,
         },
         "folder" => SavedTab::Folder(table.get("key")?.as_str()?.to_owned()),
+        "console" => SavedTab::Console,
         _ => return None,
     };
     let preview = table
@@ -706,8 +736,8 @@ fn resolve_places(
 mod tests {
     use super::*;
 
-    /// Listing | (C of 0x401000 / Strings, Xrefs), sized, the C pane
-    /// unsynced, a hex side area dragged.
+    /// Listing | (C of 0x401000 / Strings, Xrefs, the console), sized, the
+    /// C pane unsynced, a hex side area dragged.
     fn saved() -> SavedLayout {
         let mut layout = Layout::new(SavedTab::Listing);
         let c = layout
@@ -738,6 +768,7 @@ mod tests {
             },
             false,
         );
+        layout.open(lists, SavedTab::Console, false);
         layout.activate(lists, 1);
         layout.drag_divider(&[], 1, 30.0, 100.0, 0.0);
         layout.drag_divider(&[1], 1, 75.0, 100.0, 0.0);
@@ -746,8 +777,6 @@ mod tests {
             layout,
             sidebar_width: 312.0,
             dock_width: Some(380.5),
-            console: true,
-            console_height: Some(240.0),
             hex_sides: vec![(PaneId(0), 0.35)],
             places: HashMap::new(),
             others: Vec::new(),
@@ -810,8 +839,6 @@ mod tests {
         assert!(!after.layout.pane(PaneId(1)).unwrap().synced);
         assert!((after.sidebar_width - 312.0).abs() < 1e-3);
         assert!((after.dock_width.unwrap() - 380.5).abs() < 1e-3);
-        assert!(after.console);
-        assert!((after.console_height.unwrap() - 240.0).abs() < 1e-3);
         assert_eq!(after.hex_sides.len(), 1);
         assert!((after.hex_sides[0].1 - 0.35).abs() < 1e-4);
         // Written again, the same text.
@@ -893,7 +920,8 @@ mod tests {
             | SavedTab::C { .. }
             | SavedTab::Strings
             | SavedTab::Xrefs { .. }
-            | SavedTab::Folder(_)) => Some(other.clone()),
+            | SavedTab::Folder(_)
+            | SavedTab::Console) => Some(other.clone()),
         });
         let ids: Vec<u32> = restored.panes().map(|p| p.id.0).collect();
         assert_eq!(ids, vec![0, 2]);
@@ -917,6 +945,7 @@ mod tests {
                     },
                     false
                 ),
+                (SavedTab::Console, false),
             ]
         );
         assert_eq!(restored.pane(PaneId(2)).unwrap().active, 1);
@@ -952,8 +981,6 @@ tabs = [{ kind = "xrefs", of = "0x10" }, { kind = "strings", preview = true }]
         assert_eq!(saved.layout.pane(PaneId(1)).unwrap().active, 0);
         assert_eq!(saved.layout.focused(), PaneId(0));
         assert!(saved.dock_width.is_none());
-        // Written before the console: closed, its height its own.
-        assert!(!saved.console && saved.console_height.is_none());
         // Written before tabs kept places: none.
         assert!(saved.places.is_empty(), "{:?}", saved.places);
         match saved.layout.tree() {
@@ -1198,5 +1225,66 @@ tabs = [{ kind = "xrefs", of = "0x10" }, { kind = "strings", preview = true }]
         assert_ne!(broken, text);
         let read = SavedLayout::from_toml(&broken).unwrap();
         assert_eq!(tabs(&read.layout, 0), vec![(SavedTab::Listing, false)]);
+    }
+
+    /// A file written while the console was a dock under the panes
+    /// (`console = true`) has it as a tab under the code: in a new pane
+    /// under the focused one, else in the pane of lists; the focus stays,
+    /// and the file written again has no dock.
+    #[test]
+    fn a_docked_console_comes_back_as_a_tab_under_the_code() {
+        let alone = r#"
+format = 2
+focused = 0
+sidebar = 240.0
+console = true
+console_height = 300.0
+tree = { pane = 0 }
+
+[[pane]]
+id = 0
+tabs = [{ kind = "listing" }]
+"#;
+        let saved = SavedLayout::from_toml(alone).unwrap();
+        let ids: Vec<u32> = saved.layout.panes().map(|p| p.id.0).collect();
+        assert_eq!(ids.len(), 2, "{ids:?}");
+        assert_eq!(
+            tabs(&saved.layout, ids[1]),
+            vec![(SavedTab::Console, false)]
+        );
+        assert!(matches!(
+            saved.layout.tree(),
+            Node::Split {
+                axis: Axis::Column,
+                ..
+            }
+        ));
+        assert_eq!(saved.layout.focused(), PaneId(0));
+        let again = saved.to_toml();
+        assert!(!again.contains("console =") && !again.contains("console_height"));
+        assert!(again.contains("kind = \"console\""), "{again}");
+
+        let lists = r#"
+format = 2
+focused = 0
+sidebar = 240.0
+console = true
+tree = { split = "column", sizes = [0.7, 0.3], children = [{ pane = 0 }, { pane = 1 }] }
+
+[[pane]]
+id = 0
+tabs = [{ kind = "listing" }]
+
+[[pane]]
+id = 1
+tabs = [{ kind = "strings" }]
+"#;
+        let saved = SavedLayout::from_toml(lists).unwrap();
+        assert_eq!(saved.layout.panes().count(), 2);
+        assert_eq!(
+            tabs(&saved.layout, 1),
+            vec![(SavedTab::Strings, false), (SavedTab::Console, false)]
+        );
+        assert_eq!(saved.layout.focused(), PaneId(0));
     }
 }

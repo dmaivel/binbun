@@ -110,6 +110,9 @@ pub enum TabKind {
     Found(u32),
     /// A folder of the map as a list (Open as Tab): its key.
     Folder(String),
+    /// The Python console: one for the window, running whether its tab
+    /// is shown, moved or closed (`console_view`).
+    Console,
 }
 
 /// What the C view highlights: a node's occurrences (a variable), or
@@ -451,8 +454,6 @@ pub enum EdgeDrag {
     /// The divider between a hex pane's bytes and its side area under
     /// them.
     HexSide(PaneId),
-    /// The console's top edge.
-    Console,
 }
 
 /// The layout's sizes beside the split tree's, what the pointer drags, and
@@ -651,7 +652,7 @@ pub struct Workspace {
     pub collab: CollabUi,
     /// Conversation: the threads and history panels, mentions unread.
     pub threads: ThreadsUi,
-    /// The console in the bottom dock.
+    /// The Python console, wherever its tab is.
     pub console: ConsoleUi,
     /// Polls the session whenever it signals new results.
     pub(crate) wake: Option<Task<()>>,
@@ -1518,6 +1519,7 @@ impl Workspace {
                     TabKind::C { function: None, .. }
                     | TabKind::Listing
                     | TabKind::Settings
+                    | TabKind::Console
                     | TabKind::Strings
                     | TabKind::Xrefs { .. }
                     | TabKind::Struct(_)
@@ -1572,6 +1574,7 @@ impl Workspace {
             TabKind::C { function: None, .. }
             | TabKind::Listing
             | TabKind::Settings
+            | TabKind::Console
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)
@@ -1619,6 +1622,8 @@ impl Workspace {
         self.layout.focus(id);
         if self.shows_start() {
             window.focus(&self.start_focus, cx);
+        } else if self.layout.active(id) == Some(&TabKind::Console) {
+            self.focus_console(window, cx);
         } else if let Some(state) = self.panes.get(&id) {
             window.focus(&state.focus, cx);
         }
@@ -1662,6 +1667,7 @@ impl Workspace {
                     .or(Some(document.entry))
             }
             TabKind::Settings
+            | TabKind::Console
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)
@@ -1767,6 +1773,7 @@ impl Workspace {
                 }
             }
             TabKind::Settings
+            | TabKind::Console
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)
@@ -2315,7 +2322,7 @@ impl Workspace {
             maximized: self.maximized.is_some(),
             left_sidebar: self.left_sidebar,
             right_sidebar: self.right_sidebar,
-            console: self.console.open,
+            console: self.console_shown(),
             feature_map: self.settings.feature_map != FeatureMap::Off,
             feature_map_top: self.settings.feature_map == FeatureMap::Top,
             folder: self.folder_key().is_some(),
@@ -2692,10 +2699,11 @@ impl Workspace {
             Command::CloseTab => {
                 // A pane of code (its one tab, a view) or the settings: the
                 // strip's tab closes; the last tab of a place stays (Close
-                // Pane closes a pane). A pane of lists: its list closes.
+                // Pane closes a pane). A pane below the code: its tab closes
+                // (the console's only hides it).
                 let index = self.window_tabs_active();
                 let code = self.layout.pane(id).is_some_and(|p| {
-                    !p.tabs.iter().any(|t| crate::tabs::is_list(&t.content))
+                    !p.tabs.iter().any(|t| crate::tabs::is_below_code(&t.content))
                 });
                 if self.shows_tool() || code {
                     if self.can_close_window_tab(index) {
@@ -2719,9 +2727,9 @@ impl Workspace {
                 self.after_layout(window, cx);
             }
             Command::NextTab | Command::PreviousTab => {
-                // A pane of code: the strip's tabs; one of lists: its own.
+                // A pane of code: the strip's tabs; one below it: its own.
                 if self.layout.pane(id).is_some_and(|p| {
-                    !p.tabs.iter().any(|t| crate::tabs::is_list(&t.content))
+                    !p.tabs.iter().any(|t| crate::tabs::is_below_code(&t.content))
                 }) {
                     self.cycle_window_tab(command == Command::NextTab, window, cx);
                 } else {
@@ -2780,9 +2788,8 @@ impl Workspace {
             Some(
                 TabKind::Strings | TabKind::Xrefs { .. } | TabKind::Found(_) | TabKind::Folder(_),
             ) => self.ui_line() + ROW_PAD,
-            Some(TabKind::Listing | TabKind::Settings | TabKind::Struct(_)) | None => {
-                self.settings.listing_line_height
-            }
+            Some(TabKind::Listing | TabKind::Settings | TabKind::Struct(_) | TabKind::Console)
+            | None => self.settings.listing_line_height,
         }
     }
 
@@ -2797,7 +2804,7 @@ impl Workspace {
         self.ensure_documents();
     }
 
-    /// Opens `kind` in pane `id` (pinned; a list as [`Workspace::open_list`]
+    /// Opens `kind` in pane `id` (pinned; a list as [`Workspace::open_below`]
     /// places it, the settings in a tab of the strip of their own), its
     /// cursor on the shared one.
     pub fn open_tab(
@@ -2810,8 +2817,8 @@ impl Workspace {
         let settings = kind == TabKind::Settings;
         let id = if settings {
             self.open_tool_tab(kind, cx)
-        } else if crate::tabs::is_list(&kind) {
-            self.open_list(id, kind, false, cx)
+        } else if crate::tabs::is_below_code(&kind) {
+            self.open_below(id, kind, false, cx)
         } else {
             self.layout.open(id, kind, false);
             id
@@ -2908,7 +2915,7 @@ impl Workspace {
             TabKind::Strings | TabKind::Xrefs { .. } | TabKind::Folder(_) => {
                 self.panes.get(&id).map_or(0, |s| s.list.rows.len() as u64)
             }
-            TabKind::Settings | TabKind::Struct(_) | TabKind::Found(_) => 0,
+            TabKind::Settings | TabKind::Struct(_) | TabKind::Found(_) | TabKind::Console => 0,
         };
         let Some(state) = self.panes.get_mut(&id) else {
             return;
@@ -2950,7 +2957,7 @@ impl Workspace {
                 self.ensure_documents();
                 return;
             }
-            TabKind::Settings | TabKind::Struct(_) | TabKind::Found(_) => return,
+            TabKind::Settings | TabKind::Struct(_) | TabKind::Found(_) | TabKind::Console => return,
         }
         self.moved(id);
     }
@@ -3009,6 +3016,7 @@ impl Workspace {
                 self.c_name_address(document, span)
             }
             TabKind::Settings
+            | TabKind::Console
             | TabKind::Strings
             | TabKind::Xrefs { .. }
             | TabKind::Struct(_)
