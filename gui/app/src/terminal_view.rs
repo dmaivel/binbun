@@ -910,6 +910,26 @@ impl Workspace {
         })
     }
 
+    /// The offers whose harness has an agent connected now, done with: one
+    /// that leaves later is not offered binbun again (a later start that
+    /// does not connect makes a new offer). One setting up is kept.
+    pub fn retire_agent_offers(&mut self) {
+        let connected: Vec<&'static str> = self
+            .terminals
+            .offers
+            .iter()
+            .filter(|(_, offer)| offer.progress != Progress::Running)
+            .filter_map(|(&name, _)| {
+                agents::harness(name)
+                    .filter(|harness| self.harness_connected(harness))
+                    .map(|_| name)
+            })
+            .collect();
+        for name in connected {
+            self.terminals.offers.remove(name);
+        }
+    }
+
     /// The coding agents the terminals' programs say they are, each
     /// noted when it starts (its harness known, with a setup; or started
     /// again, the terminal probed again): an offer made for its harness if

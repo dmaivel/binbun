@@ -1391,6 +1391,8 @@ impl Workspace {
         self.collab.agents = agents;
         self.remember_agents();
         self.refresh_people();
+        // An agent of a harness offered binbun's setup has connected.
+        self.retire_agent_offers();
         self.drop_notice_later(cx);
         cx.notify();
     }
