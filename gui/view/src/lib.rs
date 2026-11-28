@@ -119,6 +119,7 @@ pub mod layout_file;
 pub mod map;
 pub mod peek;
 pub mod projects;
+pub mod python_env;
 pub mod recent;
 pub mod scroll;
 pub mod search;

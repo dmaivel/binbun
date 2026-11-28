@@ -5,7 +5,8 @@
 //! "+N more" line that expands them. Its banners: the symbol server's
 //! (`symbols_bar`), the settings file's problems, the first launch's
 //! update question, the update offer (`binbun_gui_view::updates`) and
-//! binbun's setup offered to a coding agent in a terminal (`terminal_view`).
+//! binbun's setup offered to a coding agent in a terminal (`terminal_view`),
+//! and binbun's Python unable to run binbun (`python_setup`).
 //!
 //! Update checks run once agreed: every half second the window asks the
 //! process's checks (shared by its windows) whether one is due (at
@@ -67,6 +68,7 @@ impl Workspace {
         }
         offered.extend(self.analysis_banner());
         offered.extend(self.agent_banners());
+        offered.extend(self.python_banner());
         let build = updates::build();
         if updates::asks(&build, self.settings.updates) {
             offered.push(updates::question());
@@ -122,7 +124,11 @@ impl Workspace {
             (Tone::Info, Kind::Agent) => (IconName::Bot, theme.accent),
             (
                 Tone::Info,
-                Kind::Settings | Kind::UpdateQuestion | Kind::Symbols | Kind::Analysis,
+                Kind::Settings
+                | Kind::UpdateQuestion
+                | Kind::Symbols
+                | Kind::Analysis
+                | Kind::Python,
             ) => (IconName::Info, theme.text_muted),
             (Tone::Busy, _) => (IconName::LoaderCircle, theme.text_muted),
             (Tone::Warning, _) => (IconName::ShieldAlert, theme.error),
@@ -253,6 +259,7 @@ impl Workspace {
             Action::FetchDebug(from) => self.fetch_debug(*from, cx),
             Action::SetUpAgent(name) => self.set_up_agent(name, window, cx),
             Action::QuietAgent(name) => self.quiet_agent(name),
+            Action::SetUpPython => self.set_up_python(window, cx),
             Action::SkipVersion => {
                 if let Err(error) = cx.default_global::<UpdateChecks>().0.skip() {
                     self.error = Some(error);
@@ -281,7 +288,12 @@ impl Workspace {
                     session.dismiss_symbols();
                 }
             }
-            Kind::Settings | Kind::UpdateQuestion | Kind::Update | Kind::Analysis | Kind::Agent => {
+            Kind::Settings
+            | Kind::UpdateQuestion
+            | Kind::Update
+            | Kind::Analysis
+            | Kind::Agent
+            | Kind::Python => {
                 self.banners.stack.close(banner);
             }
         }

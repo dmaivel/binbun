@@ -321,11 +321,14 @@ pub enum Place {
     /// where one goes unless the user chose where, under a name binbun
     /// gives it. Never a project's folder.
     Downloads,
+    /// The Python environment binbun makes for itself when the user's
+    /// Python has no `binbun` package, `python` ([`Dir::Data`]): a venv.
+    PythonEnv,
 }
 
 impl Place {
     /// Every place.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::Settings,
         Self::Startup,
         Self::Themes,
@@ -342,13 +345,18 @@ impl Place {
         Self::Signatures,
         Self::Fetches,
         Self::Downloads,
+        Self::PythonEnv,
     ];
 
     /// The folder it is in.
     pub const fn dir(self) -> Dir {
         match self {
             Self::Settings | Self::Startup | Self::Themes => Dir::Config,
-            Self::Projects | Self::Identity | Self::Signatures | Self::Downloads => Dir::Data,
+            Self::Projects
+            | Self::Identity
+            | Self::Signatures
+            | Self::Downloads
+            | Self::PythonEnv => Dir::Data,
             Self::Recent
             | Self::Slices
             | Self::ConsoleHistory
@@ -378,6 +386,7 @@ impl Place {
             Self::Signatures => &["signatures"],
             Self::Fetches => &["collab", "fetches"],
             Self::Downloads => &["downloads"],
+            Self::PythonEnv => &["python"],
         }
     }
 

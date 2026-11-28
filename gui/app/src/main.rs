@@ -65,6 +65,7 @@ mod panes;
 mod pathfinder_view;
 mod popup;
 mod project_files;
+mod python_setup;
 mod scrolling;
 mod search_view;
 mod selectable_text;

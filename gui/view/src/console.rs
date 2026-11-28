@@ -265,7 +265,8 @@ pub fn stopped_message(
         && (stderr.contains("No module named binbun") || stderr.contains("No module named 'binbun"))
     {
         return format!(
-            "binbun is not installed for {interpreter}. Install it into that interpreter \
+            "binbun is not installed for {interpreter}. Set Up Python, in the banner above, \
+             makes binbun a Python of its own; or install it into that interpreter \
              (`{interpreter} -m pip install binbun`), or set python.interpreter to a Python \
              that has it."
         );
@@ -719,8 +720,9 @@ impl Console {
                 let interpreter = &self.launch.interpreter;
                 self.status = Status::Stopped(if error.kind() == io::ErrorKind::NotFound {
                     format!(
-                        "No Python at {interpreter}. Set python.interpreter to a Python 3.11 or \
-                         newer with binbun installed (`python3 -m pip install binbun`)."
+                        "No Python at {interpreter}. Set Up Python, in the banner above, makes \
+                         binbun a Python of its own; or set python.interpreter to a Python 3.11 \
+                         or newer with binbun installed (`python3 -m pip install binbun`)."
                     )
                 } else {
                     format!("{interpreter} could not be started: {error}")
@@ -1025,6 +1027,7 @@ mod tests {
             "/usr/bin/python3: Error while finding module specification for 'binbun.console' (ModuleNotFoundError: No module named 'binbun')\n",
         );
         assert!(said.contains("binbun is not installed for /usr/bin/python3"));
+        assert!(said.contains("Set Up Python"));
         assert!(said.contains("-m pip install binbun"));
         let crashed = stopped_message(
             "python3",

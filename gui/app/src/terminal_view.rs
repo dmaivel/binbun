@@ -946,6 +946,8 @@ impl Workspace {
         if started.is_empty() {
             return;
         }
+        // Its binbun mcp runs the Python the settings name.
+        self.check_python(cx);
         if self.terminals.quiet.is_none() {
             self.terminals.quiet = Some(
                 agents::quiet_path()

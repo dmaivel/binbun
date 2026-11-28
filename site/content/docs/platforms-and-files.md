@@ -46,7 +46,7 @@ Without overrides, the base directories are:
 ## What belongs where
 
 - **Config** holds `settings.toml`, `startup.py` and user themes in `themes`.
-- **Data** holds `projects`, the identity's private keys in `identity` and user packs in `signatures`.
+- **Data** holds `projects`, the identity's private keys in `identity`, user packs in `signatures`, and the Python environment binbun makes for itself in `python` (**Set Up Python**).
 - **State** holds recent files, remembered universal slices, console history, the skipped-update choice and the agents not to offer setup to (`quiet-agents`).
 - **Cache** holds downloaded symbols in `symbols`. Clearing it can require another download, but it is not where your project edits live.
 - **Runtime** holds live-server sockets or named-pipe discovery files used by Python connections.

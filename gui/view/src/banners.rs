@@ -9,9 +9,10 @@
 //! Its users: the symbol server's bar ([`crate::symbols`]), the settings
 //! file's problems ([`settings_error`]), the first launch's question and
 //! the update offer ([`crate::updates`]), in a shared session an analysis
-//! that differs from a peer's ([`crate::collab::analysis_banner`]), and a
+//! that differs from a peer's ([`crate::collab::analysis_banner`]), a
 //! coding agent running in a terminal without binbun's tools (the app's
-//! `terminal_view`).
+//! `terminal_view`), and binbun's Python unable to run binbun
+//! ([`crate::python_env`]).
 
 use std::collections::HashSet;
 
@@ -54,6 +55,9 @@ pub enum Kind {
     /// A coding agent runs in a terminal but has not connected: binbun's
     /// setup offered for it.
     Agent,
+    /// The Python the settings name cannot run binbun's Python side: an
+    /// environment of its own offered.
+    Python,
 }
 
 /// A banner's icon and colour.
@@ -88,6 +92,9 @@ pub enum Action {
     SetUpAgent(String),
     /// Never offers the harness named binbun's setup again.
     QuietAgent(String),
+    /// Makes binbun a Python environment of its own and names it in the
+    /// settings ([`crate::python_env::make_env`]).
+    SetUpPython,
 }
 
 /// A button of a banner.

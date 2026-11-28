@@ -37,6 +37,7 @@ always read by later versions.
 
 ### Added
 
+- GUI: when the Python the settings name can't run binbun (the default `python3` usually has no `binbun`, and a system Python refuses `pip install`), opening the console or starting an agent in a terminal shows a banner: **Set Up Python** makes binbun a venv of your Python in its data folder, installs `binbun` of the app's version from PyPI and names it in the settings, for the console and agents alike.
 - GUI: a coding agent started in a terminal that says what it is (Claude Code, Pi, Crush: the OSC 7501 status protocol, which the terminal now answers) and doesn't connect to binbun within three seconds gets a banner: **Set Up** runs its harness's `mcp add` command for this binbun, **Don't Ask Again** stops offering it for that harness; restarted after Set Up and still not connected, the banner says its MCP server could not start. The terminal's tab shows what the agent says it is doing: working, waiting on you, done or failed.
 - GUI: terminals. **Window → New Terminal** (`Ctrl+Shift+Backtick`) opens your shell in the binary's folder, in a tab under the code as the console opens, through Ghostty's terminal emulator (libghostty-vt): full-screen programs, true colour, the mouse, selection with copy and paste, scrollback. `Ctrl+Backtick` and the status bar's console button act on the console or the terminal used last; right-clicking the button chooses. Closing a terminal's tab while a program runs in it asks first.
 - GUI: in the hex view the byte under the pointer is lit in both the digits and the characters.

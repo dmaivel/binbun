@@ -640,6 +640,7 @@ impl Workspace {
     /// signature of the call typed, its input.
     pub fn render_console(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         self.ensure_console(window, cx);
+        self.check_python(cx);
         div()
             .flex()
             .flex_col()

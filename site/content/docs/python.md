@@ -52,6 +52,8 @@ Each write is checked as it is made, so one that would be refused raises at its 
 
 Open **View → Console** with `Ctrl+Backtick`. Under **File → Settings… → Python**, choose an interpreter with the `binbun` package installed. The console reports an unavailable interpreter or package instead of loading Python into the GUI process.
 
+The default, `python3`, usually has no `binbun`, and a system Python refuses packages installed into it. When the Python the setting names can't run binbun, opening the console (or starting an agent in a terminal) shows a banner: **Set Up Python** makes binbun a venv of your Python 3.11 or newer in its data folder (`python`), installs `binbun` of the app's version into it from PyPI, and names it in the setting. On Debian and Ubuntu the venv needs the `python3-venv` package. Agents' `binbun mcp` runs the same Python.
+
 The console is a tab, opened in the pane under the code. Drag its tab like any other to put it beside the code or in another pane. There is one console per window: closing its tab or switching to another window tab only hides it, and its variables and history stay. `Ctrl+Backtick` hides it where it is shown; otherwise it brings it under the code of the tab you are in, moving it from the tab that had it. Once you have used a [terminal](@/docs/gui.md#terminals) since the console, `Ctrl+Backtick` acts on that terminal instead; right-click the console button in the status bar to choose.
 
 The console supplies `db`, `here`, `current_function` and `selection`. Before each cell, the last three reflect the GUI's cursor, containing function and selected address range. Use ordinary Python against `db`; it is connected to this window.

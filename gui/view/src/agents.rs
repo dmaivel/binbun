@@ -473,18 +473,7 @@ pub fn run_setup(command: &str) -> Result<(), String> {
     if out.status.success() {
         return Ok(());
     }
-    let said = [&out.stderr, &out.stdout]
-        .into_iter()
-        .find_map(|bytes| {
-            String::from_utf8_lossy(bytes)
-                .lines()
-                .rev()
-                .map(str::trim)
-                .find(|line| !line.is_empty())
-                .map(str::to_owned)
-        })
-        .unwrap_or_else(|| out.status.to_string());
-    Err(said)
+    Err(crate::python_env::last_said(&out))
 }
 
 /// Where the harnesses not to offer binbun's setup to are kept

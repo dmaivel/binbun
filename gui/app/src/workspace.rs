@@ -65,6 +65,7 @@ use crate::folder_view::FolderUi;
 use crate::hex_view::HexUi;
 use crate::ir_view::IrUi;
 use crate::project_files::ProjectsUi;
+use crate::python_setup::PythonUi;
 use crate::scrolling::{Area, AreaScroll};
 use crate::search_view::SearchUi;
 use crate::selection::{BOTTOM, TOP, indentation};
@@ -661,6 +662,8 @@ pub struct Workspace {
     pub console: ConsoleUi,
     /// The terminals, wherever their tabs are.
     pub terminals: TerminalsUi,
+    /// binbun's Python, as checked when something needs it.
+    pub python: PythonUi,
     /// Polls the session whenever it signals new results.
     pub(crate) wake: Option<Task<()>>,
     /// The binary served to scripts: its number on the server, the
@@ -845,6 +848,7 @@ impl Workspace {
             threads: ThreadsUi::default(),
             console: ConsoleUi::default(),
             terminals: TerminalsUi::default(),
+            python: PythonUi::default(),
             settings,
             wake: None,
             served: None,
